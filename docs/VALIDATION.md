@@ -165,6 +165,15 @@ must verify rejected discovery leaves profile configuration unchanged and rapid
 submission creates exactly one profile. These are source/test fixes, not yet
 rendered proof.
 
+A delayed global-search reply on the older GUI replaced the results of a newer
+query: a query with no matches displayed the earlier query's matching message.
+Core search callbacks now bind to the widget lifetime and a search generation;
+changing/cancelling the search invalidates earlier results. They also compare
+the current input, covering the interval before the next debounced request.
+The final GUI must repeat delayed replacement, cancellation and profile-switch
+checks. The before-fix behavior was reproduced with disposable messages; the
+native fix still requires compilation and rendered verification.
+
 An immediate normal quit after typing a new disposable-chat draft preserved the
 complete text in Core and restored it in the old GUI composer. A runtime socket
 snapshot showed no GUI-owned TCP sockets and Core-owned IMAP connections. The

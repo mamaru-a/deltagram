@@ -441,6 +441,7 @@ private:
 	bool _swipeBackIconMirrored = false;
 
 	SearchProcessState _searchProcess;
+	uint64 _deltaSearchGeneration = 0;
 	SearchProcessState _migratedProcess;
 	SearchProcessState _postsProcess;
 	int _historiesRequest = 0; // Not real mtpRequestId.

@@ -3568,9 +3568,15 @@ void Widget::requestMessages(bool fromStart) {
 		.start = fromStart,
 	};
 	if (Delta::Active()) {
-		Delta::SearchMessages(0, _searchQuery, [=](
+		const auto generation = ++_deltaSearchGeneration;
+		const auto query = _searchQuery;
+		Delta::SearchMessages(0, query, crl::guard(this, [=](
 				QVector<MTPMessage> messages,
 				QVector<MTPUser> users) {
+			if (generation != _deltaSearchGeneration
+				|| query != _searchState.query.trimmed()) {
+				return;
+			}
 			searchReceived(
 				type,
 				MTP_messages_messages(
@@ -3579,7 +3585,7 @@ void Widget::requestMessages(bool fromStart) {
 					MTP_vector<MTPChat>(),
 					MTP_vector<MTPUser>(users)),
 				&_searchProcess);
-		});
+		}));
 		return;
 	}
 	using Flag = MTPmessages_SearchGlobal::Flag;
@@ -4975,6 +4981,7 @@ void Widget::scrollToEntry(const RowDescriptor &entry) {
 }
 
 void Widget::cancelSearchRequest() {
+	++_deltaSearchGeneration;
 	session().api().request(base::take(_searchProcess.requestId)).cancel();
 	session().api().request(base::take(_migratedProcess.requestId)).cancel();
 	session().api().request(base::take(_postsProcess.requestId)).cancel();
