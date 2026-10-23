@@ -16,7 +16,7 @@ release build compiles that integration unit before the donor source set, then
 reuses its object in the full build. The failed run saved its compiler cache;
 no incremental records were removed. A replacement full build is required.
 
-Twenty-five Qt regression cases passed in Ubuntu 24.04 x86-64 with Qt 6.4.2,
+Twenty-six Qt regression cases passed in Ubuntu 24.04 x86-64 with Qt 6.4.2,
 including a real-Core two-account draft test against both Core 2.62.0 and the
 project's pinned 2.63.0-dev. The latter binary was extracted from the project's
 verified v0.2.5 release, whose Core source pin matches this checkout
@@ -150,6 +150,20 @@ Final GUI download and byte-integrity checks remain pending.
 Incoming refreshes also apply native file/video presentation after the fallback
 text adapter, so an empty attachment caption cannot become a filename placeholder
 after delivery or download events. Final GUI replay includes this update order.
+
+Onboarding source review found that failed `is_configured` reads were treated
+as false, allowing an existing profile to be nominated for setup writes. A
+shared read-only inventory now requires valid account IDs and explicit boolean
+states for every account, preserves Core order despite reordered replies, and
+returns no setup candidate on any failed/malformed read. The 26-case suite adds
+failure, malformed-type/ID, ordering and real-Core inventory coverage; both Core
+versions pass. Previously prepared setup accounts are rechecked before writes.
+Onboarding now also acknowledges selection before opening, coalesces overlapping
+preparation requests, prevents repeated Create submissions, and preserves the
+setup account when provisioning succeeded but opening failed. Final GUI checks
+must verify rejected discovery leaves profile configuration unchanged and rapid
+submission creates exactly one profile. These are source/test fixes, not yet
+rendered proof.
 
 An immediate normal quit after typing a new disposable-chat draft preserved the
 complete text in Core and restored it in the old GUI composer. A runtime socket

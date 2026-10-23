@@ -1435,6 +1435,7 @@ PRIVATE
     delta/history_mutations.cpp
     delta/history_mutations.h
     delta/account_scope.h
+    delta/account_inventory.h
     delta/message_order.h
     delta/message_visibility.h
     delta/message_download.h

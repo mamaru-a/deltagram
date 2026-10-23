@@ -1,6 +1,7 @@
 #include "delta_rpc.h"
 #include "draft_store.h"
 #include "account_scope.h"
+#include "account_inventory.h"
 #include "message_order.h"
 #include "message_visibility.h"
 #include "message_download.h"
@@ -39,6 +40,75 @@ class IntegrityTests final : public QObject {
 	Q_OBJECT
 
 private slots:
+	void accountDiscoveryRequiresConfirmedState() {
+		for (const auto reply : {QJsonObject{{u"result"_s, QJsonArray()}},
+				QJsonObject{{u"result"_s, QJsonValue()}}, QJsonObject{{u"error"_s, u"unavailable"_s}}}) {
+			auto completed = false;
+			Delta::ReadAccountInventory([&](QString method, QJsonArray, DeltaRpc::Callback done) {
+				QCOMPARE(method, u"get_all_account_ids"_s);
+				done(reply);
+			}, [&](Delta::AccountInventory result) {
+				QCOMPARE(result.error.isEmpty(), reply[u"result"_s].isArray());
+				QVERIFY(result.configured.empty());
+				QCOMPARE(result.unconfigured, 0);
+				completed = true;
+			});
+			QVERIFY(completed);
+		}
+		const auto replies = QVector<QJsonObject>{
+			{{u"result"_s, false}}, {{u"result"_s, true}},
+			{{u"result"_s, QJsonValue()}}, {{u"result"_s, 0}},
+			{{u"result"_s, u"false"_s}}, {},
+			{{u"result"_s, false}, {u"error"_s, u"read failed"_s}},
+		};
+		for (auto index = 0; index != replies.size(); ++index) {
+			auto pending = QMap<int, DeltaRpc::Callback>();
+			auto result = std::optional<Delta::AccountInventory>();
+			auto completed = 0;
+			Delta::ReadAccountInventory([&](QString method, QJsonArray params, DeltaRpc::Callback done) {
+				if (method == u"get_all_account_ids"_s) {
+					done(QJsonObject{{u"result"_s, QJsonArray{9, 2}}});
+				} else {
+					QCOMPARE(method, u"is_configured"_s);
+					QCOMPARE(params.size(), 1);
+					pending.insert(params[0].toInt(), std::move(done));
+				}
+			}, [&](Delta::AccountInventory inventory) {
+				result = std::move(inventory);
+				++completed;
+			});
+			QCOMPARE(pending.size(), 2);
+			pending[2](QJsonObject{{u"result"_s, false}});
+			QVERIFY(!result.has_value());
+			pending[9](replies[index]);
+			QCOMPARE(completed, 1);
+			QVERIFY(result.has_value());
+			if (index >= 2) {
+				QVERIFY(!result->error.isEmpty());
+				QVERIFY(result->configured.empty());
+				QCOMPARE(result->unconfigured, 0);
+			} else {
+				QVERIFY(result->error.isEmpty());
+				QCOMPARE(result->unconfigured, index == 0 ? 9 : 2);
+				QCOMPARE(result->configured, index == 0 ? QVector<int>() : QVector<int>{9});
+			}
+		}
+		for (const auto ids : {QJsonArray{0}, QJsonArray{-1}, QJsonArray{9, 9},
+				QJsonArray{1.5}, QJsonArray{u"9"_s}}) {
+			auto completed = false;
+			Delta::ReadAccountInventory([&](QString method, QJsonArray, DeltaRpc::Callback done) {
+				QCOMPARE(method, u"get_all_account_ids"_s);
+				done(QJsonObject{{u"result"_s, ids}});
+			}, [&](Delta::AccountInventory result) {
+				QVERIFY(!result.error.isEmpty());
+				QVERIFY(result.configured.empty());
+				QCOMPARE(result.unconfigured, 0);
+				completed = true;
+			});
+			QVERIFY(completed);
+		}
+	}
+
 	void downloadsRespectCoreStateAndAccount() {
 		for (const auto state : {u"Available"_s, u"Failure"_s, u"Done"_s,
 				u"InProgress"_s, u"Undecipherable"_s, u"unknown"_s,
@@ -323,6 +393,14 @@ private slots:
 		const auto first = CoreCall(*rpc, u"add_account"_s, {})[u"result"_s].toInt();
 		const auto second = CoreCall(*rpc, u"add_account"_s, {})[u"result"_s].toInt();
 		QVERIFY(first > 0 && second > 0 && first != second);
+		auto inventory = std::optional<Delta::AccountInventory>();
+		Delta::ReadAccountInventory([=](QString method, QJsonArray params, DeltaRpc::Callback done) {
+			rpc->call(method, params, std::move(done));
+		}, [&](Delta::AccountInventory result) { inventory = std::move(result); });
+		QTRY_VERIFY(inventory.has_value());
+		QVERIFY(inventory->error.isEmpty());
+		QVERIFY(inventory->configured.empty());
+		QCOMPARE(inventory->unconfigured, first);
 		const auto chatA = CoreCall(*rpc, u"create_chat_by_contact_id"_s, {first, 1})[u"result"_s].toInt();
 		const auto chatB = CoreCall(*rpc, u"create_chat_by_contact_id"_s, {second, 1})[u"result"_s].toInt();
 		QVERIFY(chatA > 0);
