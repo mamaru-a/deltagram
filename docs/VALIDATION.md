@@ -122,8 +122,9 @@ must verify both fixes.
 
 The reference GUI's reaction also reached Deltagram and exposed a donor
 assumption: a Core group occupies a donor user peer, so the one-to-one renderer
-invented the group itself as the reactor. Core groups and broadcast channels
-now use counts when reactor identities are not loaded. The unsupported donor
+invented the group itself as the reactor. Only confirmed Core direct chats use
+the two-person inference; groups, channels, mailing lists and unknown chat types
+use counts when reactor identities are not loaded. The unsupported donor
 reactor-list action is no longer advertised. This preserves reaction selection
 and counts without claiming an identity that Core did not provide to that view.
 

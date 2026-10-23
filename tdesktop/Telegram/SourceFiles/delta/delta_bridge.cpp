@@ -91,6 +91,7 @@ QHash<int, QJsonObject> ChannelInfos;
 QHash<int, int> ChannelViews;
 QHash<int, QJsonObject> SharedContacts;
 QSet<int> GroupChats;
+QSet<int> DirectChats;
 QHash<uint64, ContactRow> SenderContacts;
 rpl::variable<int> ChannelRevision = 0;
 
@@ -1484,6 +1485,7 @@ public:
 		ChannelViews.clear();
 		SharedContacts.clear();
 		GroupChats.clear();
+		DirectChats.clear();
 		SenderContacts.clear();
 		CoreMessages.clear();
 		CoreReadReceipts.clear();
@@ -2840,6 +2842,8 @@ private:
 			entry.avatar = item.value(u"avatarPath"_q).toString();
 			entry.contactId = item.value(u"dmChatContact"_q).toInt();
 			const auto type = item.value(u"chatType"_q).toString();
+			if (type == u"Single"_q) DirectChats.insert(entry.chatId);
+			else DirectChats.remove(entry.chatId);
 			if (type == u"Group"_q) GroupChats.insert(entry.chatId);
 			else GroupChats.remove(entry.chatId);
 			entry.channel = (type == u"OutBroadcast"_q || type == u"InBroadcast"_q);
@@ -3135,6 +3139,10 @@ void LoadDraft(int userId, Fn<void(ComposeDraft)> done) {
 
 bool IsGroup(uint64 userId) {
 	return GroupChats.contains(int(userId));
+}
+
+bool IsDirectChat(uint64 userId) {
+	return userId == kSelfUserId || DirectChats.contains(int(userId));
 }
 
 std::optional<ContactRow> ContactForPeer(uint64 userId) {

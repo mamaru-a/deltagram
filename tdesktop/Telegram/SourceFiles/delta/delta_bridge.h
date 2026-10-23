@@ -57,6 +57,7 @@ void DeleteContact(int contactId, bool deleteChat, Fn<void(QString error)> done)
 [[nodiscard]] std::optional<QString> StatusSubtitle(uint64 userId);
 [[nodiscard]] bool IsChannel(uint64 userId);
 [[nodiscard]] bool IsGroup(uint64 userId);
+[[nodiscard]] bool IsDirectChat(uint64 userId);
 [[nodiscard]] bool IsReadOnlyChannel(uint64 userId);
 [[nodiscard]] rpl::producer<bool> ChannelWriteAccess(uint64 userId);
 [[nodiscard]] rpl::producer<QString> ChannelStatusValue(uint64 userId);
