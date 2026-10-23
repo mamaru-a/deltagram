@@ -10,6 +10,10 @@ on:
         description: Publish a release when Conventional Commits require one
         type: boolean
         default: true
+      verify_packages:
+        description: Build and verify portable and distribution packages without publishing
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -46,7 +50,7 @@ jobs:
       - name: Plan release
         id: plan
         env:
-          PUBLISH: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && (github.event_name == 'push' || inputs.publish) }}
+          PUBLISH: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && (github.event_name == 'push' || (inputs.publish && !inputs.verify_packages)) }}
         run: |
           if [[ "$PUBLISH" == true ]]; then
             python3 scripts/ci-release.py
@@ -56,7 +60,7 @@ jobs:
       - name: Decide whether compilation is needed
         id: build
         env:
-          REQUIRED: ${{ steps.plan.outputs.publish == 'true' || github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && !inputs.publish) }}
+          REQUIRED: ${{ steps.plan.outputs.publish == 'true' || github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && (!inputs.publish || inputs.verify_packages)) }}
         run: echo "required=$REQUIRED" >> "$GITHUB_OUTPUT"
       - name: Free unused runner SDK space
         if: steps.build.outputs.required == 'true'
@@ -151,6 +155,22 @@ jobs:
             data/cargo-home/git
             data/cargo-target
           key: ${{ steps.rust-cache.outputs.cache-primary-key }}
+      - name: Verify manual validation packages
+        if: github.event_name == 'workflow_dispatch' && inputs.verify_packages && steps.plan.outputs.publish != 'true'
+        run: |
+          ./nix/develop.sh --command python3 nix/stage-release.py
+          bash docker/build.sh
+          bash docker/verify.sh
+          bash docker/package-formats.sh
+      - name: Upload verified manual validation packages
+        if: github.event_name == 'workflow_dispatch' && inputs.verify_packages && steps.plan.outputs.publish != 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: linux-packages-validation-${{ github.sha }}
+          path: dist/**
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 3
       - name: Package release assets and matching source
         if: steps.plan.outputs.publish == 'true'
         run: |
