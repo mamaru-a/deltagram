@@ -19,6 +19,14 @@ struct HistoryDateRange {
 	qint64 before = 0;
 };
 
+void DeleteCoreMessages(
+	std::shared_ptr<DeltaRpc> rpc,
+	const AccountScope &scope,
+	int accountId,
+	const QJsonArray &ids,
+	bool revoke,
+	std::function<void(QString)> done);
+
 // Each continuation is cancelled when the owning account scope changes.
 void DeleteChatHistory(
 	std::shared_ptr<DeltaRpc> rpc,

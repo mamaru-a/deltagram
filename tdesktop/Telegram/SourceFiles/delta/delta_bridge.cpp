@@ -1041,12 +1041,10 @@ public:
 		if (!reader.ok()) {
 			return fail(instance, requestId, u"DELTA_BAD_REQUEST"_q);
 		}
-		call(
-			revoke ? u"delete_messages_for_all"_q : u"delete_messages"_q,
-			{ _accountId, ids },
-			[=](QJsonObject result) {
-				if (HasError(result)) {
-					reportError(ErrorText(result));
+		DeleteCoreMessages(_rpc, _accountScope, _accountId, ids, revoke,
+			[=](QString error) {
+				if (!error.isEmpty()) {
+					reportError(error);
 					return fail(instance, requestId, u"DELTA_DELETE_FAILED"_q);
 				}
 				for (const auto &id : ids) _deletedMessages.insert(id.toInt());
@@ -1085,9 +1083,13 @@ public:
 					return;
 				}
 				const auto id = result.value(u"result"_q).toInt();
-				CoreMessages.insert(id, QJsonObject{{ u"state"_q, 20 }});
+				if (!_deletedMessages.contains(id) && !CoreMessages.contains(id)) {
+					CoreMessages.insert(id, QJsonObject{{ u"state"_q, 20 }});
+				}
 				done(id, QString());
-				addIncoming(chatForPeerUser(userId), id);
+				if (!_deletedMessages.contains(id)) {
+					addIncoming(chatForPeerUser(userId), id);
+				}
 			});
 	}
 
@@ -1122,9 +1124,13 @@ public:
 					return;
 				}
 				const auto id = result.value(u"result"_q).toInt();
-				CoreMessages.insert(id, QJsonObject{{ u"state"_q, 20 }});
+				if (!_deletedMessages.contains(id) && !CoreMessages.contains(id)) {
+					CoreMessages.insert(id, QJsonObject{{ u"state"_q, 20 }});
+				}
 				done(id, QString());
-				addIncoming(chatForPeerUser(userId), id);
+				if (!_deletedMessages.contains(id)) {
+					addIncoming(chatForPeerUser(userId), id);
+				}
 			});
 	}
 
@@ -3095,6 +3101,32 @@ public:
 
 };
 
+// Core events may arrive before the send reply. Keep the authoritative item,
+// or remove the pending item if Core has already confirmed its deletion.
+bool ApplySendResult(
+		not_null<Bridge*> bridge,
+		not_null<Main::Session*> session,
+		FullMsgId pendingId,
+		int id,
+		const QString &error) {
+	const auto local = session->data().message(pendingId);
+	if (!error.isEmpty() || id <= 0) {
+		if (local) local->sendFailed();
+		return false;
+	}
+	if (local && local->isSending()) {
+		const auto existing = session->data().message(pendingId.peer, MsgId(id));
+		if (bridge->_deletedMessages.contains(id) || existing) {
+			const auto history = local->history();
+			local->destroy();
+			history->requestChatListMessage();
+		} else {
+			local->setRealId(MsgId(id));
+		}
+	}
+	return true;
+}
+
 qint64 MessageMediaId(int messageId) {
 	return MediaIdentity(GlobalBridge ? GlobalBridge->_accountId : 0, messageId);
 }
@@ -3140,10 +3172,8 @@ void DeleteMessages(const QVector<int> &ids, bool revoke, Fn<void()> done) {
 	if (!bridge) return;
 	auto messages = QJsonArray();
 	for (const auto id : ids) messages.append(id);
-	bridge->accountRequest(
-		revoke ? u"delete_messages_for_all"_q : u"delete_messages"_q,
-		{ messages },
-		[=](QJsonValue, QString error) {
+	DeleteCoreMessages(bridge->_rpc, bridge->_accountScope,
+		bridge->_accountId, messages, revoke, [=](QString error) {
 			if (!error.isEmpty()) {
 				bridge->reportError(error);
 			} else {
@@ -3470,7 +3500,8 @@ bool SendItemText(
 		: int(replyId.bare);
 	const auto fullId = item->fullId();
 	const auto weak = base::make_weak(&item->history()->session());
-	GlobalBridge->sendText(
+	const auto bridge = GlobalBridge;
+	bridge->sendText(
 		userId,
 		text,
 		quotedId,
@@ -3482,22 +3513,8 @@ bool SendItemText(
 				}
 				return;
 			}
-			const auto local = session->data().message(fullId);
-			if (!error.isEmpty() || id <= 0) {
-				if (local) {
-					local->sendFailed();
-				}
-				if (done) {
-					done(false);
-				}
-				return;
-			}
-			if (local && local->isSending()) {
-				local->setRealId(MsgId(id));
-			}
-			if (done) {
-				done(true);
-			}
+			const auto success = ApplySendResult(bridge, session, fullId, id, error);
+			if (done) done(success);
 		});
 	return true;
 }
@@ -3577,7 +3594,8 @@ bool SendItemMedia(not_null<HistoryItem*> item, Fn<void(bool)> done) {
 		: int(replyId.bare);
 	const auto fullId = item->fullId();
 	const auto weak = base::make_weak(&item->history()->session());
-	GlobalBridge->sendFile(
+	const auto bridge = GlobalBridge;
+	bridge->sendFile(
 		userId,
 		path,
 		caption,
@@ -3591,22 +3609,8 @@ bool SendItemMedia(not_null<HistoryItem*> item, Fn<void(bool)> done) {
 				}
 				return;
 			}
-			const auto local = session->data().message(fullId);
-			if (!error.isEmpty() || id <= 0) {
-				if (local) {
-					local->sendFailed();
-				}
-				if (done) {
-					done(false);
-				}
-				return;
-			}
-			if (local && local->isSending()) {
-				local->setRealId(MsgId(id));
-			}
-			if (done) {
-				done(true);
-			}
+			const auto success = ApplySendResult(bridge, session, fullId, id, error);
+			if (done) done(success);
 		});
 	return true;
 }

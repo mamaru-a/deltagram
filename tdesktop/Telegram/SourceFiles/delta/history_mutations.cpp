@@ -12,6 +12,30 @@ QString Error(const QJsonObject &reply) {
 
 } // namespace
 
+void DeleteCoreMessages(
+		std::shared_ptr<DeltaRpc> rpc,
+		const AccountScope &scope,
+		int accountId,
+		const QJsonArray &ids,
+		bool revoke,
+		std::function<void(QString)> done) {
+	for (const auto &value : ids) {
+		const auto id = value.toInt();
+		if (id <= 0 || value.toDouble() != id) {
+			done(u"Invalid message ID for deletion."_s);
+			return;
+		}
+	}
+	if (ids.empty()) {
+		done({});
+		return;
+	}
+	rpc->call(revoke ? u"delete_messages_for_all"_s : u"delete_messages"_s,
+		{ accountId, QJsonValue(ids) }, scope.bind([=](QJsonObject reply) {
+			done(reply.contains(u"error"_s) ? Error(reply) : QString());
+		}));
+}
+
 void DeleteChatHistory(
 		std::shared_ptr<DeltaRpc> rpc,
 		const AccountScope &scope,
@@ -45,17 +69,17 @@ void DeleteChatHistory(
 		finish({});
 		return;
 	}
-	const auto erase = [=](QJsonArray values) {
+	const auto erase = [=, &scope](QJsonArray values) {
 		if (values.empty()) {
 			finish({});
 			return;
 		}
 		auto ids = QVector<int>();
 		for (const auto &value : values) ids.push_back(value.toInt());
-		request(revoke ? u"delete_messages_for_all"_s : u"delete_messages"_s,
-			{ accountId, values }, [=](QJsonObject deleted) {
-				if (deleted.contains(u"error"_s)) {
-					done({ {}, false, Error(deleted) });
+		DeleteCoreMessages(rpc, scope, accountId, values, revoke,
+			[=](QString error) {
+				if (!error.isEmpty()) {
+					done({ {}, false, std::move(error) });
 					return;
 				}
 				finish(ids);

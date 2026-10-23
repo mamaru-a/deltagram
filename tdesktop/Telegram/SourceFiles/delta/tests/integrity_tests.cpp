@@ -71,6 +71,20 @@ private slots:
 		const auto timestamp = original[u"timestamp"_s].toInteger();
 		QVERIFY(chat > 0);
 		Delta::AccountScope scope;
+		const auto selected = CoreCall(*rpc, u"add_device_message"_s,
+			{account, u"selected-delete"_s, QJsonObject{{u"text"_s, u"Selected deletion fixture"_s}}})[u"result"_s].toInt();
+		QVERIFY(selected > 0);
+		auto deleted = false;
+		Delta::DeleteCoreMessages(rpc, scope, account, QJsonArray{selected}, false,
+			[&](QString error) {
+				QVERIFY(error.isEmpty());
+				deleted = true;
+			});
+		QTRY_VERIFY(deleted);
+		const auto remaining = CoreCall(*rpc, u"get_message_ids"_s,
+			{account, chat, false, false})[u"result"_s].toArray();
+		QVERIFY(!remaining.contains(selected));
+		QVERIFY(remaining.contains(message));
 		auto cleared = false;
 		Delta::DeleteChatHistory(rpc, scope, account, chat, false, false,
 			[&](Delta::HistoryDeletionResult result) {

@@ -83,6 +83,24 @@ timestamp selection across batches, and actual Core deletion. The standalone
 suite passed sequentially against both Core versions, with one compiler job.
 These latest GUI paths await the next remote build and rendered checks.
 
+Further disposable checks reproduced an attachment identity collision: after
+viewing the alternate profile's four-second voice message, the primary profile's
+two-second message with the same Core ID displayed four seconds. The account-keyed
+cache fix still requires confirmation in the final artifact.
+
+A successful single-message deletion attempt exposed a JSON array construction
+bug: Core received a scalar message ID and rejected the request. Single/bulk and
+history deletion now share one account-scoped helper with an explicit nested ID
+array. The real-Core regression deletes one selected message while retaining its
+neighbor and passes against both Core versions.
+
+Delaying a send reply by 60 seconds, then deleting the accepted message through
+Core, left a ghost local bubble after the reply arrived although Core search was
+empty. Acknowledgements now remove pending items for confirmed deletions and
+reuse an existing authoritative Core item when its event arrived first, avoiding
+duplicate native IDs. They also preserve already-loaded delivery metadata.
+These native acknowledgement changes await compilation and GUI replay.
+
 The pinned Nix toolchain configured the full GUI locally, preserving its Ninja
 and ccache records. The RPC transport, draft store, bridge, welcome flow, call
 guards, peer handling and initial history-request changes compiled with its
