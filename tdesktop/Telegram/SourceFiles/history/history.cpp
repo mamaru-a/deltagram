@@ -3007,6 +3007,12 @@ bool History::isReadyFor(MsgId msgId) {
 			}
 		}
 		if (unreadCount() && _inboxReadBefore) {
+			if (Delta::Active()) {
+				// Core IDs are not chronological; check the actual unread anchor.
+				const auto anchor = owner().message(peer, *_inboxReadBefore);
+				return (anchor && anchor->history() == this && anchor->mainView())
+					|| (loadedAtTop() && loadedAtBottom());
+			}
 			if (!isEmpty()) {
 				return (loadedAtTop() || minMsgId() <= *_inboxReadBefore)
 					&& (loadedAtBottom() || maxMsgId() >= *_inboxReadBefore);
