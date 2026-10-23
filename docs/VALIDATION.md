@@ -140,6 +140,9 @@ download limit. The 25-case suite covers downloadable, complete, in-progress,
 undecipherable and unknown states, rejected reads/downloads, exact account/message
 parameters, and account cancellation. Both Core versions pass sequentially.
 Final GUI download and byte-integrity checks remain pending.
+Incoming refreshes also apply native file/video presentation after the fallback
+text adapter, so an empty attachment caption cannot become a filename placeholder
+after delivery or download events. Final GUI replay includes this update order.
 
 An immediate normal quit after typing a new disposable-chat draft preserved the
 complete text in Core and restored it in the old GUI composer. A runtime socket

@@ -2712,9 +2712,6 @@ private:
 							&& (media->type() == mtpc_messageMediaPhoto
 								|| media->type() == mtpc_messageMediaDocument);
 					}
-					if (existing) {
-						ApplyMessageData(existing);
-					}
 					if (existing && !hasPhoto) {
 						if (built.type() == mtpc_message && !existing->isService()) {
 							existing->setText(TextWithEntities{
@@ -2725,6 +2722,9 @@ private:
 							_session->data().updateDependentMessages(existing);
 							_session->data().requestItemViewRefresh(existing);
 						}
+						// Native file/video presentation owns its real caption. Apply
+						// it after the fallback text used by the donor text adapter.
+						ApplyMessageData(existing);
 						return;
 					}
 					_session->data().processUsers(MTP_vector<MTPUser>(
