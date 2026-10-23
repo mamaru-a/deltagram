@@ -4,6 +4,7 @@ This file is part of Delta Tel, a Telegram Desktop based Delta Chat client.
 #include "delta/delta_bridge.h"
 #include "delta/account_scope.h"
 #include "delta/message_order.h"
+#include "delta/message_visibility.h"
 #include "delta/media_identity.h"
 #include "delta/avatar_image.h"
 
@@ -1112,10 +1113,13 @@ public:
 		call(
 			u"send_reaction"_q,
 			{ _accountId, messageId, reactions },
-			[=](QJsonObject) {
+			[=](QJsonObject reply) {
 				if (guard.expired()) {
 					return;
 				}
+				if (HasError(reply)) reportError(ErrorText(reply));
+				const auto chatId = CoreMessages.value(messageId).value(u"chatId"_q).toInt();
+				if (chatId > 0 && _rpc->running()) addIncoming(chatId, messageId);
 			});
 	}
 
@@ -2709,53 +2713,63 @@ private:
 		const auto userId = peerUserForChat(chatId);
 		const auto peerId = peerFromUser(UserId(userId));
 		const auto guard = _alive;
-		fetchMessage(
-			msgId,
-			[=](QJsonObject one) {
-				if (guard.expired() || HasError(one)) {
-					return;
-				}
-				const auto data = one.value(u"result"_q).toObject();
-				if (data.value(u"state"_q).toInt() == 19) return;
-				const auto built = MessageFromJson(userId, data);
-				const auto existing = _session->data().message(peerId, MsgId(msgId));
-				if (existing && built.type() == mtpc_message) {
-					existing->updateReactions(built.c_message().vreactions());
-				}
-				auto hasPhoto = false;
-				if (built.type() == mtpc_message) {
-					const auto media = built.c_message().vmedia();
-					hasPhoto = media
-						&& (media->type() == mtpc_messageMediaPhoto
-							|| media->type() == mtpc_messageMediaDocument);
-				}
-				if (existing) {
-					ApplyMessageData(existing);
-				}
-				if (existing && !hasPhoto) {
-					if (built.type() == mtpc_message && !existing->isService()) {
-						existing->setText(TextWithEntities{
-							qs(built.c_message().vmessage()),
-						});
-						existing->invalidateChatListEntry();
-						_session->data().notifyItemDataChange(existing);
-						_session->data().updateDependentMessages(existing);
-						_session->data().requestItemViewRefresh(existing);
+		const auto load = [=] {
+			fetchMessage(
+				msgId,
+				[=](QJsonObject one) {
+					if (guard.expired() || HasError(one)) {
+						return;
 					}
-					return;
-				}
-				_session->data().processUsers(MTP_vector<MTPUser>(
-					QVector<MTPUser>{ MakeUser(
-						userId,
-						userId == kSelfUserId
-							? _selfName
-							: _names.value(chatId),
-						userId == kSelfUserId,
-						_avatars.value(chatId)) }));
-				_session->data().processMessages(
-					QVector<MTPMessage>{ built },
-					::NewMessageType::Unread);
-			});
+					const auto data = one.value(u"result"_q).toObject();
+					if (data.value(u"state"_q).toInt() == 19) return;
+					const auto built = MessageFromJson(userId, data);
+					const auto existing = _session->data().message(peerId, MsgId(msgId));
+					if (existing && built.type() == mtpc_message) {
+						existing->updateReactions(built.c_message().vreactions());
+					}
+					auto hasPhoto = false;
+					if (built.type() == mtpc_message) {
+						const auto media = built.c_message().vmedia();
+						hasPhoto = media
+							&& (media->type() == mtpc_messageMediaPhoto
+								|| media->type() == mtpc_messageMediaDocument);
+					}
+					if (existing) {
+						ApplyMessageData(existing);
+					}
+					if (existing && !hasPhoto) {
+						if (built.type() == mtpc_message && !existing->isService()) {
+							existing->setText(TextWithEntities{
+								qs(built.c_message().vmessage()),
+							});
+							existing->invalidateChatListEntry();
+							_session->data().notifyItemDataChange(existing);
+							_session->data().updateDependentMessages(existing);
+							_session->data().requestItemViewRefresh(existing);
+						}
+						return;
+					}
+					_session->data().processUsers(MTP_vector<MTPUser>(
+						QVector<MTPUser>{ MakeUser(
+							userId,
+							userId == kSelfUserId
+								? _selfName
+								: _names.value(chatId),
+							userId == kSelfUserId,
+							_avatars.value(chatId)) }));
+					_session->data().processMessages(
+						QVector<MTPMessage>{ built },
+						::NewMessageType::Unread);
+				});
+		};
+		if (_session->data().message(peerId, MsgId(msgId))) {
+			load();
+		} else {
+			CheckMessageVisibility(_rpc, _accountScope, _accountId, chatId, msgId,
+				[=](bool visible) {
+					if (visible && !_deletedMessages.contains(msgId)) load();
+				});
+		}
 	}
 
 	void loadDialogs() {

@@ -2,6 +2,7 @@
 #include "draft_store.h"
 #include "account_scope.h"
 #include "message_order.h"
+#include "message_visibility.h"
 #include "history_mutations.h"
 #include "media_identity.h"
 
@@ -37,6 +38,30 @@ class IntegrityTests final : public QObject {
 	Q_OBJECT
 
 private slots:
+	void eventsOnlyExposeVisibleHistory() {
+		for (const auto mode : {u"normal"_s, u"history-reject-list"_s}) {
+			auto rpc = std::make_shared<DeltaRpc>();
+			rpc->start(u"" RPC_FIXTURE_PATH ""_s, mode);
+			Delta::AccountScope scope;
+			auto completed = 0;
+			Delta::CheckMessageVisibility(rpc, scope, 1, 10, 80, [&](bool visible) {
+				QCOMPARE(visible, mode == u"normal"_s);
+				++completed;
+			});
+			Delta::CheckMessageVisibility(rpc, scope, 1, 10, 999, [&](bool visible) {
+				QVERIFY(!visible);
+				++completed;
+			});
+			QTRY_COMPARE(completed, 2);
+			Delta::CheckMessageVisibility(rpc, scope, 1, 10, 80, [&](bool) {
+				QFAIL("An old account event escaped cancellation");
+			});
+			scope.invalidate();
+			QVERIFY(CoreCall(*rpc, u"history_state"_s, {}).contains(u"result"_s));
+			rpc->stop();
+		}
+	}
+
 	void attachmentCacheIdentityIncludesAccount() {
 		const auto first = Delta::MediaIdentity(1, 12);
 		const auto second = Delta::MediaIdentity(2, 12);
@@ -275,6 +300,14 @@ private slots:
 			[u"result"_s].toObject()[u"state"_s].toInt(), 19);
 		const auto history = CoreCall(*rpc, u"get_message_ids"_s, {first, chatA, false, false})[u"result"_s].toArray();
 		QVERIFY(!history.contains(preview));
+		Delta::AccountScope visibilityScope;
+		auto checked = false;
+		Delta::CheckMessageVisibility(rpc, visibilityScope, first, chatA, preview,
+			[&](bool visible) {
+				QVERIFY(!visible);
+				checked = true;
+			});
+		QTRY_VERIFY(checked);
 		auto errors = 0;
 		Delta::DraftStore drafts(rpc, [&](QString) { ++errors; });
 		auto loaded = 0;

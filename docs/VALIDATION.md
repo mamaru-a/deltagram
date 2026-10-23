@@ -9,7 +9,7 @@ RPC failure handling. The first full remote GUI build passed at `4ddcae4`
 Later changes still require a full build and live regression checks; these
 results do not establish production readiness.
 
-Twenty-three Qt regression cases passed in Ubuntu 24.04 x86-64 with Qt 6.4.2,
+Twenty-four Qt regression cases passed in Ubuntu 24.04 x86-64 with Qt 6.4.2,
 including a real-Core two-account draft test against both Core 2.62.0 and the
 project's pinned 2.63.0-dev. The latter binary was extracted from the project's
 verified v0.2.5 release, whose Core source pin matches this checkout
@@ -108,6 +108,23 @@ forwarded flag to a generic native "Forwarded message" label, including screen
 reader text, without manufacturing a sender or original timestamp. The old
 synthetic forwarding header was removed. This presentation awaits final GUI
 validation; the delivered text and Core forwarded flag were verified live.
+
+A reaction sent through the Deltagram GUI reached the reference Desktop GUI,
+but the older Deltagram artifact also rendered Core's internal reaction message
+as a separate emoji bubble. Its ID was absent from Core's visible history.
+New event-driven items now require membership in that history; existing visible
+items refresh directly. The 24-case suite checks visible/hidden IDs, failed
+lookups, account cancellation, and a real Core draft excluded from history.
+Both Core versions pass. A rejected reaction removal also left the old GUI
+disagreeing with Core; reaction responses now surface errors and refresh the
+authoritative reaction state without retrying the mutation. Final GUI replay
+must verify both fixes.
+
+An immediate normal quit after typing a new disposable-chat draft preserved the
+complete text in Core and restored it in the old GUI composer. A runtime socket
+snapshot showed no GUI-owned TCP sockets and Core-owned IMAP connections. The
+donor session startup remains disabled in source. These checks are repeated on
+the final artifact; they do not replace the broader release gates.
 
 The pinned Nix toolchain configured the full GUI locally, preserving its Ninja
 and ccache records. The RPC transport, draft store, bridge, welcome flow, call
