@@ -50,6 +50,16 @@ GUIs, a read receipt (Core state 28 and the rendered double check), an incoming
 edit, and a quoted GUI reply received by the reference client. The primary
 profile's stored draft also restored after reopening its DM.
 
+The same GUI survived closing Connectivity before a delayed reply arrived.
+An edit whose reply was delayed 15 seconds remained in the primary account
+after switching to the alternate profile; the alternate account contained no
+matching edit and its UI retained its own chat list. Terminating the directly
+launched, CI-built Core 2.63.0-dev with Connectivity pending kept the GUI
+responsive, displayed "Messaging stopped. Restart Deltagram to reconnect.",
+and changed the status to "Not connected". The test confirmed that the Core
+process exited. An earlier harness attempt killed only the bundle launcher,
+leaving its Core child alive; that attempt is not counted as crash evidence.
+
 These checks exposed three presentation defects addressed after `ad04da9`:
 incoming edits did not invalidate the chat-list preview; ordinary downloaded
 files displayed only their caption; and retained quote text disappeared when
