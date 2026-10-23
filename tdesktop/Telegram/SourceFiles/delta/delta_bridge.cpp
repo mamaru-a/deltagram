@@ -2,6 +2,8 @@
 This file is part of Delta Tel, a Telegram Desktop based Delta Chat client.
 */
 #include "delta/delta_bridge.h"
+#include "delta/account_scope.h"
+#include "delta/message_order.h"
 #include "delta/avatar_image.h"
 
 #include "base/weak_ptr.h"
@@ -53,6 +55,7 @@ namespace Delta {
 namespace {
 
 constexpr auto kSelfUserId = 1'000'000;
+constexpr auto kContactUserIdBase = uint64(1) << 40;
 constexpr auto kPhotoIdBase = qint64(0x110000000);
 constexpr auto kDocumentIdBase = qint64(0x120000000);
 
@@ -83,6 +86,8 @@ QHash<int, PeerSubtitle> PeerSubtitles;
 QHash<int, QJsonObject> ChannelInfos;
 QHash<int, int> ChannelViews;
 QHash<int, QJsonObject> SharedContacts;
+QSet<int> GroupChats;
+QHash<uint64, ContactRow> SenderContacts;
 rpl::variable<int> ChannelRevision = 0;
 
 void RememberSubtitle(int userId, qint64 lastSeen, const QString &line) {
@@ -605,13 +610,14 @@ QHash<QString, QString> PendingUploads;
 		int peerUser,
 		int topMessage,
 		int unread,
+		int firstUnread,
 		bool pinned,
 		bool muted) {
 	auto flags = MTPDdialog::Flags(0);
 	if (pinned) {
 		flags |= MTPDdialog::Flag::f_pinned;
 	}
-	const auto readInbox = unread > 0 ? topMessage - unread : topMessage;
+	const auto readInbox = unread > 0 ? std::max(firstUnread - 1, 0) : topMessage;
 	return MTP_dialog(
 		MTP_flags(flags),
 		MTP_peerUser(MTP_long(peerUser)),
@@ -745,6 +751,9 @@ public:
 	, _accountId(accountId)
 	, _selfName(selfName) {
 		GlobalBridge = this;
+		_drafts = std::make_unique<DraftStore>(_rpc, [=](QString error) {
+			reportError(error);
+		});
 		_reload.setSingleShot(true);
 		_reload.setInterval(150);
 		QObject::connect(&_reload, &QTimer::timeout, [=] {
@@ -760,10 +769,41 @@ public:
 		}
 	}
 
-	void start() {
-		_rpc->setEventHandler([=](QJsonObject) {});
+	void call(const QString &method, const QJsonArray &params, DeltaRpc::Callback done) {
+		_rpc->call(method, params, _accountScope.bind([=](QJsonObject reply) {
+			if (done) done(std::move(reply));
+		}));
+	}
+
+	void reportError(const QString &error) {
+		for (const auto &window : _session->windows()) {
+			window->showToast(error);
+		}
+	}
+
+	void saveDraft(int userId, const QString &text, int quotedMessageId) {
+		const auto chatId = chatForPeerUser(userId);
+		if (chatId > 0) _drafts->save(_accountId, chatId, text, quotedMessageId);
+	}
+
+	void loadDraft(int userId, Fn<void(ComposeDraft)> done) {
 		const auto guard = _alive;
-		_rpc->call(
+		const auto epoch = _dialogsEpoch;
+		_drafts->load(_accountId, chatForPeerUser(userId), [=](ComposeDraft draft, QString error) {
+			if (guard.expired() || epoch != _dialogsEpoch || !error.isEmpty()) return;
+			done(std::move(draft));
+		});
+	}
+
+	void start() {
+		const auto guard = _alive;
+		_rpc->setEventHandler([=](QJsonObject event) {
+			if (!guard.expired() && HasError(event)) {
+				_connectivity = 1000;
+				reportError(u"Messaging stopped. Restart Deltagram to reconnect."_q);
+			}
+		});
+		call(
 			u"get_config"_q,
 			{ _accountId, u"configured_addr"_q },
 			[=](QJsonObject reply) {
@@ -781,7 +821,7 @@ public:
 		const auto guard = _alive;
 		const auto accountId = _accountId;
 		const auto revision = ++_selfAvatarRevision;
-		_rpc->call(
+		call(
 			u"get_account_info"_q,
 			{ accountId },
 			[=](QJsonObject reply) {
@@ -794,7 +834,7 @@ public:
 				_session->changes().peerUpdated(
 					_session->user(), Data::PeerUpdate::Flag::Photo);
 			});
-		_rpc->call(
+		call(
 			u"get_config"_q,
 			{ accountId, u"selfavatar"_q },
 			[=](QJsonObject reply) {
@@ -817,7 +857,7 @@ public:
 
 	void refreshConnectivity() {
 		const auto guard = _alive;
-		_rpc->call(
+		call(
 			u"get_connectivity"_q,
 			{ _accountId },
 			[=](QJsonObject reply) {
@@ -834,7 +874,7 @@ public:
 
 	void fetchUrl(const QString &url, Fn<void(QByteArray, QString)> done) {
 		const auto guard = _alive;
-		_rpc->call(
+		call(
 			u"get_http_response"_q,
 			{ _accountId, url },
 			[=](QJsonObject reply) {
@@ -855,7 +895,7 @@ public:
 
 	void fetchConnectivityHtml(Fn<void(QString)> done) {
 		const auto guard = _alive;
-		_rpc->call(
+		call(
 			u"get_connectivity_html"_q,
 			{ _accountId },
 			[=](QJsonObject reply) {
@@ -874,8 +914,10 @@ public:
 		const auto accountId = _accountId;
 		const auto tries = std::make_shared<int>(0);
 		const auto run = std::make_shared<Fn<void()>>();
+		const auto weakRun = std::weak_ptr<Fn<void()>>(run);
 		*run = [=] {
-			_rpc->call(
+			const auto continuation = weakRun.lock();
+			call(
 				u"get_message"_q,
 				{ accountId, msgId },
 				[=](QJsonObject one) {
@@ -903,12 +945,12 @@ public:
 						const auto limit = 8;
 						if ((image || voice || LooksLikeVideo(kind, mime, path)) && !ready && *tries < limit) {
 							++(*tries);
-							_rpc->call(
+							call(
 								u"download_full_message"_q,
 								{ _accountId, msgId },
 								[=](QJsonObject) {
 									if (!guard.expired()) {
-										(*run)();
+										if (continuation) (*continuation)();
 									}
 								});
 							return;
@@ -920,7 +962,7 @@ public:
 						&& (ChannelInfos.value(chatId).value(u"chatType"_q).toString() == u"OutBroadcast"_q
 							|| (data.value(u"fromId"_q).toInt() == 1
 								&& data.value(u"state"_q).toInt() >= 26))) {
-						_rpc->call(u"get_message_read_receipt_count"_q, { accountId, msgId }, [=](QJsonObject count) {
+						call(u"get_message_read_receipt_count"_q, { accountId, msgId }, [=](QJsonObject count) {
 							if (guard.expired() || epoch != _dialogsEpoch || _deletedMessages.contains(msgId)) return;
 							if (!HasError(count)) {
 								CoreReadReceipts.insert(msgId, count.value(u"result"_q).toInt());
@@ -993,15 +1035,22 @@ public:
 		if (!reader.ok()) {
 			return fail(instance, requestId, u"DELTA_BAD_REQUEST"_q);
 		}
-		const auto boxed = MTPmessages_AffectedMessages(
-			MTP_messages_affectedMessages(MTP_int(0), MTP_int(0)));
-		reply(instance, requestId, [=](mtpBuffer &to) {
-			boxed.write(to);
-		});
-		_rpc->call(
+		call(
 			revoke ? u"delete_messages_for_all"_q : u"delete_messages"_q,
 			{ _accountId, ids },
-			[](QJsonObject) {});
+			[=](QJsonObject result) {
+				if (HasError(result)) {
+					reportError(ErrorText(result));
+					return fail(instance, requestId, u"DELTA_DELETE_FAILED"_q);
+				}
+				for (const auto &id : ids) _deletedMessages.insert(id.toInt());
+				_reload.start();
+				const auto boxed = MTPmessages_AffectedMessages(
+					MTP_messages_affectedMessages(MTP_int(0), MTP_int(0)));
+				reply(instance, requestId, [=](mtpBuffer &to) {
+					boxed.write(to);
+				});
+			});
 	}
 
 	void sendText(
@@ -1018,7 +1067,7 @@ public:
 			data.insert(u"quotedMessageId"_q, quotedId);
 		}
 		const auto guard = _alive;
-		_rpc->call(
+		call(
 			u"send_msg"_q,
 			{ _accountId, chatForPeerUser(userId), data },
 			[=](QJsonObject result) {
@@ -1055,7 +1104,7 @@ public:
 			data.insert(u"viewtype"_q, viewType);
 		}
 		const auto guard = _alive;
-		_rpc->call(
+		call(
 			u"send_msg"_q,
 			{ _accountId, chatForPeerUser(userId), data },
 			[=](QJsonObject result) {
@@ -1078,7 +1127,7 @@ public:
 			return;
 		}
 		const auto guard = _alive;
-		_rpc->call(
+		call(
 			u"send_reaction"_q,
 			{ _accountId, messageId, reactions },
 			[=](QJsonObject) {
@@ -1092,7 +1141,7 @@ public:
 			Fn<void(QString, QString)> ready,
 			Fn<void(QString)> finished) {
 		const auto guard = _alive;
-		_rpc->call(
+		call(
 			u"provide_backup"_q,
 			{ _accountId },
 			[=](QJsonObject result) {
@@ -1100,7 +1149,7 @@ public:
 					finished(HasError(result) ? ErrorText(result) : QString());
 				}
 			});
-		_rpc->call(
+		call(
 			u"get_backup_qr"_q,
 			{ _accountId },
 			[=](QJsonObject result) {
@@ -1114,7 +1163,7 @@ public:
 					return;
 				}
 				const auto qr = result.value(u"result"_q).toString();
-				_rpc->call(
+				call(
 					u"create_qr_svg"_q,
 					{ qr },
 					[=](QJsonObject svg) {
@@ -1132,7 +1181,7 @@ public:
 
 	void listTransports(Fn<void(QJsonArray, QString)> done) {
 		const auto guard = _alive;
-		_rpc->call(
+		call(
 			u"list_transports"_q,
 			{ _accountId },
 			[=](QJsonObject reply) {
@@ -1147,7 +1196,7 @@ public:
 
 	void updateTransport(const QJsonObject &transport, Fn<void(QString)> done) {
 		const auto guard = _alive;
-		_rpc->call(
+		call(
 			u"add_or_update_transport"_q,
 			{ _accountId, transport },
 			[=](QJsonObject reply) {
@@ -1159,7 +1208,7 @@ public:
 
 	void deleteTransport(const QString &addr, Fn<void(QString)> done) {
 		const auto guard = _alive;
-		_rpc->call(
+		call(
 			u"delete_transport"_q,
 			{ _accountId, addr },
 			[=](QJsonObject reply) {
@@ -1176,7 +1225,7 @@ public:
 			Fn<void(QString)> done) {
 		const auto guard = _alive;
 		const auto id = self ? kSelfUserId : userId;
-		_rpc->call(
+		call(
 			u"set_chat_visibility"_q,
 			{
 				_accountId,
@@ -1192,7 +1241,7 @@ public:
 
 	void editMessageText(int messageId, const QString &text, Fn<void(QString)> done) {
 		const auto guard = _alive;
-		_rpc->call(
+		call(
 			u"send_edit_request"_q,
 			{ _accountId, messageId, text },
 			[=](QJsonObject reply) {
@@ -1204,7 +1253,7 @@ public:
 
 	void addTransportFromQr(const QString &qr, Fn<void(QString)> done) {
 		const auto guard = _alive;
-		_rpc->call(
+		call(
 			u"add_transport_from_qr"_q,
 			{ _accountId, qr },
 			[=](QJsonObject reply) {
@@ -1215,7 +1264,7 @@ public:
 	}
 
 	void stopSecondDevice() {
-		_rpc->call(
+		call(
 			u"stop_ongoing_process"_q,
 			{ _accountId },
 			[](QJsonObject) {});
@@ -1226,7 +1275,7 @@ public:
 		const auto accountId = _accountId;
 		const auto epoch = _dialogsEpoch;
 		++_selfAvatarRevision;
-		_rpc->call(
+		call(
 			u"set_config"_q,
 			{ accountId, u"selfavatar"_q, path },
 			[=](QJsonObject saved) {
@@ -1237,7 +1286,7 @@ public:
 					done(ErrorText(saved));
 					return;
 				}
-				_rpc->call(
+				call(
 					u"get_config"_q,
 					{ accountId, u"selfavatar"_q },
 					[=](QJsonObject reply) {
@@ -1271,7 +1320,7 @@ public:
 			? QJsonValue(chatForPeerUser(userId))
 			: QJsonValue(QJsonValue::Null);
 		const auto guard = _alive;
-		_rpc->call(
+		call(
 			u"search_messages"_q,
 			{ _accountId, query, chat },
 			[=](QJsonObject reply) {
@@ -1296,7 +1345,7 @@ public:
 	void loadInviteQr(
 			Fn<void(QString, QString, QString, QString)> done) {
 		const auto guard = _alive;
-		_rpc->call(
+		call(
 			u"get_chat_securejoin_qr_code"_q,
 			{ _accountId, QJsonValue::Null },
 			[=](QJsonObject reply) {
@@ -1308,7 +1357,7 @@ public:
 					return;
 				}
 				const auto text = reply.value(u"result"_q).toString();
-				_rpc->call(
+				call(
 					u"create_qr_svg"_q,
 					{ text },
 					[=](QJsonObject svg) {
@@ -1350,15 +1399,13 @@ public:
 			}
 			const auto wasCurrent = (accountId == _accountId);
 			const auto remove = [=] {
-				_ignoreEvents = true;
-				_rpc->call(
+				call(
 					u"remove_account"_q,
 					{ accountId },
 					[=](QJsonObject reply) {
 						if (guard.expired()) {
 							return;
 						}
-						_ignoreEvents = false;
 						if (done) {
 							done(HasError(reply) ? ErrorText(reply) : QString());
 						}
@@ -1397,7 +1444,7 @@ public:
 					order.append(id);
 				}
 			}
-			_rpc->call(
+			call(
 				u"set_accounts_order"_q,
 				QJsonArray{ QJsonValue(order) },
 				[=](QJsonObject reply) {
@@ -1410,7 +1457,7 @@ public:
 
 	void listProfiles(Fn<void(QJsonArray)> done) {
 		const auto guard = _alive;
-		_rpc->call(u"get_all_accounts"_q, {}, [=](QJsonObject reply) {
+		call(u"get_all_accounts"_q, {}, [=](QJsonObject reply) {
 			if (guard.expired()) {
 				return;
 			}
@@ -1427,12 +1474,14 @@ public:
 	}
 
 	void resetAccountView() {
-		++_dialogsEpoch;
 		// Detach the old account's chat and cancel its loading requests first.
 		for (const auto &window : _session->windows()) {
+			window->hideLayer(anim::type::instant);
 			window->clearSectionStack(Window::SectionShow(
 				Window::SectionShow::Way::ClearStack, anim::type::instant));
 		}
+		++_dialogsEpoch;
+		_accountScope.invalidate();
 		++_selfAvatarRevision;
 		_deletedMessages.clear();
 		_names.clear();
@@ -1445,8 +1494,15 @@ public:
 		ChannelInfos.clear();
 		ChannelViews.clear();
 		SharedContacts.clear();
+		GroupChats.clear();
+		SenderContacts.clear();
 		CoreMessages.clear();
 		CoreReadReceipts.clear();
+		PhotoFiles.clear();
+		DocumentFiles.clear();
+		AvatarFiles.clear();
+		AvatarPng.clear();
+		PendingUploads.clear();
 		ChannelRevision = ChannelRevision.current() + 1;
 		auto users = std::vector<not_null<PeerData*>>();
 		_session->data().enumerateUsers([&](not_null<UserData*> user) {
@@ -1454,6 +1510,11 @@ public:
 		});
 		for (const auto &user : users) {
 			_session->data().deleteConversationLocally(user);
+			if (const auto history = _session->data().historyLoaded(user)) {
+				const auto pending = history->clientSideMessages();
+				for (const auto item : pending) item->destroy();
+				history->clearDrafts();
+			}
 		}
 		// DeleteChat marks an empty history as fully loaded. Profile changes
 		// must leave these reused peers unloaded so opening them fetches Core.
@@ -1467,24 +1528,33 @@ public:
 	}
 
 	void switchProfile(int accountId, Fn<void(QString)> done) {
+		if (_switching) {
+			done(u"A profile switch is already in progress."_q);
+			return;
+		}
+		_switching = true;
 		const auto guard = _alive;
-		_rpc->call(u"select_account"_q, { accountId }, [=](QJsonObject selected) {
+		call(u"select_account"_q, { accountId }, [=](QJsonObject selected) {
 			if (guard.expired()) {
 				return;
 			}
 			if (HasError(selected)) {
+				_switching = false;
 				done(ErrorText(selected));
 				return;
 			}
-			_accountId = accountId;
 			resetAccountView();
+			_accountId = accountId;
+			GlobalSelfAddress.clear();
+			_connectivity = 0;
+			refreshConnectivity();
 			const auto epoch = _dialogsEpoch;
-			_rpc->call(u"start_io"_q, { accountId }, [=](QJsonObject) {});
 			struct Self {
 				QString name;
 				QString avatar;
 				QColor color;
-				int left = 3;
+				QString error;
+				int left = 5;
 			};
 			const auto self = std::make_shared<Self>();
 			const auto finish = [=] {
@@ -1497,32 +1567,45 @@ public:
 				GlobalSelfAvatarColor = self->color;
 				showSelfAvatar();
 				loadDialogs();
-				done(QString());
+				_switching = false;
+				done(self->error);
 			};
-			_rpc->call(
+			call(u"start_io"_q, { accountId }, [=](QJsonObject reply) {
+				if (HasError(reply)) self->error = ErrorText(reply);
+				finish();
+			});
+			call(u"get_config"_q, { accountId, u"configured_addr"_q }, [=](QJsonObject reply) {
+				if (HasError(reply)) self->error = ErrorText(reply);
+				else GlobalSelfAddress = reply.value(u"result"_q).toString();
+				finish();
+			});
+			call(
 				u"get_account_info"_q,
 				{ accountId },
 				[=](QJsonObject reply) {
-					if (!guard.expired() && !HasError(reply)) {
+					if (HasError(reply)) self->error = ErrorText(reply);
+					else {
 						self->color = QColor(reply.value(u"result"_q)
 							.toObject().value(u"color"_q).toString());
 					}
 					finish();
 				});
-			_rpc->call(
+			call(
 				u"get_config"_q,
 				{ accountId, u"displayname"_q },
 				[=](QJsonObject reply) {
-					if (!guard.expired() && !HasError(reply)) {
+					if (HasError(reply)) self->error = ErrorText(reply);
+					else {
 						self->name = reply.value(u"result"_q).toString();
 					}
 					finish();
 				});
-			_rpc->call(
+			call(
 				u"get_config"_q,
 				{ accountId, u"selfavatar"_q },
 				[=](QJsonObject reply) {
-					if (!guard.expired() && !HasError(reply)) {
+					if (HasError(reply)) self->error = ErrorText(reply);
+					else {
 						self->avatar = reply.value(u"result"_q).toString();
 					}
 					finish();
@@ -1532,7 +1615,7 @@ public:
 
 	void addProfile(const QString &name, Fn<void(QString)> done) {
 		const auto guard = _alive;
-		_rpc->call(u"add_account"_q, {}, [=](QJsonObject created) {
+		call(u"add_account"_q, {}, [=](QJsonObject created) {
 			if (guard.expired()) {
 				return;
 			}
@@ -1541,7 +1624,7 @@ public:
 				return;
 			}
 			const auto id = created.value(u"result"_q).toInt();
-			_rpc->call(
+			call(
 				u"set_config"_q,
 				{ id, u"displayname"_q, name },
 				[=](QJsonObject named) {
@@ -1552,7 +1635,7 @@ public:
 						done(ErrorText(named));
 						return;
 					}
-					_rpc->call(
+					call(
 						u"init_transports"_q,
 						{ id, QJsonValue() },
 						[=](QJsonObject ready) {
@@ -1577,7 +1660,7 @@ public:
 		const auto params = channel
 			? QJsonArray{ _accountId, name }
 			: QJsonArray{ _accountId, name, false };
-		_rpc->call(
+		call(
 			channel ? u"create_broadcast"_q : u"create_group_chat"_q,
 			params,
 			[=](QJsonObject reply) {
@@ -1603,7 +1686,7 @@ public:
 			Fn<void(QString)> done) {
 		const auto guard = _alive;
 		const auto accountId = _accountId;
-		_rpc->call(
+		call(
 			u"set_config"_q,
 			{ _accountId, key, value },
 			[=](QJsonObject reply) {
@@ -1622,7 +1705,7 @@ public:
 
 	void joinInviteQr(const QString &qr, Fn<void(QString)> done) {
 		const auto guard = _alive;
-		_rpc->call(
+		call(
 			u"check_qr"_q,
 			{ _accountId, qr },
 			[=](QJsonObject checked) {
@@ -1633,7 +1716,7 @@ public:
 					done(ErrorText(checked));
 					return;
 				}
-				_rpc->call(
+				call(
 					u"secure_join"_q,
 					{ _accountId, qr },
 					[=](QJsonObject joined) {
@@ -1650,7 +1733,7 @@ public:
 			const QString &email,
 			Fn<void(int, QString)> done) {
 		const auto guard = _alive;
-		_rpc->call(
+		call(
 			u"create_contact"_q,
 			{ _accountId, email, name.isEmpty() ? QJsonValue::Null : QJsonValue(name) },
 			[=](QJsonObject contact) {
@@ -1662,7 +1745,7 @@ public:
 					return;
 				}
 				const auto contactId = contact.value(u"result"_q).toInt();
-				_rpc->call(
+				call(
 					u"create_chat_by_contact_id"_q,
 					{ _accountId, contactId },
 					[=](QJsonObject chat) {
@@ -1687,7 +1770,7 @@ public:
 	void listContacts(Fn<void(std::vector<ContactRow>, QString)> done, bool addressOnly) {
 		const auto guard = _alive;
 		const auto epoch = _dialogsEpoch;
-		_rpc->call(
+		call(
 			u"get_contacts"_q,
 			{ _accountId, addressOnly ? 0x04 : 0x02, QJsonValue() },
 			[=](QJsonObject reply) {
@@ -1728,7 +1811,7 @@ public:
 	void openContact(const ContactRow &contact, Fn<void(int, QString)> done) {
 		const auto guard = _alive;
 		const auto epoch = _dialogsEpoch;
-		_rpc->call(u"create_chat_by_contact_id"_q, { _accountId, contact.id },
+		call(u"create_chat_by_contact_id"_q, { _accountId, contact.id },
 			[=](QJsonObject reply) {
 				if (guard.expired()) {
 					return;
@@ -1749,7 +1832,7 @@ public:
 	void shareContact(int contactId, int userId, Fn<void(QString)> done) {
 		const auto guard = _alive;
 		const auto epoch = _dialogsEpoch;
-		_rpc->call(u"make_vcard"_q, { _accountId, QJsonArray{ contactId } },
+		call(u"make_vcard"_q, { _accountId, QJsonArray{ contactId } },
 			[=](QJsonObject reply) {
 				if (guard.expired()) return;
 				if (epoch != _dialogsEpoch || HasError(reply)) {
@@ -1783,7 +1866,7 @@ public:
 		for (const auto &arg : args) params.append(arg);
 		const auto guard = _alive;
 		const auto epoch = _dialogsEpoch;
-		_rpc->call(method, params, [=](QJsonObject reply) {
+		call(method, params, [=](QJsonObject reply) {
 			if (guard.expired()) return;
 			if (epoch != _dialogsEpoch || HasError(reply)) {
 				done({}, HasError(reply) ? ErrorText(reply) : u"Account changed."_q);
@@ -1820,7 +1903,7 @@ public:
 		for (const auto &arg : args) params.append(arg);
 		const auto guard = _alive;
 		const auto epoch = _dialogsEpoch;
-		_rpc->call(method, params, [=](QJsonObject reply) {
+		call(method, params, [=](QJsonObject reply) {
 			if (guard.expired()) return;
 			if (epoch != _dialogsEpoch || HasError(reply)) {
 				done({}, HasError(reply) ? ErrorText(reply) : u"Account changed."_q);
@@ -1864,7 +1947,7 @@ public:
 			if (guard.expired()) return;
 			if (!error.isEmpty()) { done({}, {}, error); return; }
 			const auto text = value.toString();
-			_rpc->call(u"create_qr_svg"_q, { text }, [=](QJsonObject reply) {
+			call(u"create_qr_svg"_q, { text }, [=](QJsonObject reply) {
 				if (guard.expired()) return;
 				if (epoch != _dialogsEpoch || HasError(reply)) {
 					done({}, {}, HasError(reply) ? ErrorText(reply) : u"Account changed."_q);
@@ -1884,7 +1967,7 @@ public:
 			bool channel = false) {
 		const auto guard = _alive;
 		const auto epoch = _dialogsEpoch;
-		_rpc->call(
+		call(
 			channel ? u"create_broadcast"_q : u"create_group_chat"_q,
 			channel ? QJsonArray{ _accountId, name } : QJsonArray{ _accountId, name, false },
 			[=](QJsonObject reply) {
@@ -1954,7 +2037,7 @@ public:
 					}
 					const auto index = steps->index++;
 					const auto continuation = weakNext.lock();
-					_rpc->call(
+					call(
 						steps->methods[index],
 						steps->params[index],
 						[=](QJsonObject one) {
@@ -2265,7 +2348,7 @@ private:
 		const auto chatId = chatForPeerUser(userId);
 		const auto guard = _alive;
 		const auto epoch = _dialogsEpoch;
-		_rpc->call(
+		call(
 			u"get_message_ids"_q,
 			{ _accountId, chatId, false, false },
 			[=](QJsonObject reply) {
@@ -2282,18 +2365,14 @@ private:
 				for (const auto &value : reply.value(u"result"_q).toArray()) {
 					ids.push_back(value.toInt());
 				}
-				std::sort(ids.begin(), ids.end(), std::greater<int>());
-				auto start = 0;
-				if (offsetId > 0) {
-					start = int(std::find_if(
-						ids.begin(),
-						ids.end(),
-						[&](int id) { return id < offsetId; }) - ids.begin());
-				}
-				start = std::clamp(start + addOffset, 0, int(ids.size()));
-				const auto end = std::min(start + limit, int(ids.size()));
+				const auto page = HistoryPage(std::move(ids), offsetId, addOffset, limit);
+				if (!page) return fail(instance, requestId, u"DELTA_MESSAGE_NOT_FOUND"_q);
+				ids = *page;
+				const auto start = 0;
+				const auto end = int(ids.size());
 				struct State {
 					std::vector<MTPMessage> messages;
+					QString error;
 					int remaining = 0;
 				};
 				const auto state = std::make_shared<State>();
@@ -2301,6 +2380,10 @@ private:
 				state->remaining = count;
 				state->messages.resize(count);
 				const auto finish = [=] {
+					if (!state->error.isEmpty()) {
+						reportError(state->error);
+						return fail(instance, requestId, u"DELTA_HISTORY_FAILED"_q);
+					}
 					auto messages = QVector<MTPMessage>();
 					for (auto i = 0; i != count; ++i) {
 						if (!_deletedMessages.contains(ids[start + i])) {
@@ -2338,11 +2421,12 @@ private:
 							if (epoch != _dialogsEpoch) {
 								return fail(instance, requestId, u"DELTA_ACCOUNT_CHANGED"_q);
 							}
-							state->messages[i] = HasError(one)
-								? MakeMessage(ids[start + i], userId, false, QString(), 0)
-								: MessageFromJson(
-									userId,
-									one.value(u"result"_q).toObject());
+							if (HasError(one)) {
+								if (!_deletedMessages.contains(ids[start + i])) state->error = ErrorText(one);
+							} else {
+								state->messages[i] = MessageFromJson(
+									userId, one.value(u"result"_q).toObject());
+							}
 							if (--state->remaining == 0) {
 								finish();
 							}
@@ -2397,7 +2481,7 @@ private:
 			data.insert(u"quotedMessageId"_q, quotedId);
 		}
 		const auto guard = _alive;
-		_rpc->call(
+		call(
 			u"send_msg"_q,
 			{ _accountId, chatForPeerUser(userId), data },
 			[=](QJsonObject result) {
@@ -2462,7 +2546,7 @@ private:
 		}
 		const auto guard = _alive;
 		const auto chatId = chatForPeerUser(toUser);
-		_rpc->call(
+		call(
 			u"forward_messages"_q,
 			{ _accountId, ids, chatId },
 			[=](QJsonObject result) {
@@ -2472,67 +2556,22 @@ private:
 				if (HasError(result)) {
 					return fail(instance, requestId, ErrorText(result));
 				}
-				_rpc->call(
-					u"get_message_ids"_q,
-					{ _accountId, chatId, false, false },
-					[=](QJsonObject reply) {
-						if (guard.expired()) {
-							return;
-						}
-						auto fresh = std::vector<int>();
-						for (const auto &value : reply.value(u"result"_q).toArray()) {
-							fresh.push_back(value.toInt());
-						}
-						std::sort(fresh.begin(), fresh.end(), std::greater<int>());
-						if (int(fresh.size()) > ids.size()) {
-							fresh.resize(ids.size());
-						}
-						auto messages = std::make_shared<QVector<MTPMessage>>();
-						auto left = std::make_shared<int>(int(fresh.size()));
-						const auto finish = [=] {
-							for (const auto randomId : randomIds) {
-								const auto localId = _session->data().messageIdByRandomId(randomId);
-								if (const auto local = localId
-										? _session->data().message(localId)
-										: nullptr) {
-									local->destroy();
-								}
-								_session->data().unregisterMessageRandomId(randomId);
-							}
-							if (!messages->isEmpty()) {
-								_session->data().processMessages(
-									*messages,
-									NewMessageType::Unread);
-							}
-							const auto date = int(QDateTime::currentSecsSinceEpoch());
-							const auto boxed = MTPUpdates(MTP_updates(
-								MTP_vector<MTPUpdate>(),
-								MTP_vector<MTPUser>(),
-								MTP_vector<MTPChat>(),
-								MTP_int(date),
-								MTP_int(0)));
-							this->reply(instance, requestId, [=](mtpBuffer &to) {
-								boxed.write(to);
-							});
-						};
-						if (fresh.empty()) {
-							return finish();
-						}
-						for (const auto id : fresh) {
-							fetchMessage(id, [=](QJsonObject one) {
-								if (!guard.expired()) {
-									if (!HasError(one)) {
-										messages->push_back(MessageFromJson(
-											toUser,
-											one.value(u"result"_q).toObject()));
-									}
-									if (--(*left) == 0) {
-										finish();
-									}
-								}
-							});
-						}
-					});
+				for (const auto randomId : randomIds) {
+					const auto localId = _session->data().messageIdByRandomId(randomId);
+					if (const auto local = localId ? _session->data().message(localId) : nullptr) {
+						local->destroy();
+					}
+					_session->data().unregisterMessageRandomId(randomId);
+				}
+				// Core emits MsgsChanged with the actual forwarded message IDs.
+				_reload.start();
+				const auto boxed = MTPUpdates(MTP_updates(
+					MTP_vector<MTPUpdate>(),
+					MTP_vector<MTPUser>(),
+					MTP_vector<MTPChat>(),
+					MTP_int(int(QDateTime::currentSecsSinceEpoch())),
+					MTP_int(0)));
+				this->reply(instance, requestId, [=](mtpBuffer &to) { boxed.write(to); });
 			});
 	}
 
@@ -2549,7 +2588,7 @@ private:
 		const auto guard = _alive;
 		const auto accountId = _accountId;
 		const auto epoch = _dialogsEpoch;
-		_rpc->call(
+		call(
 			u"get_message_ids"_q,
 			{ accountId, chatId, false, false },
 			[=](QJsonObject reply) {
@@ -2559,27 +2598,40 @@ private:
 				if (epoch != _dialogsEpoch) {
 					return fail(instance, requestId, u"DELTA_ACCOUNT_CHANGED"_q);
 				}
+				if (HasError(reply)) {
+					reportError(ErrorText(reply));
+					return fail(instance, requestId, u"DELTA_READ_FAILED"_q);
+				}
 				auto seen = QJsonArray();
-				if (!HasError(reply)) {
-					for (const auto &value : reply.value(u"result"_q).toArray()) {
-						if (maxId <= 0 || value.toInt() <= maxId) {
-							seen.append(value);
-						}
+				auto found = (maxId <= 0);
+				for (const auto &value : reply.value(u"result"_q).toArray()) {
+					seen.append(value);
+					if (maxId > 0 && value.toInt() == maxId) {
+						found = true;
+						break;
 					}
 				}
-				_rpc->call(u"markseen_msgs"_q, { accountId, seen }, [=](QJsonObject) {
-					if (guard.expired() || epoch != _dialogsEpoch) {
-						return;
+				if (!found) return fail(instance, requestId, u"DELTA_MESSAGE_NOT_FOUND"_q);
+				call(u"markseen_msgs"_q, { accountId, seen }, [=](QJsonObject marked) {
+					if (HasError(marked)) {
+						reportError(ErrorText(marked));
+						return fail(instance, requestId, u"DELTA_READ_FAILED"_q);
 					}
-					_rpc->call(
-						u"marknoticed_chat"_q,
-						{ accountId, chatId },
-						[=](QJsonObject) {});
-				});
-				const auto boxed = MTPmessages_AffectedMessages(
-					MTP_messages_affectedMessages(MTP_int(0), MTP_int(0)));
-				this->reply(instance, requestId, [=](mtpBuffer &to) {
-					boxed.write(to);
+					for (const auto &value : seen) {
+						const auto i = CoreMessages.find(value.toInt());
+						if (i != CoreMessages.end() && i->value(u"fromId"_q).toInt() != 1) {
+							i->insert(u"state"_q, 16);
+						}
+					}
+					call(u"marknoticed_chat"_q, { accountId, chatId }, [=](QJsonObject noticed) {
+						if (HasError(noticed)) {
+							reportError(ErrorText(noticed));
+							return fail(instance, requestId, u"DELTA_READ_FAILED"_q);
+						}
+						const auto boxed = MTPmessages_AffectedMessages(
+							MTP_messages_affectedMessages(MTP_int(0), MTP_int(0)));
+						this->reply(instance, requestId, [=](mtpBuffer &to) { boxed.write(to); });
+					});
 				});
 			});
 	}
@@ -2596,6 +2648,8 @@ private:
 			}
 			_pumping = false;
 			if (HasError(reply)) {
+				_connectivity = 1000;
+				if (!_rpc->running()) return;
 				QTimer::singleShot(1000, [=] {
 					if (!guard.expired()) {
 						pump();
@@ -2611,9 +2665,6 @@ private:
 	void handleEvent(const QJsonObject &envelope) {
 		const auto event = envelope.value(u"event"_q).toObject();
 		const auto kind = event.value(u"kind"_q).toString();
-		if (_ignoreEvents) {
-			return;
-		}
 		const auto context = envelope.value(u"contextId"_q);
 		if (!context.isUndefined()
 			&& !context.isNull()
@@ -2696,6 +2747,13 @@ private:
 					ApplyMessageData(existing);
 				}
 				if (existing && !hasPhoto) {
+					if (built.type() == mtpc_message && !existing->isService()) {
+						existing->setText(TextWithEntities{
+							qs(built.c_message().vmessage()),
+						});
+						_session->data().notifyItemDataChange(existing);
+						_session->data().requestItemViewRefresh(existing);
+					}
 					return;
 				}
 				_session->data().processUsers(MTP_vector<MTPUser>(
@@ -2715,7 +2773,7 @@ private:
 	void loadDialogs() {
 		const auto guard = _alive;
 		const auto epoch = _dialogsEpoch;
-		_rpc->call(
+		call(
 			u"get_chatlist_entries"_q,
 			{ _accountId, QJsonValue::Null, QJsonValue::Null, QJsonValue::Null },
 			[=](QJsonObject reply) {
@@ -2725,7 +2783,7 @@ private:
 					return;
 				}
 				const auto ids = reply.value(u"result"_q).toArray();
-				_rpc->call(
+				call(
 					u"get_chatlist_items_by_entries"_q,
 					{ _accountId, ids },
 					[=](QJsonObject items) {
@@ -2744,6 +2802,7 @@ private:
 		QString name;
 		int lastMessageId = 0;
 		int fresh = 0;
+		int firstUnread = 0;
 		bool pinned = false;
 		bool muted = false;
 		bool selfTalk = false;
@@ -2777,6 +2836,8 @@ private:
 			entry.avatar = item.value(u"avatarPath"_q).toString();
 			entry.contactId = item.value(u"dmChatContact"_q).toInt();
 			const auto type = item.value(u"chatType"_q).toString();
+			if (type == u"Group"_q) GroupChats.insert(entry.chatId);
+			else GroupChats.remove(entry.chatId);
 			entry.channel = (type == u"OutBroadcast"_q || type == u"InBroadcast"_q);
 			if (entry.channel) {
 				auto &info = ChannelInfos[entry.chatId];
@@ -2803,13 +2864,29 @@ private:
 		const auto channelFetches = int(std::count_if(state->entries.begin(), state->entries.end(),
 			[](const Entry &entry) { return entry.channel; }));
 		ChannelRevision = ChannelRevision.current() + 1;
-		state->remaining = int(state->entries.size()) + contactFetches + channelFetches;
+		const auto unreadFetches = int(std::count_if(
+			state->entries.begin(), state->entries.end(),
+			[](const Entry &entry) { return entry.fresh > 0; }));
+		state->remaining = int(state->entries.size()) + contactFetches + channelFetches + unreadFetches;
 		if (!state->remaining) {
 			_session->data().chatsList()->setLoaded();
 			return;
 		}
 		const auto guard = _alive;
 		for (const auto &entry : state->entries) {
+			if (entry.fresh > 0) {
+				call(u"get_first_unread_message_of_chat"_q, { _accountId, entry.chatId },
+					[=, chatId = entry.chatId](QJsonObject one) {
+						if (HasError(one)) {
+							reportError(ErrorText(one));
+						} else {
+							for (auto &stored : state->entries) {
+								if (stored.chatId == chatId) stored.firstUnread = one.value(u"result"_q).toInt();
+							}
+						}
+						if (--state->remaining == 0) finishItems(state->entries, state->messages);
+					});
+			}
 			if (entry.channel) {
 				channelRequest(entry.chatId, u"get_full_chat_by_id"_q, {},
 					[=](QJsonValue, QString) {
@@ -2819,7 +2896,7 @@ private:
 			}
 			if (entry.contactId > 1) {
 				const auto userId = peerUserForChat(entry.chatId);
-				_rpc->call(
+				call(
 					u"get_contact"_q,
 					{ _accountId, entry.contactId },
 					[=](QJsonObject one) {
@@ -2912,6 +2989,7 @@ private:
 					userId,
 					entry.lastMessageId,
 					entry.fresh,
+					entry.firstUnread,
 					entry.pinned,
 					entry.muted));
 			}
@@ -2940,13 +3018,15 @@ public:
 
 	const not_null<Main::Session*> _session;
 	const std::shared_ptr<DeltaRpc> _rpc;
+	std::unique_ptr<DraftStore> _drafts;
 	int _accountId = 0;
 	QString _selfName;
 	QString _selfAvatar;
 	int _selfAvatarRevision = 0;
 	int _dialogsEpoch = 0;
+	AccountScope _accountScope;
 	QSet<int> _deletedMessages;
-	bool _ignoreEvents = false;
+	bool _switching = false;
 	const std::shared_ptr<bool> _aliveOwner = std::make_shared<bool>(true);
 	const std::weak_ptr<bool> _alive = _aliveOwner;
 	QHash<int, QString> _names;
@@ -2964,6 +3044,55 @@ bool Active() {
 	return GlobalBridge != nullptr;
 }
 
+int AccountGeneration() {
+	return GlobalBridge ? GlobalBridge->_dialogsEpoch : -1;
+}
+
+void SaveDraft(int userId, const QString &text, int quotedMessageId) {
+	if (GlobalBridge) GlobalBridge->saveDraft(userId, text, quotedMessageId);
+}
+
+void LoadDraft(int userId, Fn<void(ComposeDraft)> done) {
+	if (GlobalBridge) GlobalBridge->loadDraft(userId, std::move(done));
+}
+
+bool IsGroup(uint64 userId) {
+	return GroupChats.contains(int(userId));
+}
+
+std::optional<ContactRow> ContactForPeer(uint64 userId) {
+	const auto i = SenderContacts.constFind(userId);
+	return i == SenderContacts.cend() ? std::nullopt : std::make_optional(*i);
+}
+
+std::optional<bool> MessageUnread(int messageId) {
+	const auto i = CoreMessages.constFind(messageId);
+	if (i == CoreMessages.cend() || i->value(u"fromId"_q).toInt() <= 1) {
+		return std::nullopt;
+	}
+	const auto state = i->value(u"state"_q).toInt();
+	return state == 10 || state == 13;
+}
+
+void DeleteMessages(const QVector<int> &ids, bool revoke, Fn<void()> done) {
+	const auto bridge = GlobalBridge;
+	if (!bridge) return;
+	auto messages = QJsonArray();
+	for (const auto id : ids) messages.append(id);
+	bridge->accountRequest(
+		revoke ? u"delete_messages_for_all"_q : u"delete_messages"_q,
+		{ messages },
+		[=](QJsonValue, QString error) {
+			if (!error.isEmpty()) {
+				bridge->reportError(error);
+			} else {
+				for (const auto id : ids) bridge->_deletedMessages.insert(id);
+				bridge->_reload.start();
+				if (done) done();
+			}
+		});
+}
+
 std::optional<int> ChannelViewCount(int messageId) {
 	const auto found = ChannelViews.constFind(messageId);
 	return found == ChannelViews.cend() ? std::nullopt : std::optional<int>(found.value());
@@ -2977,7 +3106,7 @@ void MessageInfo(int messageId, Fn<void(QString, QString)> done) {
 	const auto bridge = GlobalBridge;
 	const auto guard = bridge->_alive;
 	const auto epoch = bridge->_dialogsEpoch;
-	bridge->_rpc->call(u"get_message_info"_q, { bridge->_accountId, messageId },
+	bridge->call(u"get_message_info"_q, { bridge->_accountId, messageId },
 		[=](QJsonObject reply) {
 			if (guard.expired() || epoch != bridge->_dialogsEpoch) return;
 			done(reply.value(u"result"_q).toString(), HasError(reply) ? ErrorText(reply) : QString());
@@ -2999,7 +3128,7 @@ void DeleteContact(int contactId, bool deleteChat, Fn<void(QString)> done) {
 	const auto valid = [=] { return !guard.expired() && epoch == bridge->_dialogsEpoch; };
 	const auto remove = [=] {
 		if (!valid()) return;
-		bridge->_rpc->call(u"delete_contact"_q, { bridge->_accountId, contactId }, [=](QJsonObject reply) {
+		bridge->call(u"delete_contact"_q, { bridge->_accountId, contactId }, [=](QJsonObject reply) {
 			if (!valid()) return;
 			bridge->_reload.start();
 			done(HasError(reply) ? ErrorText(reply) : QString());
@@ -3009,12 +3138,12 @@ void DeleteContact(int contactId, bool deleteChat, Fn<void(QString)> done) {
 		remove();
 		return;
 	}
-	bridge->_rpc->call(u"get_chat_id_by_contact_id"_q, { bridge->_accountId, contactId }, [=](QJsonObject reply) {
+	bridge->call(u"get_chat_id_by_contact_id"_q, { bridge->_accountId, contactId }, [=](QJsonObject reply) {
 		if (!valid()) return;
 		if (HasError(reply)) { done(ErrorText(reply)); return; }
 		const auto chatId = reply.value(u"result"_q).toInt();
 		if (!chatId) { remove(); return; }
-		bridge->_rpc->call(u"delete_chat"_q, { bridge->_accountId, chatId }, [=](QJsonObject reply) {
+		bridge->call(u"delete_chat"_q, { bridge->_accountId, chatId }, [=](QJsonObject reply) {
 			if (!valid()) return;
 			if (HasError(reply)) { done(ErrorText(reply)); return; }
 			if (const auto peer = bridge->_session->data().userLoaded(UserId(chatId))) {
@@ -3120,6 +3249,22 @@ void ApplyMessageData(not_null<HistoryItem*> item) {
 		return;
 	}
 	const auto data = CoreMessages.value(item->id.bare);
+	const auto fromId = data.value(u"fromId"_q).toInt();
+	if (fromId > 1 && !data.value(u"isInfo"_q).toBool()) {
+		const auto sender = data.value(u"sender"_q).toObject();
+		const auto peerId = kContactUserIdBase + uint64(fromId);
+		auto contact = ContactRow();
+		contact.id = fromId;
+		contact.name = sender.value(u"displayName"_q).toString();
+		contact.address = sender.value(u"address"_q).toString();
+		contact.avatar = sender.value(u"profileImage"_q).toString();
+		if (contact.name.isEmpty()) contact.name = contact.address;
+		if (contact.name.isEmpty()) contact.name = u"Unknown sender"_q;
+		SenderContacts.insert(peerId, contact);
+		const auto user = item->history()->owner().user(UserId(peerId));
+		user->setName(contact.name, QString(), QString(), QString());
+		item->setBackendSender(user);
+	}
 	const auto path = data.value(u"file"_q).toString();
 	const auto mime = data.value(u"fileMime"_q).toString();
 	if (const auto media = item->media()) {

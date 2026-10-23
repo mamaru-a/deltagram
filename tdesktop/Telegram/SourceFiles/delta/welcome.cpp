@@ -497,7 +497,9 @@ void DeltaOnboarding::call(
 		setStatus(u"Chatmail core is not running."_q);
 		return;
 	}
-	_rpc->call(method, params, std::move(done));
+	_rpc->call(method, params, crl::guard(this, [done = std::move(done)](QJsonObject reply) {
+		if (done) done(std::move(reply));
+	}));
 }
 
 void DeltaOnboarding::showWelcome() {

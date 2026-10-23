@@ -95,7 +95,7 @@ public:
 		not_null<History*> history,
 		Data::DraftKey key);
 	void writeDrafts(not_null<History*> history);
-	void readDraftsWithCursors(not_null<History*> history);
+	void readDraftsWithCursors(not_null<History*> history, Fn<void()> loaded = nullptr);
 	void writeDraftCursors(not_null<History*> history);
 	[[nodiscard]] bool hasDraftCursors(PeerId peerId);
 	[[nodiscard]] bool hasDraft(PeerId peerId);

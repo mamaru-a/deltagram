@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "data/data_histories.h"
+#include "delta/delta_bridge.h"
 
 #include "api/api_text_entities.h"
 #include "data/business/data_shortcut_messages.h"
@@ -256,6 +257,7 @@ void Histories::readInboxTill(
 		).arg(Logs::b(force)));
 
 	const auto syncGuard = gsl::finally([&] {
+		if (Delta::Active()) return;
 		DEBUG_LOG(("Reading: in guard, unread %1."
 			).arg(history->unreadCount()));
 		if (history->unreadCount() > 0) {
@@ -283,11 +285,15 @@ void Histories::readInboxTill(
 		return;
 	}
 	const auto maybeState = lookup(history);
-	if (maybeState && maybeState->sentReadTill >= tillId) {
+	if (maybeState && (Delta::Active()
+		? maybeState->sentReadTill == tillId
+		: maybeState->sentReadTill >= tillId)) {
 		DEBUG_LOG(("Reading: readInboxTill finish 3 with %1."
 			).arg(maybeState->sentReadTill.bare));
 		return;
-	} else if (maybeState && maybeState->willReadTill >= tillId) {
+	} else if (maybeState && (Delta::Active()
+		? maybeState->willReadTill == tillId
+		: maybeState->willReadTill >= tillId)) {
 		DEBUG_LOG(("Reading: readInboxTill finish 4 with %1 and force %2."
 			).arg(maybeState->sentReadTill.bare
 			).arg(Logs::b(force)));
@@ -479,7 +485,8 @@ void Histories::dialogEntryApplied(not_null<History*> history) {
 		}
 	}
 	if (state && state->sentReadTill && state->sentReadDone) {
-		history->setInboxReadTill(base::take(state->sentReadTill));
+		const auto till = base::take(state->sentReadTill);
+		if (!Delta::Active()) history->setInboxReadTill(till);
 		checkEmptyState(history);
 	}
 }
@@ -713,7 +720,7 @@ void Histories::sendReadRequests() {
 }
 
 void Histories::sendReadRequest(not_null<History*> history, State &state) {
-	Expects(state.willReadTill > state.sentReadTill);
+	Expects(Delta::Active() || state.willReadTill > state.sentReadTill);
 
 	const auto tillId = state.sentReadTill = base::take(state.willReadTill);
 	state.willReadWhen = 0;
@@ -735,7 +742,7 @@ void Histories::sendReadRequest(not_null<History*> history, State &state) {
 					state->sentReadTill = 0;
 				}
 			} else {
-				Assert(!state->sentReadTill || state->sentReadTill > tillId);
+				Assert(Delta::Active() || !state->sentReadTill || state->sentReadTill > tillId);
 			}
 			history->validateMonoAndForumUnread(tillId);
 			sendReadRequests();
@@ -940,6 +947,24 @@ void Histories::deleteMessagesByDates(
 }
 
 void Histories::deleteMessages(const MessageIdsList &ids, bool revoke) {
+	if (Delta::Active()) {
+		auto coreIds = QVector<int>();
+		for (const auto &id : ids) {
+			if (IsClientMsgId(id.msg)) {
+				if (const auto item = _owner->message(id)) item->destroy();
+			} else {
+				coreIds.push_back(int(id.msg.bare));
+			}
+		}
+		if (!coreIds.empty()) {
+			Delta::DeleteMessages(coreIds, revoke, [=] {
+				for (const auto &id : ids) {
+					if (const auto item = _owner->message(id)) item->destroy();
+				}
+			});
+		}
+		return;
+	}
 	auto remove = std::vector<not_null<HistoryItem*>>();
 	remove.reserve(ids.size());
 	base::flat_map<not_null<History*>, QVector<MTPint>> idsByPeer;

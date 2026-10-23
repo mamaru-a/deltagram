@@ -44,7 +44,7 @@ are not copied here. Deltagram evidence comes from [PROGRESS.md](PROGRESS.md),
 | Quotes and replies | 🟡 Partial | Core quote mapping corrected; complete create/display/jump behavior needs live conversation checks. |
 | Message editing, deletion and chat archiving | 🟡 Partial | Core paths exist; received-deletion regressions passed, but two-device UI behavior needs checking. |
 | Voice messages | 🟡 Partial | Native waveform, duration, play/pause and seeking are implemented; local attachment playback is verified. Microphone recording and live cross-client delivery still need broader testing. |
-| Multiple profiles | 🟡 Partial | Add/delete/order paths exist; replacing the complete chat list after switching remains unfinished. |
+| Multiple profiles | 🟡 Partial | Switching clears reused histories, drafts, pending messages and attachment caches. Core draft storage and asynchronous callbacks are scoped to the account. End-to-end switching with overlapping chat/message IDs still needs GUI validation. |
 | Profile and group photos | 🟡 Partial | Settings image selection/crop/save and account avatar colors checked locally with Core; group checks recorded. Complete camera workflows and live photo distribution need checking. |
 | Onboarding and relay settings | 🟡 Partial | Core transport configuration and backup restore paths exist; full live onboarding needs validation. |
 | Invite QR scanning | 🟡 Partial | Camera capture, QR image files and clipboard screenshots feed Core invites for an explicit Join. Image decoding is checked locally; physical camera capture needs hardware validation. |
@@ -75,6 +75,34 @@ They are **unverified**, rather than assumed to work because the donor UI has th
 | Message content | ❓ Unverified | Stickers, copying links and complete media rendering. |
 | Trust information | ❓ Unverified | Core-backed verification details and “verified by” presentation. |
 | Group duplication | ❓ Unverified | Cloning a group with correct Core membership semantics. |
+
+## Client integrity regressions (2026-10-23)
+
+The standalone `delta_integrity_tests` target exercises the production Qt RPC
+transport, account callback guard, Core draft adapter and history pagination.
+Fourteen cases pass in Ubuntu 24.04 x86-64 with Qt 6.4.2: reordered replies,
+event delivery, shutdown, failed startup, subprocess exit, malformed responses,
+timeouts without retrying mutations, restart framing, account isolation,
+draft attachment preservation, draft deletion, serialized draft writes, visible
+write failures, and Core-ordered pagination with non-monotonic IDs.
+`nix/test-rpc.sh` runs this suite before its real-Core smoke test.
+
+The GUI changes also wait for Core before removing messages, apply incoming
+text edits, retain actual group sender identity, use Core unread state, guard
+callbacks for closed dialogs, and stop the event loop when Core exits.
+Forwarding uses Core message events instead of guessing the created IDs.
+These paths require full-client regression checks; the standalone tests do not
+establish GUI behavior or live interoperability.
+
+Existing local draft files lack an account identity and are no longer loaded
+by the Delta client. They are retained on disk; new drafts persist through Core.
+
+Before release, record a full GUI build and exercise two disposable profiles
+with overlapping IDs: switch with an unsent draft and delayed edit, reject a
+deletion, receive an edit, open a group sender, paginate non-monotonic message
+IDs, close Connectivity while loading, and kill Core with requests pending.
+Then verify send/receive, edits, deletions and read receipts against another
+Delta Chat client using explicitly authorized test accounts.
 
 ## Updating this tracker
 

@@ -1430,6 +1430,10 @@ PRIVATE
     intro/intro_widget.h
     delta/delta_rpc.cpp
     delta/delta_rpc.h
+    delta/draft_store.cpp
+    delta/draft_store.h
+    delta/account_scope.h
+    delta/message_order.h
     delta/delta_boxes.cpp
     delta/delta_boxes.h
     delta/delta_bridge.cpp

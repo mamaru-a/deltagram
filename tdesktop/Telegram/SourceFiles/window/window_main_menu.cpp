@@ -779,7 +779,9 @@ void MainMenu::fillProfiles() {
 			row->setClickedCallback([=] {
 				const auto controller = _controller;
 				closeLayer();
-				Delta::SwitchProfile(id, [](QString) {});
+				Delta::SwitchProfile(id, crl::guard(controller, [=](QString error) {
+					if (!error.isEmpty()) controller->showToast(error);
+				}));
 			});
 			row->setMenuActions(
 				[=] {

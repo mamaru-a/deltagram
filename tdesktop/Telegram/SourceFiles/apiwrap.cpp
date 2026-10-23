@@ -2149,6 +2149,10 @@ void ApiWrap::sendNotifySettingsUpdates() {
 }
 
 void ApiWrap::saveDraftToCloudDelayed(not_null<Data::Thread*> thread) {
+	if (Delta::Active()) {
+		_session->local().writeDrafts(thread->owningHistory());
+		return;
+	}
 	if (ShouldSkipPlainDraftCloudSave(_session, thread)) {
 		return;
 	}

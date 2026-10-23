@@ -3410,7 +3410,10 @@ void HistoryWidget::showHistory(
 
 		handlePeerUpdate();
 
-		session().local().readDraftsWithCursors(_history);
+		const auto draftHistory = _history;
+		session().local().readDraftsWithCursors(_history, crl::guard(this, [=] {
+			if (_history == draftHistory && _field->empty() && !_editMsgId) applyDraft();
+		}));
 		if (!applyDraft()) {
 			clearFieldText();
 		}
@@ -5031,9 +5034,9 @@ void HistoryWidget::loadMessagesDown() {
 			Fn<void()> finish) {
 		return history->session().api().request(MTPmessages_GetHistory(
 			history->peer->input(),
-			MTP_int(offsetId + 1),
+			MTP_int(Delta::Active() ? offsetId : offsetId + 1),
 			MTP_int(offsetDate),
-			MTP_int(addOffset),
+			MTP_int(Delta::Active() ? addOffset - 1 : addOffset),
 			MTP_int(loadCount),
 			MTP_int(maxId),
 			MTP_int(minId),

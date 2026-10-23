@@ -387,11 +387,11 @@ void ConnectivityBox(not_null<Ui::GenericBox*> box) {
 		object_ptr<ConnectivityHtml>(box),
 		st::boxRowPadding);
 	const auto reload = [=] {
-		Delta::FetchConnectivityHtml([=](QString html) {
+		Delta::FetchConnectivityHtml(crl::guard(view, [=](QString html) {
 			view->setHtml(html.isEmpty()
 				? u"Connectivity is not available."_q
 				: html);
-		});
+		}));
 	};
 	reload();
 	Delta::Connectivity(

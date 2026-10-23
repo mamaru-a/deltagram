@@ -4,6 +4,7 @@ This file is part of Delta Tel, a Telegram Desktop based Delta Chat client.
 #pragma once
 
 #include "delta/delta_rpc.h"
+#include "delta/draft_store.h"
 #include "mtproto/core_types.h"
 #include "rpl/producer.h"
 
@@ -42,6 +43,9 @@ void StartSession(
 	const QString &displayName);
 
 [[nodiscard]] bool Active();
+[[nodiscard]] int AccountGeneration();
+void SaveDraft(int userId, const QString &text, int quotedMessageId);
+void LoadDraft(int userId, Fn<void(ComposeDraft)> done);
 enum class DeliveryState { Pending, Failed, Sent, Read };
 [[nodiscard]] std::optional<DeliveryState> MessageDelivery(int messageId);
 void ApplyMessageData(not_null<HistoryItem*> item);
@@ -51,6 +55,7 @@ void DeleteContact(int contactId, bool deleteChat, Fn<void(QString error)> done)
 [[nodiscard]] QJsonObject SharedContactData(int messageId);
 [[nodiscard]] std::optional<QString> StatusSubtitle(uint64 userId);
 [[nodiscard]] bool IsChannel(uint64 userId);
+[[nodiscard]] bool IsGroup(uint64 userId);
 [[nodiscard]] bool IsReadOnlyChannel(uint64 userId);
 [[nodiscard]] rpl::producer<bool> ChannelWriteAccess(uint64 userId);
 [[nodiscard]] rpl::producer<QString> ChannelStatusValue(uint64 userId);
@@ -91,6 +96,8 @@ void DeleteTransport(const QString &addr, Fn<void(QString error)> done);
 void AddTransportFromQr(const QString &qr, Fn<void(QString error)> done);
 
 void EditMessageText(int messageId, const QString &text, Fn<void(QString error)> done);
+void DeleteMessages(const QVector<int> &ids, bool revoke, Fn<void()> done);
+[[nodiscard]] std::optional<bool> MessageUnread(int messageId);
 
 void SetChatArchived(
 	bool self,
@@ -115,6 +122,7 @@ struct ContactRow {
 	QString avatar;
 	qint64 lastSeen = 0;
 };
+[[nodiscard]] std::optional<ContactRow> ContactForPeer(uint64 userId);
 
 void ListContacts(
 	Fn<void(std::vector<ContactRow> contacts, QString error)> done,
