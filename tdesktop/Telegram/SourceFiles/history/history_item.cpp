@@ -4432,7 +4432,10 @@ void HistoryItem::setAnonymousForwarded(bool forwarded) {
 	AddComponents(HistoryMessageForwarded::Bit());
 	const auto info = Get<HistoryMessageForwarded>();
 	info->anonymous = true;
-	info->originalHiddenSenderInfo = std::make_unique<HiddenSenderInfo>(QString(), false);
+	// The donor component requires a nonempty fallback name even when its
+	// anonymous presentation does not expose an original sender.
+	info->originalHiddenSenderInfo = std::make_unique<HiddenSenderInfo>(
+		tr::lng_forwarded_anonymous(tr::now), false);
 	_flags &= ~MessageFlag::DisplayFromChecked;
 }
 
