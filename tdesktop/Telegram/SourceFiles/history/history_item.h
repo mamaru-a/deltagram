@@ -254,6 +254,7 @@ public:
 	}
 	void refreshMainView();
 	void setLocalDocument(not_null<DocumentData*> document, const QString &caption);
+	void setAnonymousForwarded(bool forwarded);
 	void clearMainView();
 	void removeMainView(
 		Data::ViewRemovalReason reason = Data::ViewRemovalReason::Removed);

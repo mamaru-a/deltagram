@@ -3943,7 +3943,8 @@ const HiddenSenderInfo *HistoryItem::displayHiddenSenderInfo() const {
 bool HistoryItem::showForwardsFromSender(
 		not_null<const HistoryMessageForwarded*> forwarded) const {
 	const auto peer = history()->peer;
-	return !forwarded->story
+	return !forwarded->anonymous
+		&& !forwarded->story
 		&& (peer->isSelf()
 			|| peer->isRepliesChat()
 			|| peer->isVerifyCodes()
@@ -4414,6 +4415,25 @@ bool HistoryItem::needCheck() const {
 
 bool HistoryItem::isService() const {
 	return Has<HistoryServiceData>();
+}
+
+void HistoryItem::setAnonymousForwarded(bool forwarded) {
+	const auto existing = Get<HistoryMessageForwarded>();
+	if (!forwarded) {
+		if (existing && existing->anonymous) {
+			RemoveComponents(HistoryMessageForwarded::Bit());
+			_flags &= ~MessageFlag::DisplayFromChecked;
+		}
+		return;
+	} else if (existing && existing->anonymous) {
+		return;
+	}
+	if (existing) RemoveComponents(HistoryMessageForwarded::Bit());
+	AddComponents(HistoryMessageForwarded::Bit());
+	const auto info = Get<HistoryMessageForwarded>();
+	info->anonymous = true;
+	info->originalHiddenSenderInfo = std::make_unique<HiddenSenderInfo>(QString(), false);
+	_flags &= ~MessageFlag::DisplayFromChecked;
 }
 
 void HistoryItem::setLocalDocument(
@@ -4888,6 +4908,7 @@ ItemPreview HistoryItem::toPreview(ToPreviewOptions options) const {
 		? ItemPreview::Icon::ReplyToStory
 		: ItemPreview::Icon::None;
 	const auto fromForwarded = [&]() -> std::optional<QString> {
+		if (forwarded && forwarded->anonymous) return {};
 		if (forwarded) {
 			const auto sender = forwarded->forwardOfForward()
 				? forwarded->savedFromSender

@@ -79,7 +79,9 @@ QString MessageAccessibilityName(
 	}
 
 	if (const auto forwarded = item->Get<HistoryMessageForwarded>()) {
-		if (forwarded->originalSender) {
+		if (forwarded->anonymous) {
+			lines.push_back(tr::lng_forwarded_anonymous(tr::now));
+		} else if (forwarded->originalSender) {
 			lines.push_back(tr::lng_forwarded(
 				tr::now,
 				lt_user,
@@ -530,7 +532,9 @@ QString MessageSubItemValue(
 		return {};
 	case MessageSubItem::Forward:
 		if (const auto fwd = data->Get<HistoryMessageForwarded>()) {
-			if (fwd->originalSender) {
+			if (fwd->anonymous) {
+				return tr::lng_forwarded_anonymous(tr::now);
+			} else if (fwd->originalSender) {
 				return tr::lng_forwarded(
 					tr::now,
 					lt_user,

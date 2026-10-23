@@ -101,6 +101,14 @@ reuse an existing authoritative Core item when its event arrived first, avoiding
 duplicate native IDs. They also preserve already-loaded delivery metadata.
 These native acknowledgement changes await compilation and GUI replay.
 
+Forwarding a reference-client message through the GUI to Saved Messages created
+the correct Core message but falsely labeled it "Forwarded from Me". Core's
+forwarding API deliberately omits the original sender. The client now maps its
+forwarded flag to a generic native "Forwarded message" label, including screen
+reader text, without manufacturing a sender or original timestamp. The old
+synthetic forwarding header was removed. This presentation awaits final GUI
+validation; the delivered text and Core forwarded flag were verified live.
+
 The pinned Nix toolchain configured the full GUI locally, preserving its Ninja
 and ccache records. The RPC transport, draft store, bridge, welcome flow, call
 guards, peer handling and initial history-request changes compiled with its

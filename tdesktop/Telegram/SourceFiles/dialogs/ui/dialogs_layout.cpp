@@ -1300,7 +1300,7 @@ void RowPainter::Paint(
 		if (const auto searchChat = row->searchInChat()) {
 			if (const auto peer = searchChat.peer()) {
 				if (const auto forwarded = item->Get<HistoryMessageForwarded>()) {
-					if (peer->isSelf() || forwarded->imported) {
+					if (!forwarded->anonymous && (peer->isSelf() || forwarded->imported)) {
 						return forwarded->savedFromHiddenSenderInfo.get()
 							? forwarded->savedFromHiddenSenderInfo.get()
 							: forwarded->originalHiddenSenderInfo.get();

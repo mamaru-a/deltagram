@@ -285,6 +285,10 @@ bool HiddenSenderInfo::paintCustomUserpic(
 void HistoryMessageForwarded::create(
 		const HistoryMessageVia *via,
 		not_null<const HistoryItem*> item) const {
+	if (anonymous) {
+		text.setText(st::fwdTextStyle, tr::lng_forwarded_anonymous(tr::now));
+		return;
+	}
 	auto phrase = TextWithEntities();
 	auto context = Core::TextContext({
 		.session = &item->history()->session(),

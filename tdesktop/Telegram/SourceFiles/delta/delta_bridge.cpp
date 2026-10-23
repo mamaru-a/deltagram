@@ -371,7 +371,6 @@ QHash<QString, QString> PendingUploads;
 		const QString &text,
 		int date,
 		const MTPMessageMedia &media = MTP_messageMediaEmpty(),
-		const QString &forwardName = QString(),
 		const MTPMessageReactions &reactions = MTPMessageReactions(),
 		int replyId = 0,
 		const QString &quoteText = QString()) {
@@ -409,23 +408,6 @@ QHash<QString, QString> PendingUploads;
 			MTPint(),
 			MTPbytes());
 	}
-	auto forward = MTPMessageFwdHeader();
-	if (!forwardName.isEmpty()) {
-		flags |= MTPDmessage::Flag::f_fwd_from;
-		forward = MTP_messageFwdHeader(
-			MTP_flags(MTPDmessageFwdHeader::Flag::f_from_name),
-			MTPPeer(),
-			MTP_string(forwardName),
-			MTP_int(date),
-			MTPint(),
-			MTPstring(),
-			MTPPeer(),
-			MTPint(),
-			MTPPeer(),
-			MTPstring(),
-			MTPint(),
-			MTPstring());
-	}
 	return MTP_message(
 		MTP_flags(flags),
 		MTP_int(id),
@@ -434,7 +416,7 @@ QHash<QString, QString> PendingUploads;
 		MTPstring(), // from_rank
 		MTP_peerUser(MTP_long(peerUser)),
 		MTPPeer(), // saved_peer_id
-		forward,
+		MTPMessageFwdHeader(),
 		MTPlong(), // via_bot_id
 		MTPlong(), // via_business_bot_id
 		MTPPeer(), // guestchat_via_from
@@ -581,17 +563,6 @@ QHash<QString, QString> PendingUploads;
 			text = text.left(start).trimmed();
 		}
 	}
-	auto forwardName = QString();
-	if (data.value(u"isForwarded"_q).toBool()) {
-		forwardName = data.value(u"overrideSenderName"_q).toString();
-		if (forwardName.isEmpty()) {
-			forwardName = data.value(u"sender"_q).toObject()
-				.value(u"displayName"_q).toString();
-		}
-		if (forwardName.isEmpty()) {
-			forwardName = u"Forwarded"_q;
-		}
-	}
 	const auto quote = data.value(u"quote"_q).toObject();
 	const auto quoteText = quote.value(u"text"_q).toString();
 	// Core's parentId is email threading, not an explicit quote.
@@ -603,7 +574,6 @@ QHash<QString, QString> PendingUploads;
 		text,
 		date,
 		media,
-		forwardName,
 		ReactionsFromJson(data),
 		replyId,
 		quoteText);
@@ -3359,6 +3329,7 @@ void ApplyMessageData(not_null<HistoryItem*> item) {
 		return;
 	}
 	const auto data = CoreMessages.value(item->id.bare);
+	item->setAnonymousForwarded(data.value(u"isForwarded"_q).toBool());
 	const auto fromId = data.value(u"fromId"_q).toInt();
 	if (fromId > 1 && !data.value(u"isInfo"_q).toBool()) {
 		const auto sender = data.value(u"sender"_q).toObject();

@@ -3117,6 +3117,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_public_post_private_hint_cmd" = "Use Cmd+Click to copy a non-public link.";
 
 "lng_forwarded" = "Forwarded from {user}";
+"lng_forwarded_anonymous" = "Forwarded message";
 "lng_forwarded_story" = "Story from {user}";
 "lng_forwarded_story_expired" = "This story has expired.";
 "lng_forwarded_date" = "Original: {date}";
