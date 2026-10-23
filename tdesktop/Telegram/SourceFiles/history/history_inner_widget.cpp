@@ -3824,6 +3824,12 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 	const auto infoItem = _dragStateItem ? _dragStateItem : leaderOrSelf;
 	if (Delta::Active() && infoItem && infoItem->id.bare > 0 && isUponSelected <= 0) {
 		const auto infoId = infoItem->id.bare;
+		if (Delta::CanDownloadMessage(infoId)) {
+			const auto generation = Delta::AccountGeneration();
+			_menu->addAction(tr::lng_media_download(tr::now), crl::guard(controller, [=] {
+				if (generation == Delta::AccountGeneration()) Delta::DownloadMessage(infoId);
+			}), &st::menuIconDownload);
+		}
 		_menu->addAction(u"Info"_q, crl::guard(controller, [=] {
 			Delta::ShowMessageInfo(controller, infoId);
 		}), &st::menuIconInfo);

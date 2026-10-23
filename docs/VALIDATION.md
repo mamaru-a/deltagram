@@ -9,6 +9,16 @@ RPC failure handling. The first full remote GUI build passed at `4ddcae4`
 Later changes still require a full build and live regression checks; these
 results do not establish production readiness.
 
+The later full build at `b06680e` passed native compilation, 25 focused cases
+(27 including setup/cleanup), and portable/runtime/package verification
+([CI run](https://github.com/mamaru-a/deltagram/actions/runs/40035115951)).
+Downloaded GUI/Core checksums match. That GUI renders regular files natively
+and hides the chat-header call button. Replaying the partial attachment found
+that ordinary chats use a second context-menu implementation, which still
+lacked Download. Both menus now invoke the same guarded Core action. This
+follow-up and the later onboarding/search changes need a new native build;
+the preserved partial attachment remains available for final replay.
+
 The remote build at `ad04da9` failed compiling the bridge: the free history
 deletion entry point called a private peer-to-chat resolver. Deletion dispatch
 now stays inside the bridge, preserving the resolver's access boundary. The
