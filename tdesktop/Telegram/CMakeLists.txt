@@ -1432,6 +1432,8 @@ PRIVATE
     delta/delta_rpc.h
     delta/draft_store.cpp
     delta/draft_store.h
+    delta/history_mutations.cpp
+    delta/history_mutations.h
     delta/account_scope.h
     delta/message_order.h
     delta/delta_boxes.cpp

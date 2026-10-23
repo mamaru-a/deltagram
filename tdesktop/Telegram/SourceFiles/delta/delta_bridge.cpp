@@ -9,6 +9,7 @@ This file is part of Delta Tel, a Telegram Desktop based Delta Chat client.
 #include "base/weak_ptr.h"
 #include "core/file_location.h"
 #include "data/data_document.h"
+#include "data/data_drafts.h"
 #include "data/data_changes.h"
 #include "data/data_histories.h"
 #include "data/data_photo.h"
@@ -2735,6 +2736,7 @@ private:
 					return;
 				}
 				const auto data = one.value(u"result"_q).toObject();
+				if (data.value(u"state"_q).toInt() == 19) return;
 				const auto built = MessageFromJson(userId, data);
 				const auto existing = _session->data().message(peerId, MsgId(msgId));
 				if (existing && built.type() == mtpc_message) {
@@ -2813,6 +2815,8 @@ private:
 		QString avatar;
 		int contactId = 0;
 		bool channel = false;
+		QJsonObject draft;
+		bool previewFailed = false;
 	};
 
 	void applyItems(const QJsonArray &ids, const QJsonObject &map) {
@@ -2951,20 +2955,49 @@ private:
 				}
 				continue;
 			}
-			fetchMessage(
-				entry.lastMessageId,
+			const auto finishPreview = [=, chatId = entry.chatId](QJsonObject one) {
+				if (guard.expired() || epoch != _dialogsEpoch) return;
+				const auto failed = HasError(one);
+				if (failed) reportError(ErrorText(one));
+				const auto message = one.value(u"result"_q).toObject();
+				const auto id = (!failed && message.value(u"state"_q).toInt() != 19)
+					? message.value(u"id"_q).toInt() : 0;
+				for (auto &stored : state->entries) {
+					if (stored.chatId == chatId) {
+						stored.lastMessageId = id;
+						stored.previewFailed = failed;
+					}
+				}
+				if (id) {
+					state->messages.push_back(MessageFromJson(peerUserForChat(chatId), message));
+				}
+				if (--state->remaining == 0) finishItems(state->entries, state->messages);
+			};
+			fetchMessage(entry.lastMessageId,
 				[=, chatId = entry.chatId](QJsonObject one) {
 					if (guard.expired() || epoch != _dialogsEpoch) {
 						return;
 					}
-					if (!HasError(one)) {
-						state->messages.push_back(MessageFromJson(
-							peerUserForChat(chatId),
-							one.value(u"result"_q).toObject()));
+					const auto message = one.value(u"result"_q).toObject();
+					if (HasError(one) || message.value(u"state"_q).toInt() != 19) {
+						finishPreview(one);
+						return;
 					}
-					if (--state->remaining == 0) {
-						finishItems(state->entries, state->messages);
+					for (auto &stored : state->entries) {
+						if (stored.chatId == chatId) stored.draft = message;
 					}
+					// Core includes drafts in chat-list previews, but excludes them
+					// from history. Never use a draft ID as a pagination anchor.
+					call(u"get_message_ids"_q, { _accountId, chatId, false, false },
+						[=](QJsonObject history) {
+							if (HasError(history)) {
+								finishPreview(history);
+								return;
+							}
+							const auto ids = history.value(u"result"_q).toArray();
+							if (ids.empty()) finishPreview({});
+							else fetchMessage(ids.last().toInt(), finishPreview);
+						});
 				});
 		}
 	}
@@ -2980,6 +3013,7 @@ private:
 		}
 		users.push_back(selfUser());
 		for (const auto &entry : entries) {
+			if (entry.previewFailed) continue;
 			const auto userId = peerUserForChat(entry.chatId);
 			if (userId != kSelfUserId) {
 				users.push_back(MakeUser(
@@ -2988,23 +3022,36 @@ private:
 					false,
 					entry.avatar));
 			}
-			if (entry.lastMessageId) {
-				dialogs.push_back(MakeDialog(
-					userId,
-					entry.lastMessageId,
-					entry.fresh,
-					entry.firstUnread,
-					entry.pinned,
-					entry.muted));
-			}
+			dialogs.push_back(MakeDialog(
+				userId,
+				entry.lastMessageId,
+				entry.fresh,
+				entry.firstUnread,
+				entry.pinned,
+				entry.muted));
 		}
 		auto &owner = _session->data();
 		owner.processUsers(MTP_vector<MTPUser>(users));
 		showSelfAvatar();
 		owner.applyDialogs(nullptr, list, dialogs, int(dialogs.size()));
 		for (const auto &entry : entries) {
+			if (entry.previewFailed) continue;
 			const auto history = owner.history(
 				peerFromUser(UserId(peerUserForChat(entry.chatId))));
+			if (!entry.draft.isEmpty()) {
+				const auto quoted = entry.draft.value(u"quote"_q).toObject()
+					.value(u"messageId"_q).toInt();
+				auto draft = std::make_unique<Data::Draft>(
+					TextWithTags{ entry.draft.value(u"text"_q).toString() },
+					FullReplyTo{ .messageId = quoted > 0
+						? FullMsgId(history->peer->id, MsgId(quoted)) : FullMsgId() },
+					SuggestOptions(), MessageCursor(), Data::WebPageDraft());
+				draft->date = TimeId(entry.draft.value(u"timestamp"_q).toInteger());
+				history->setCloudDraft(std::move(draft));
+			} else {
+				history->clearCloudDraft({}, {});
+			}
+			history->updateChatListSortPosition();
 			if (!history->folderKnown()) {
 				history->clearFolder();
 			}
@@ -3095,6 +3142,25 @@ void DeleteMessages(const QVector<int> &ids, bool revoke, Fn<void()> done) {
 				if (done) done();
 			}
 		});
+}
+
+void DeleteHistory(
+		bool self,
+		int userId,
+		bool justClear,
+		bool revoke,
+		Fn<void(HistoryDeletionResult)> done,
+		std::optional<HistoryDateRange> dates) {
+	const auto bridge = GlobalBridge;
+	if (!bridge) return;
+	DeleteChatHistory(bridge->_rpc, bridge->_accountScope, bridge->_accountId,
+		bridge->chatForPeerUser(self ? kSelfUserId : userId),
+		!justClear && !self, revoke, [=](HistoryDeletionResult result) {
+			for (const auto id : result.deletedIds) bridge->_deletedMessages.insert(id);
+			bridge->_reload.start();
+			if (!result.error.isEmpty()) bridge->reportError(result.error);
+			if (done) done(std::move(result));
+		}, dates);
 }
 
 std::optional<int> ChannelViewCount(int messageId) {

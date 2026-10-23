@@ -92,6 +92,13 @@ text preserves the attachment bytes, and clearing the other draft persists.
 Set `DELTA_TEST_CORE_RPC` to run this case directly. `nix/test-rpc.sh` supplies
 the pinned server path so this case is required there.
 
+The suite now has 22 cases, passing sequentially against both Core versions.
+Added coverage includes acknowledged history/chat deletion, partial failures,
+account cancellation, timestamp-filtered deletion in batches, concurrent new
+messages, real-Core history deletion, and drafts appearing in chat-list previews
+but not in history. Clear-history UI paths now wait for Core confirmation.
+Draft preview IDs no longer become history anchors or sent-message bubbles.
+
 The GUI changes also wait for Core before removing messages, apply incoming
 text edits, retain actual group sender identity, use Core unread state, guard
 callbacks for closed dialogs, and stop the event loop when Core exits.
@@ -114,7 +121,11 @@ These checks used the RPC APIs; fixed Deltagram GUI behavior is a separate gate.
 Existing local draft files lack an account identity and are no longer loaded
 by the Delta client. They are retained on disk; new drafts persist through Core.
 
-Before release, record a full GUI build and exercise two disposable profiles
+The first full remote GUI build passed at `4ddcae4`. Its GUI displayed the
+actual group sender and restored the alternate profile's own draft. Later
+history/deletion changes still await a full build and rendered verification.
+
+Before release, build the final revision and exercise two disposable profiles
 with overlapping IDs: switch with an unsent draft and delayed edit, reject a
 deletion, receive an edit, open a group sender, paginate non-monotonic message
 IDs, close Connectivity while loading, and kill Core with requests pending.

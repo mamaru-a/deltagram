@@ -2,6 +2,7 @@
 #include "draft_store.h"
 #include "account_scope.h"
 #include "message_order.h"
+#include "history_mutations.h"
 
 #include <QtTest/QtTest>
 
@@ -35,6 +36,184 @@ class IntegrityTests final : public QObject {
 	Q_OBJECT
 
 private slots:
+	void realCoreHistoryDeletion() {
+		const auto program = qEnvironmentVariable("DELTA_TEST_CORE_RPC");
+		if (program.isEmpty()) QSKIP("Set DELTA_TEST_CORE_RPC to test the real Core server.");
+		QTemporaryDir temporary;
+		QVERIFY(temporary.isValid());
+		auto rpc = std::make_shared<DeltaRpc>();
+		rpc->start(program, temporary.filePath(u"accounts"_s));
+		const auto account = CoreCall(*rpc, u"add_account"_s, {})[u"result"_s].toInt();
+		QVERIFY(account > 0);
+		const auto message = CoreCall(*rpc, u"add_device_message"_s,
+			{account, u"history-test"_s, QJsonObject{{u"text"_s, u"Delete only this fixture"_s}}})[u"result"_s].toInt();
+		QVERIFY(message > 0);
+		const auto original = CoreCall(*rpc, u"get_message"_s, {account, message})
+			[u"result"_s].toObject();
+		const auto chat = original[u"chatId"_s].toInt();
+		const auto timestamp = original[u"timestamp"_s].toInteger();
+		QVERIFY(chat > 0);
+		Delta::AccountScope scope;
+		auto cleared = false;
+		Delta::DeleteChatHistory(rpc, scope, account, chat, false, false,
+			[&](Delta::HistoryDeletionResult result) {
+				QVERIFY(result.error.isEmpty());
+				QVERIFY(result.deletedIds.contains(message));
+				QVERIFY(!result.chatDeleted);
+				cleared = true;
+			}, Delta::HistoryDateRange{timestamp - 1, timestamp + 1});
+		QTRY_VERIFY(cleared);
+		const auto messages = CoreCall(*rpc, u"get_message_ids"_s, {account, chat, false, false});
+		QVERIFY(!messages.contains(u"error"_s));
+		QVERIFY(!messages[u"result"_s].toArray().contains(message));
+		cleared = false;
+		Delta::DeleteChatHistory(rpc, scope, account, chat, false, false,
+			[&](Delta::HistoryDeletionResult result) {
+				QVERIFY(result.error.isEmpty());
+				cleared = true;
+			});
+		QTRY_VERIFY(cleared);
+		QVERIFY(CoreCall(*rpc, u"get_message_ids"_s, {account, chat, false, false})
+			[u"result"_s].toArray().empty());
+		const auto group = CoreCall(*rpc, u"create_group_chat"_s,
+			{account, u"Disposable history test"_s, false})[u"result"_s].toInt();
+		QVERIFY(group > 0);
+		auto removed = false;
+		Delta::DeleteChatHistory(rpc, scope, account, group, true, false,
+			[&](Delta::HistoryDeletionResult result) {
+				QVERIFY(result.error.isEmpty());
+				QVERIFY(result.chatDeleted);
+				removed = true;
+			});
+		QTRY_VERIFY(removed);
+		QVERIFY(CoreCall(*rpc, u"get_full_chat_by_id"_s, {account, group}).contains(u"error"_s));
+		rpc->stop();
+	}
+
+	void historyDateDeletionUsesTimestampsAndBatches() {
+		for (const auto mode : {u"normal"_s, u"history-large"_s, u"history-bad-message"_s}) {
+			auto rpc = std::make_shared<DeltaRpc>();
+			rpc->start(u"" RPC_FIXTURE_PATH ""_s, mode);
+			Delta::AccountScope scope;
+			auto done = false;
+			const auto large = mode == u"history-large"_s;
+			Delta::DeleteChatHistory(rpc, scope, 1, 10, false, false,
+				[&](Delta::HistoryDeletionResult result) {
+					if (mode == u"history-bad-message"_s) {
+						QVERIFY(!result.error.isEmpty());
+						QVERIFY(result.deletedIds.empty());
+					} else {
+						QVERIFY(result.error.isEmpty());
+						QCOMPARE(result.deletedIds, large ? QVector<int>({101, 102, 103, 104}) : QVector<int>({12}));
+					}
+					QVERIFY(!result.chatDeleted);
+					done = true;
+				}, large ? Delta::HistoryDateRange{100, 105} : Delta::HistoryDateRange{150, 250});
+			QTRY_VERIFY(done);
+			const auto state = CoreCall(*rpc, u"history_state"_s, {})[u"result"_s].toObject();
+			if (mode == u"history-bad-message"_s) {
+				QVERIFY(!state[u"calls"_s].toArray().contains(u"delete_messages"_s));
+			} else if (large) {
+				auto batches = 0;
+				for (const auto &call : state[u"calls"_s].toArray()) {
+					if (call == u"get_messages"_s) ++batches;
+				}
+				QCOMPARE(batches, 3);
+			}
+			rpc->stop();
+		}
+	}
+
+	void clearsOnlyConfirmedSnapshot() {
+		auto rpc = std::make_shared<DeltaRpc>();
+		rpc->start(u"" RPC_FIXTURE_PATH ""_s, u"history-new-message"_s);
+		Delta::AccountScope scope;
+		auto done = false;
+		Delta::DeleteChatHistory(rpc, scope, 1, 10, false, false,
+			[&](Delta::HistoryDeletionResult result) {
+				QVERIFY(result.error.isEmpty());
+				QVERIFY(!result.chatDeleted);
+				QCOMPARE(result.deletedIds, QVector<int>({10, 80, 12}));
+				done = true;
+			});
+		QTRY_VERIFY(done);
+		const auto state = CoreCall(*rpc, u"history_state"_s, {})[u"result"_s].toObject();
+		QCOMPARE(state[u"ids"_s].toArray(), QJsonArray{999});
+		QCOMPARE(state[u"calls"_s].toArray(), (QJsonArray{u"get_message_ids"_s, u"delete_messages"_s}));
+		rpc->stop();
+	}
+
+	void rejectedHistoryDeletionStopsBeforeRemovingChat() {
+		for (const auto mode : {u"history-reject-list"_s, u"history-reject-delete"_s}) {
+			auto rpc = std::make_shared<DeltaRpc>();
+			rpc->start(u"" RPC_FIXTURE_PATH ""_s, mode);
+			Delta::AccountScope scope;
+			auto done = false;
+			Delta::DeleteChatHistory(rpc, scope, 1, 10, true, true,
+				[&](Delta::HistoryDeletionResult result) {
+					QCOMPARE(result.error, u"deletion rejected"_s);
+					QVERIFY(result.deletedIds.empty());
+					QVERIFY(!result.chatDeleted);
+					done = true;
+				});
+			QTRY_VERIFY(done);
+			const auto state = CoreCall(*rpc, u"history_state"_s, {})[u"result"_s].toObject();
+			QCOMPARE(state[u"ids"_s].toArray(), (QJsonArray{10, 80, 12}));
+			QVERIFY(!state[u"calls"_s].toArray().contains(u"delete_chat"_s));
+			rpc->stop();
+		}
+	}
+
+	void reportsPartialHistoryDeletion() {
+		auto rpc = std::make_shared<DeltaRpc>();
+		rpc->start(u"" RPC_FIXTURE_PATH ""_s, u"history-reject-chat"_s);
+		Delta::AccountScope scope;
+		auto done = false;
+		Delta::DeleteChatHistory(rpc, scope, 1, 10, true, true,
+			[&](Delta::HistoryDeletionResult result) {
+				QCOMPARE(result.error, u"deletion rejected"_s);
+				QVERIFY(!result.chatDeleted);
+				QCOMPARE(result.deletedIds, QVector<int>({10, 80, 12}));
+				done = true;
+			});
+		QTRY_VERIFY(done);
+		rpc->stop();
+	}
+
+	void deletesChatWithoutRevokingMessages() {
+		auto rpc = std::make_shared<DeltaRpc>();
+		rpc->start(u"" RPC_FIXTURE_PATH ""_s, u"normal"_s);
+		Delta::AccountScope scope;
+		auto done = false;
+		Delta::DeleteChatHistory(rpc, scope, 1, 10, true, false,
+			[&](Delta::HistoryDeletionResult result) {
+				QVERIFY(result.error.isEmpty());
+				QVERIFY(result.chatDeleted);
+				done = true;
+			});
+		QTRY_VERIFY(done);
+		const auto state = CoreCall(*rpc, u"history_state"_s, {})[u"result"_s].toObject();
+		QCOMPARE(state[u"calls"_s].toArray(), (QJsonArray{u"delete_chat"_s}));
+		rpc->stop();
+	}
+
+	void accountSwitchCancelsRemainingDeletionSteps() {
+		auto rpc = std::make_shared<DeltaRpc>();
+		rpc->start(u"" RPC_FIXTURE_PATH ""_s, u"history-hold-delete"_s);
+		Delta::AccountScope scope;
+		auto done = false;
+		Delta::DeleteChatHistory(rpc, scope, 1, 10, true, true,
+			[&](Delta::HistoryDeletionResult) { done = true; });
+		QTRY_VERIFY(CoreCall(*rpc, u"history_state"_s, {})[u"result"_s].toObject()
+			[u"calls"_s].toArray().contains(u"delete_messages_for_all"_s));
+		scope.invalidate();
+		CoreCall(*rpc, u"release"_s, {});
+		const auto state = CoreCall(*rpc, u"history_state"_s, {})[u"result"_s].toObject();
+		QVERIFY(!state[u"calls"_s].toArray().contains(u"delete_chat"_s));
+		QVERIFY(!done);
+		rpc->stop();
+	}
+
 	void realCoreDraftRoundTrip() {
 		const auto program = qEnvironmentVariable("DELTA_TEST_CORE_RPC");
 		if (program.isEmpty()) QSKIP("Set DELTA_TEST_CORE_RPC to test the real Core server.");
@@ -57,6 +236,14 @@ private slots:
 			{first, chatA, u"first original"_s, attachment.fileName(), u"attachment.txt"_s, QJsonValue(), u"File"_s}).contains(u"error"_s));
 		QVERIFY(!CoreCall(*rpc, u"misc_set_draft"_s,
 			{second, chatB, u"second original"_s, QJsonValue(), QJsonValue(), QJsonValue(), QJsonValue()}).contains(u"error"_s));
+		const auto items = CoreCall(*rpc, u"get_chatlist_items_by_entries"_s,
+			{first, QJsonArray{chatA}})[u"result"_s].toObject();
+		const auto preview = items[QString::number(chatA)].toObject()[u"lastMessageId"_s].toInt();
+		QVERIFY(preview > 0);
+		QCOMPARE(CoreCall(*rpc, u"get_message"_s, {first, preview})
+			[u"result"_s].toObject()[u"state"_s].toInt(), 19);
+		const auto history = CoreCall(*rpc, u"get_message_ids"_s, {first, chatA, false, false})[u"result"_s].toArray();
+		QVERIFY(!history.contains(preview));
 		auto errors = 0;
 		Delta::DraftStore drafts(rpc, [&](QString) { ++errors; });
 		auto loaded = 0;

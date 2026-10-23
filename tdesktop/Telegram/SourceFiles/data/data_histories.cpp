@@ -946,6 +946,25 @@ void Histories::deleteMessagesByDates(
 	TimeId minDate,
 	TimeId maxDate,
 	bool revoke) {
+	if (Delta::Active()) {
+		if (history->latestSendingMessage()) {
+			for (const auto &window : session().windows()) {
+				window->showToast(
+					u"Wait for sending to finish before deleting this chat's history."_q);
+			}
+			return;
+		}
+		Delta::DeleteHistory(history->peer->isSelf(), int(history->peer->id.value),
+			true, revoke, [=](Delta::HistoryDeletionResult result) {
+				for (const auto id : result.deletedIds) {
+					if (const auto item = _owner->message(history->peer, MsgId(id))) {
+						_owner->destroyMessageWithCacheCleanup(item);
+					}
+				}
+				_owner->sendHistoryChangeNotifications();
+			}, Delta::HistoryDateRange{ minDate, maxDate });
+		return;
+	}
 	sendRequest(history, RequestType::Delete, [=](Fn<void()> finish) {
 		const auto peer = history->peer;
 		using Flag = MTPmessages_DeleteHistory::Flag;

@@ -2217,6 +2217,10 @@ void ApiWrap::clearHistory(not_null<PeerData*> peer, bool revoke) {
 }
 
 void ApiWrap::deleteConversation(not_null<PeerData*> peer, bool revoke) {
+	if (Delta::Active()) {
+		deleteHistory(peer, false, revoke);
+		return;
+	}
 	if (const auto chat = peer->asChat()) {
 		request(MTPmessages_DeleteChatUser(
 			MTP_flags(0),
@@ -2247,6 +2251,28 @@ void ApiWrap::deleteHistory(
 		int retries) {
 	auto deleteTillId = MsgId(0);
 	const auto history = _session->data().history(peer);
+	if (Delta::Active()) {
+		if (history->latestSendingMessage()) {
+			for (const auto &window : _session->windows()) {
+				window->showToast(
+					u"Wait for sending to finish before deleting this chat's history."_q);
+			}
+			return;
+		}
+		Delta::DeleteHistory(peer->isSelf(), int(peer->id.value), justClear, revoke,
+			[=](Delta::HistoryDeletionResult result) {
+				for (const auto id : result.deletedIds) {
+					if (const auto item = _session->data().message(peer, MsgId(id))) {
+						_session->data().destroyMessageWithCacheCleanup(item);
+					}
+				}
+				if (result.chatDeleted) {
+					_session->data().deleteConversationLocally(peer);
+				}
+				_session->data().sendHistoryChangeNotifications();
+			});
+		return;
+	}
 	if (justClear) {
 		// In case of clear history we need to know the last server message.
 		while (history->lastMessageKnown()) {

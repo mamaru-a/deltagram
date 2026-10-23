@@ -4,10 +4,12 @@
 
 The integrity branch adds account-scoped drafts and callbacks, Core-ordered
 pagination and unread handling, sender identity, confirmed deletion and bounded
-RPC failure handling. The full fixed GUI build and its live regression checks
-are still pending; these results do not establish production readiness.
+RPC failure handling. The first full remote GUI build passed at `4ddcae4`
+([CI run](https://github.com/mamaru-a/deltagram/actions/runs/40013044075)).
+Later changes still require a full build and live regression checks; these
+results do not establish production readiness.
 
-Fifteen Qt regression cases passed in Ubuntu 24.04 x86-64 with Qt 6.4.2,
+Twenty-two Qt regression cases passed in Ubuntu 24.04 x86-64 with Qt 6.4.2,
 including a real-Core two-account draft test against both Core 2.62.0 and the
 project's pinned 2.63.0-dev. The latter binary was extracted from the project's
 verified v0.2.5 release, whose Core source pin matches this checkout
@@ -33,11 +35,27 @@ profile's composer despite its distinct Core draft. These provide before-fix
 evidence for the corresponding changes. The reference Desktop client also sent
 a UI message for the subsequent fixed-GUI receive check.
 
+The checksum-verified `4ddcae4` GUI (development version 0.2.1) displayed the
+correct incoming group sender label and restored the alternate profile's own
+Core draft. It also exposed another defect: Core's chat-list preview can be a
+draft, whose ID is absent from message history. Using that ID as the history
+anchor displayed an unsent draft as a bubble and hid existing messages. The
+bridge now separates draft presentation from the last real history message;
+the real-Core regression verifies this preview/history contract.
+
+Clear history, delete chat and date-range deletion now use Core RPCs and apply
+only confirmed removals. Added regression cases cover rejected reads/deletes,
+partial success, messages arriving after the snapshot, account switches,
+timestamp selection across batches, and actual Core deletion. The standalone
+suite passed sequentially against both Core versions, with one compiler job.
+These latest GUI paths await the next remote build and rendered checks.
+
 The pinned Nix toolchain configured the full GUI locally, preserving its Ninja
 and ccache records. The RPC transport, draft store, bridge, welcome flow, call
 guards, peer handling and initial history-request changes compiled with its
 release flags. Remaining local compilation was stopped to avoid laptop resource
-pressure; later pending-send and unread-anchor changes await native CI. Heavy
+pressure; later pending-send, unread-anchor, history-deletion and draft-preview
+changes await native CI. Heavy
 builds now run remotely. No new production release has been published.
 
 ## Initial publication — 2026-10-05

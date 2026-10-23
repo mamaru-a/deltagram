@@ -21,7 +21,13 @@ int main(int argc, char **argv) {
 	auto drafts = QMap<QString, QJsonObject>();
 	auto held = std::optional<QJsonObject>();
 	auto writes = 0;
+	auto historyIds = QJsonArray{10, 80, 12};
+	auto historyCalls = QJsonArray();
 	const auto mode = qEnvironmentVariable("DC_ACCOUNTS_PATH");
+	if (mode == u"history-large"_s) {
+		historyIds = {};
+		for (auto id = 1; id <= 205; ++id) historyIds.append(id);
+	}
 	for (std::string line; std::getline(std::cin, line);) {
 		const auto request = QJsonDocument::fromJson(QByteArray::fromStdString(line)).object();
 		const auto method = request[u"method"_s].toString();
@@ -47,6 +53,54 @@ int main(int argc, char **argv) {
 			continue;
 		}
 		if (method == u"writes"_s) { Reply(request, writes); continue; }
+		if (method == u"history_state"_s) {
+			Reply(request, QJsonObject{{u"ids"_s, historyIds}, {u"calls"_s, historyCalls}});
+			continue;
+		}
+		if (method == u"get_messages"_s) {
+			historyCalls.append(method);
+			auto messages = QJsonObject();
+			for (const auto &value : args[1].toArray()) {
+				const auto id = value.toInt();
+				messages.insert(QString::number(id), QJsonObject{
+					{u"kind"_s, mode == u"history-bad-message"_s ? u"loadingError"_s : u"message"_s},
+					{u"timestamp"_s, mode == u"history-large"_s ? id : id == 10 ? 100 : id == 80 ? 300 : 200},
+				});
+			}
+			Reply(request, messages);
+			continue;
+		}
+		if (method == u"get_message_ids"_s || method == u"delete_messages"_s
+			|| method == u"delete_messages_for_all"_s || method == u"delete_chat"_s) {
+			historyCalls.append(method);
+			const auto reject = (mode == u"history-reject-list"_s && method == u"get_message_ids"_s)
+				|| (mode == u"history-reject-delete"_s && method == u"delete_messages_for_all"_s)
+				|| (mode == u"history-reject-chat"_s && method == u"delete_chat"_s);
+			if (reject) {
+				std::cout << QJsonDocument(QJsonObject{
+					{u"id"_s, request[u"id"_s]},
+					{u"error"_s, QJsonObject{{u"message"_s, u"deletion rejected"_s}}},
+				}).toJson(QJsonDocument::Compact).constData() << std::endl;
+				continue;
+			}
+			if (method == u"get_message_ids"_s) {
+				Reply(request, historyIds);
+				if (mode == u"history-new-message"_s) historyIds.append(999);
+				continue;
+			}
+			if (method == u"delete_chat"_s) {
+				historyIds = {};
+			} else {
+				for (const auto &id : args[1].toArray()) {
+					for (auto i = historyIds.size(); i > 0; --i) {
+						if (historyIds[i - 1] == id) historyIds.removeAt(i - 1);
+					}
+				}
+				if (mode == u"history-hold-delete"_s) { held = request; continue; }
+			}
+			Reply(request, QJsonValue());
+			continue;
+		}
 		if (method == u"get_draft"_s || method == u"inspect_draft"_s
 			|| method == u"misc_set_draft"_s || method == u"remove_draft"_s) {
 			const auto key = QString::number(args[0].toInt()) + ':' + QString::number(args[1].toInt());

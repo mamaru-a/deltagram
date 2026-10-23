@@ -5,6 +5,7 @@ This file is part of Delta Tel, a Telegram Desktop based Delta Chat client.
 
 #include "delta/delta_rpc.h"
 #include "delta/draft_store.h"
+#include "delta/history_mutations.h"
 #include "mtproto/core_types.h"
 #include "rpl/producer.h"
 
@@ -97,6 +98,9 @@ void AddTransportFromQr(const QString &qr, Fn<void(QString error)> done);
 
 void EditMessageText(int messageId, const QString &text, Fn<void(QString error)> done);
 void DeleteMessages(const QVector<int> &ids, bool revoke, Fn<void()> done);
+void DeleteHistory(bool self, int userId, bool justClear, bool revoke,
+	Fn<void(HistoryDeletionResult)> done,
+	std::optional<HistoryDateRange> dates = std::nullopt);
 [[nodiscard]] std::optional<bool> MessageUnread(int messageId);
 
 void SetChatArchived(
