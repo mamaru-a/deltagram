@@ -545,6 +545,7 @@ public:
 	[[nodiscard]] int reactionsPaidScheduled() const;
 	[[nodiscard]] PeerId reactionsLocalShownPeer() const;
 	[[nodiscard]] bool canViewReactions() const;
+	[[nodiscard]] bool canInferReactionPeers() const;
 	[[nodiscard]] std::vector<Data::ReactionId> chosenReactions() const;
 	[[nodiscard]] Data::ReactionId lookupUnreadReaction(
 		not_null<UserData*> from) const;

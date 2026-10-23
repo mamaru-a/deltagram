@@ -3826,6 +3826,13 @@ bool HistoryItem::canViewReactions() const {
 		&& !_reactions->list().empty();
 }
 
+bool HistoryItem::canInferReactionPeers() const {
+	return _history->peer->isUser()
+		&& (!Delta::Active()
+			|| (!Delta::IsGroup(_history->peer->id.value)
+				&& !Delta::IsChannel(_history->peer->id.value)));
+}
+
 std::vector<Data::ReactionId> HistoryItem::chosenReactions() const {
 	return _reactions
 		? _reactions->chosen()

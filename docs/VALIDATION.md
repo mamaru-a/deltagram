@@ -120,6 +120,13 @@ disagreeing with Core; reaction responses now surface errors and refresh the
 authoritative reaction state without retrying the mutation. Final GUI replay
 must verify both fixes.
 
+The reference GUI's reaction also reached Deltagram and exposed a donor
+assumption: a Core group occupies a donor user peer, so the one-to-one renderer
+invented the group itself as the reactor. Core groups and broadcast channels
+now use counts when reactor identities are not loaded. The unsupported donor
+reactor-list action is no longer advertised. This preserves reaction selection
+and counts without claiming an identity that Core did not provide to that view.
+
 An immediate normal quit after typing a new disposable-chat draft preserved the
 complete text in Core and restored it in the old GUI composer. A runtime socket
 snapshot showed no GUI-owned TCP sockets and Core-owned IMAP connections. The

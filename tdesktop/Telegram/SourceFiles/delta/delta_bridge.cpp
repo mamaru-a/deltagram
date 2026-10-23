@@ -494,7 +494,7 @@ QHash<QString, QString> PendingUploads;
 		return MTPMessageReactions();
 	}
 	return MTP_messageReactions(
-		MTP_flags(MTPDmessageReactions::Flag::f_can_see_list),
+		MTP_flags(0), // The donor reactor-list RPC is not a Core capability.
 		MTP_vector<MTPReactionCount>(counts),
 		MTPVector<MTPMessagePeerReaction>(),
 		MTPVector<MTPMessageReactor>());

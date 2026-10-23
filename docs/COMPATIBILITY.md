@@ -31,7 +31,7 @@ are not copied here. Deltagram evidence comes from [PROGRESS.md](PROGRESS.md),
 | Channel profiles | ✅ Locally checked | Adaptive page/modal navigation, centered cover, large photo preview, contained action menu, description links, photo/name/description updates, mute control and Core media counts. Media rows open the selected message. |
 | Broadcast channels | ✅ Locally checked | Creation and subscriber write restrictions checked. Owner counts are Core read receipts, not public view totals. |
 | Message information | ✅ Locally checked | Context action and Core-backed details checked. |
-| Reactions | ✅ Locally checked | Picker, stored reactions and rendering checked locally; multi-device delivery remains unverified. |
+| Reactions | 🟡 Partial | Live GUI reactions reached both clients. Follow-up fixes exclude hidden reaction transport messages, reconcile rejected changes and avoid invented group/channel reactor avatars. Final rendered verification remains. Reactor-list browsing is unavailable. |
 | Profile sidebar | ✅ Locally checked | Optional experimental toggle replaces the folder strip with profile photos/names. Switching, active colors, immediate toggling and restart persistence checked locally. |
 | Profile ordering | ✅ Locally checked | Core RPC ordering and UI feedback recorded. |
 
