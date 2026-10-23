@@ -34,8 +34,11 @@ evidence for the corresponding changes. The reference Desktop client also sent
 a UI message for the subsequent fixed-GUI receive check.
 
 The pinned Nix toolchain configured the full GUI locally, preserving its Ninja
-and ccache records. Native CI and modified-source compilation are in progress.
-No new production release has been published.
+and ccache records. The RPC transport, draft store, bridge, welcome flow, call
+guards, peer handling and initial history-request changes compiled with its
+release flags. Remaining local compilation was stopped to avoid laptop resource
+pressure; later pending-send and unread-anchor changes await native CI. Heavy
+builds now run remotely. No new production release has been published.
 
 ## Initial publication — 2026-10-05
 

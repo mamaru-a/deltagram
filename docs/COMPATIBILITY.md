@@ -27,7 +27,7 @@ are not copied here. Deltagram evidence comes from [PROGRESS.md](PROGRESS.md),
 | Contacts and contact deletion | ✅ Locally checked | Search, profile opening, chat creation and confirmed deletion have isolated checks. |
 | Shared contact cards | ✅ Locally checked | Send/import, card photo and profile navigation checked. Core does not import vCard NOTE biographies; available Core contact status is displayed. |
 | Group creation | ✅ Locally checked | Name/photo and member selection persist through Core; selection chips and stored members checked. |
-| Invitation links | ✅ Locally checked | Contact/group/channel previews, confirmation and navigation checked. SecureJoin completion over the network remains unverified. |
+| Invitation links | 🟡 Partial | Contact/group/channel previews, confirmation and navigation checked locally. SecureJoin completed over real mail IO in the Core API check; the complete GUI join flow remains unverified. |
 | Channel profiles | ✅ Locally checked | Adaptive page/modal navigation, centered cover, large photo preview, contained action menu, description links, photo/name/description updates, mute control and Core media counts. Media rows open the selected message. |
 | Broadcast channels | ✅ Locally checked | Creation and subscriber write restrictions checked. Owner counts are Core read receipts, not public view totals. |
 | Message information | ✅ Locally checked | Context action and Core-backed details checked. |
@@ -39,10 +39,10 @@ are not copied here. Deltagram evidence comes from [PROGRESS.md](PROGRESS.md),
 
 | Capability | Status | Remaining work or validation |
 | --- | --- | --- |
-| Text, images, files, videos and forwarding | 🟡 Partial | MP4 sending, GUI forwarding and local playback checked with Core, including silent videos and forwarded labels in Saved Messages. Fresh cross-client delivery and download checks are needed. |
-| Delivery and read indicators | 🟡 Partial | Pending, server-delivered and read-receipt transitions checked in an offline fixture; Core state controls message and chat-list checks. Live transport and multi-recipient receipt behavior need validation. |
-| Quotes and replies | 🟡 Partial | Core quote mapping corrected; complete create/display/jump behavior needs live conversation checks. |
-| Message editing, deletion and chat archiving | 🟡 Partial | Core paths exist; received-deletion regressions passed, but two-device UI behavior needs checking. |
+| Text, images, files, videos and forwarding | 🟡 Partial | Live Core API checks passed bidirectional text and byte-identical file delivery against Delta Chat 2.62.0. MP4 sending, GUI forwarding and local playback have earlier local checks. Rebuilt GUI delivery, download and forwarding remain to be verified. |
+| Delivery and read indicators | 🟡 Partial | A live cross-client Core read receipt passed. Pending, delivered and read rendering have earlier offline fixture checks; rebuilt GUI indicators and multi-recipient behavior need validation. |
+| Quotes and replies | 🟡 Partial | A live Core reply retained its quote across clients. Complete GUI create/display/jump behavior remains unverified. |
+| Message editing, deletion and chat archiving | 🟡 Partial | Live Core edits retained message IDs and remote deletion passed. The released GUI reproduced optimistic deletion after Core rejected it; the fix and two-client GUI behavior still need verification. |
 | Voice messages | 🟡 Partial | Native waveform, duration, play/pause and seeking are implemented; local attachment playback is verified. Microphone recording and live cross-client delivery still need broader testing. |
 | Multiple profiles | 🟡 Partial | Switching clears reused histories, drafts, pending messages and attachment caches. Core draft storage and asynchronous callbacks are scoped to the account. End-to-end switching with overlapping chat/message IDs still needs GUI validation. |
 | Profile and group photos | 🟡 Partial | Settings image selection/crop/save and account avatar colors checked locally with Core; group checks recorded. Complete camera workflows and live photo distribution need checking. |
