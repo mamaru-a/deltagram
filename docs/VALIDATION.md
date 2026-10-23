@@ -9,7 +9,7 @@ RPC failure handling. The first full remote GUI build passed at `4ddcae4`
 Later changes still require a full build and live regression checks; these
 results do not establish production readiness.
 
-Twenty-two Qt regression cases passed in Ubuntu 24.04 x86-64 with Qt 6.4.2,
+Twenty-three Qt regression cases passed in Ubuntu 24.04 x86-64 with Qt 6.4.2,
 including a real-Core two-account draft test against both Core 2.62.0 and the
 project's pinned 2.63.0-dev. The latter binary was extracted from the project's
 verified v0.2.5 release, whose Core source pin matches this checkout
@@ -59,6 +59,13 @@ responsive, displayed "Messaging stopped. Restart Deltagram to reconnect.",
 and changed the status to "Not connected". The test confirmed that the Core
 process exited. An earlier harness attempt killed only the bundle launcher,
 leaving its Core child alive; that attempt is not counted as crash evidence.
+
+A subsequent source review found that native photo/document cache identities
+still depended only on message IDs. They now include the Core account ID, with
+a regression checking repeated IDs and boundary values. Profile changes close
+the media viewer and reset playback/playlist state before reusing histories.
+The expanded 23-case suite passes against both Core versions. Actual attachment
+display and playback across profile switches remain part of final GUI checks.
 
 These checks exposed three presentation defects addressed after `ad04da9`:
 incoming edits did not invalidate the chat-list preview; ordinary downloaded

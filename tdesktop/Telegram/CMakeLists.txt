@@ -1436,6 +1436,7 @@ PRIVATE
     delta/history_mutations.h
     delta/account_scope.h
     delta/message_order.h
+    delta/media_identity.h
     delta/delta_boxes.cpp
     delta/delta_boxes.h
     delta/delta_bridge.cpp

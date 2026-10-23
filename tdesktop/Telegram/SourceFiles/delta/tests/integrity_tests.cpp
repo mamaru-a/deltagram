@@ -3,6 +3,7 @@
 #include "account_scope.h"
 #include "message_order.h"
 #include "history_mutations.h"
+#include "media_identity.h"
 
 #include <QtTest/QtTest>
 
@@ -36,6 +37,22 @@ class IntegrityTests final : public QObject {
 	Q_OBJECT
 
 private slots:
+	void attachmentCacheIdentityIncludesAccount() {
+		const auto first = Delta::MediaIdentity(1, 12);
+		const auto second = Delta::MediaIdentity(2, 12);
+		QVERIFY(first != second);
+		auto cache = QHash<quint64, QByteArray>();
+		cache.insert(first, "primary attachment");
+		cache.insert(second, "alternate attachment");
+		QCOMPARE(cache.value(Delta::MediaIdentity(1, 12)), QByteArray("primary attachment"));
+		QCOMPARE(cache.value(Delta::MediaIdentity(2, 12)), QByteArray("alternate attachment"));
+		QVERIFY(Delta::MediaIdentity(1, INT32_MAX) != Delta::MediaIdentity(2, 1));
+		QVERIFY(Delta::MediaIdentity(INT32_MAX, 1) != Delta::MediaIdentity(1, INT32_MAX));
+		QVERIFY(Delta::MediaIdentity(INT32_MAX, INT32_MAX) <= INT64_MAX);
+		QCOMPARE(Delta::MediaIdentity(0, 12), std::uint64_t(0));
+		QCOMPARE(Delta::MediaIdentity(1, -1), std::uint64_t(0));
+	}
+
 	void realCoreHistoryDeletion() {
 		const auto program = qEnvironmentVariable("DELTA_TEST_CORE_RPC");
 		if (program.isEmpty()) QSKIP("Set DELTA_TEST_CORE_RPC to test the real Core server.");

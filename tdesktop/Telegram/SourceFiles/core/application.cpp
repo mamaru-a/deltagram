@@ -730,6 +730,10 @@ bool Application::hideMediaView() {
 	return false;
 }
 
+void Application::closeMediaView() {
+	if (_mediaView) _mediaView->close();
+}
+
 bool Application::eventFilter(QObject *object, QEvent *e) {
 	switch (e->type()) {
 	case QEvent::KeyPress: {

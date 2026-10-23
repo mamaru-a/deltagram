@@ -4,9 +4,11 @@ This file is part of Delta Tel, a Telegram Desktop based Delta Chat client.
 #include "delta/delta_bridge.h"
 #include "delta/account_scope.h"
 #include "delta/message_order.h"
+#include "delta/media_identity.h"
 #include "delta/avatar_image.h"
 
 #include "base/weak_ptr.h"
+#include "core/application.h"
 #include "core/file_location.h"
 #include "data/data_document.h"
 #include "data/data_drafts.h"
@@ -25,6 +27,7 @@ This file is part of Delta Tel, a Telegram Desktop based Delta Chat client.
 #include "main/main_account.h"
 #include "main/main_session.h"
 #include "main/main_session_settings.h"
+#include "media/player/media_player_instance.h"
 #include "mtproto/details/mtproto_serialized_request.h"
 #include "mtproto/mtp_instance.h"
 #include "mtproto/mtproto_response.h"
@@ -57,8 +60,7 @@ namespace {
 
 constexpr auto kSelfUserId = 1'000'000;
 constexpr auto kContactUserIdBase = uint64(1) << 40;
-constexpr auto kPhotoIdBase = qint64(0x110000000);
-constexpr auto kDocumentIdBase = qint64(0x120000000);
+[[nodiscard]] qint64 MessageMediaId(int messageId);
 
 [[nodiscard]] bool HasError(const QJsonObject &reply) {
 	return reply.contains(u"error"_q);
@@ -259,7 +261,7 @@ QHash<QString, QString> PendingUploads;
 			h = image.height();
 		}
 	}
-	const auto photoId = kPhotoIdBase + id;
+	const auto photoId = MessageMediaId(id);
 	PhotoFiles.insert(photoId, path);
 	auto read = Images::Read({
 		.path = path,
@@ -326,7 +328,7 @@ QHash<QString, QString> PendingUploads;
 		int durationMs,
 		qint64 bytes,
 		int date) {
-	const auto documentId = kDocumentIdBase + id;
+	const auto documentId = MessageMediaId(id);
 	DocumentFiles.insert(documentId, path);
 	const auto seconds = (durationMs > 0)
 		? std::max(1, (durationMs + 999) / 1000)
@@ -1478,6 +1480,8 @@ public:
 	}
 
 	void resetAccountView() {
+		Core::App().closeMediaView();
+		Media::Player::instance()->resetForAccountChange();
 		// Detach the old account's chat and cancel its loading requests first.
 		for (const auto &window : _session->windows()) {
 			window->hideLayer(anim::type::instant);
@@ -3091,6 +3095,10 @@ public:
 
 };
 
+qint64 MessageMediaId(int messageId) {
+	return MediaIdentity(GlobalBridge ? GlobalBridge->_accountId : 0, messageId);
+}
+
 } // namespace
 
 bool Active() {
@@ -3353,7 +3361,7 @@ void ApplyMessageData(not_null<HistoryItem*> item) {
 		&& !LooksLikeVoice(kind, mime, path);
 	if ((video || file)
 		&& !path.isEmpty() && QFileInfo::exists(path)) {
-		const auto id = DocumentId(0x6000000000000000ULL | uint64(item->id.bare));
+		const auto id = DocumentId(MessageMediaId(int(item->id.bare)));
 		const auto document = item->history()->owner().document(id);
 		if (document->filepath(true) != path) {
 			const auto name = data.value(u"fileName"_q).toString();
