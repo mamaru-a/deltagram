@@ -1410,6 +1410,12 @@ void AddMessageActions(
 		&& request.item->id.bare > 0) {
 		const auto controller = list->controller();
 		const auto id = request.item->id.bare;
+		if (Delta::CanDownloadMessage(id)) {
+			const auto generation = Delta::AccountGeneration();
+			menu->addAction(tr::lng_media_download(tr::now), crl::guard(controller, [=] {
+				if (generation == Delta::AccountGeneration()) Delta::DownloadMessage(id);
+			}), &st::menuIconDownload);
+		}
 		menu->addAction(u"Info"_q, crl::guard(controller, [=] {
 			Delta::ShowMessageInfo(controller, id);
 		}), &st::menuIconInfo);

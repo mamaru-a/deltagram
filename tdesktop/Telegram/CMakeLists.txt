@@ -1437,6 +1437,7 @@ PRIVATE
     delta/account_scope.h
     delta/message_order.h
     delta/message_visibility.h
+    delta/message_download.h
     delta/media_identity.h
     delta/delta_boxes.cpp
     delta/delta_boxes.h

@@ -50,6 +50,8 @@ void LoadDraft(int userId, Fn<void(ComposeDraft)> done);
 enum class DeliveryState { Pending, Failed, Sent, Read };
 [[nodiscard]] std::optional<DeliveryState> MessageDelivery(int messageId);
 void ApplyMessageData(not_null<HistoryItem*> item);
+[[nodiscard]] bool CanDownloadMessage(int messageId);
+void DownloadMessage(int messageId);
 [[nodiscard]] std::optional<int> ChannelViewCount(int messageId);
 void MessageInfo(int messageId, Fn<void(QString text, QString error)> done);
 void DeleteContact(int contactId, bool deleteChat, Fn<void(QString error)> done);

@@ -3,6 +3,7 @@
 #include "account_scope.h"
 #include "message_order.h"
 #include "message_visibility.h"
+#include "message_download.h"
 #include "history_mutations.h"
 #include "media_identity.h"
 
@@ -38,6 +39,44 @@ class IntegrityTests final : public QObject {
 	Q_OBJECT
 
 private slots:
+	void downloadsRespectCoreStateAndAccount() {
+		for (const auto state : {u"Available"_s, u"Failure"_s, u"Done"_s,
+				u"InProgress"_s, u"Undecipherable"_s, u"unknown"_s,
+				u"reject-read"_s, u"reject-write"_s}) {
+			auto rpc = std::make_shared<DeltaRpc>();
+			rpc->start(u"" RPC_FIXTURE_PATH ""_s, u"download-"_s + state);
+			Delta::AccountScope scope;
+			auto completed = false;
+			auto error = QString();
+			Delta::DownloadCoreMessage(rpc, scope, 7, 99, [&](QString result) {
+				error = result;
+				completed = true;
+			});
+			QTRY_VERIFY(completed);
+			const auto accepted = Delta::CanDownloadMessageState(state);
+			QCOMPARE(error.isEmpty(), accepted || state == u"Done"_s || state == u"InProgress"_s);
+			const auto calls = CoreCall(*rpc, u"download_requests"_s, {})[u"result"_s].toArray();
+			QCOMPARE(calls.size(), accepted || state == u"reject-write"_s ? 2 : 1);
+			for (const auto &call : calls) {
+				QCOMPARE(call.toObject()[u"params"_s].toArray(), (QJsonArray{7, 99}));
+			}
+			if (calls.size() == 2) {
+				QCOMPARE(calls.last().toObject()[u"method"_s].toString(), u"download_full_message"_s);
+			}
+			rpc->stop();
+		}
+		auto rpc = std::make_shared<DeltaRpc>();
+		rpc->start(u"" RPC_FIXTURE_PATH ""_s, u"download-Available"_s);
+		Delta::AccountScope scope;
+		Delta::DownloadCoreMessage(rpc, scope, 7, 99, [](QString) {
+			QFAIL("A download callback escaped its account");
+		});
+		scope.invalidate();
+		const auto calls = CoreCall(*rpc, u"download_requests"_s, {})[u"result"_s].toArray();
+		QCOMPARE(calls.size(), 1);
+		rpc->stop();
+	}
+
 	void eventsOnlyExposeVisibleHistory() {
 		for (const auto mode : {u"normal"_s, u"history-reject-list"_s}) {
 			auto rpc = std::make_shared<DeltaRpc>();

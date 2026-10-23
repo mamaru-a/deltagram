@@ -5,6 +5,7 @@ This file is part of Delta Tel, a Telegram Desktop based Delta Chat client.
 #include "delta/account_scope.h"
 #include "delta/message_order.h"
 #include "delta/message_visibility.h"
+#include "delta/message_download.h"
 #include "delta/media_identity.h"
 #include "delta/avatar_image.h"
 
@@ -886,82 +887,57 @@ public:
 			});
 	}
 
+	void downloadMessage(int messageId) {
+		if (_deletedMessages.contains(messageId)) return;
+		const auto chatId = CoreMessages.value(messageId).value(u"chatId"_q).toInt();
+		DownloadCoreMessage(_rpc, _accountScope, _accountId, messageId,
+			[=](QString error) {
+				if (!error.isEmpty()) reportError(error);
+				if (_rpc->running() && chatId > 0) addIncoming(chatId, messageId);
+			});
+	}
+
 	void fetchMessage(int msgId, Fn<void(QJsonObject)> done) {
 		const auto guard = _alive;
 		const auto epoch = _dialogsEpoch;
 		const auto accountId = _accountId;
-		const auto tries = std::make_shared<int>(0);
-		const auto run = std::make_shared<Fn<void()>>();
-		const auto weakRun = std::weak_ptr<Fn<void()>>(run);
-		*run = [=] {
-			const auto continuation = weakRun.lock();
-			call(
-				u"get_message"_q,
-				{ accountId, msgId },
-				[=](QJsonObject one) {
-					if (guard.expired()) {
-						return;
-					}
-					if (epoch != _dialogsEpoch || _deletedMessages.contains(msgId)) {
-						done(QJsonObject{{ u"error"_q, u"Message no longer available"_q }});
-						return;
-					}
-					if (!HasError(one)) {
-						const auto data = one.value(u"result"_q).toObject();
-						const auto path = data.value(u"file"_q).toString();
-						const auto kind = data.value(u"viewType"_q).toString();
-						const auto mime = data.value(u"fileMime"_q).toString();
-						const auto image = LooksLikeImage(kind, mime, path);
-						const auto voice = LooksLikeVoice(kind, mime, path);
-						const auto state = data.value(u"downloadState"_q).toString();
-						const auto pending = (state == u"Available"_q)
-							|| (state == u"InProgress"_q);
-						const auto ready = !pending
-							&& !path.isEmpty()
-							&& QFileInfo::exists(path)
-							&& QFileInfo(path).size() > 0;
-						const auto limit = 8;
-						if ((image || voice || LooksLikeVideo(kind, mime, path)) && !ready && *tries < limit) {
-							++(*tries);
-							call(
-								u"download_full_message"_q,
-								{ _accountId, msgId },
-								[=](QJsonObject) {
-									if (!guard.expired()) {
-										if (continuation) (*continuation)();
-									}
-								});
-							return;
+		call(
+			u"get_message"_q,
+			{ accountId, msgId },
+			[=](QJsonObject one) {
+				if (guard.expired()) {
+					return;
+				}
+				if (epoch != _dialogsEpoch || _deletedMessages.contains(msgId)) {
+					done(QJsonObject{{ u"error"_q, u"Message no longer available"_q }});
+					return;
+				}
+				const auto data = one.value(u"result"_q).toObject();
+				const auto chatId = data.value(u"chatId"_q).toInt();
+				if (!HasError(one) && !data.value(u"isInfo"_q).toBool()
+					&& (ChannelInfos.value(chatId).value(u"chatType"_q).toString() == u"OutBroadcast"_q
+						|| (data.value(u"fromId"_q).toInt() == 1
+							&& data.value(u"state"_q).toInt() >= 26))) {
+					call(u"get_message_read_receipt_count"_q, { accountId, msgId }, [=](QJsonObject count) {
+						if (guard.expired() || epoch != _dialogsEpoch || _deletedMessages.contains(msgId)) return;
+						if (!HasError(count)) {
+							CoreReadReceipts.insert(msgId, count.value(u"result"_q).toInt());
+							if (ChannelInfos.value(chatId).value(u"chatType"_q).toString() == u"OutBroadcast"_q) {
+								ChannelViews.insert(msgId, count.value(u"result"_q).toInt());
+							}
 						}
-					}
-					const auto data = one.value(u"result"_q).toObject();
-					const auto chatId = data.value(u"chatId"_q).toInt();
-					if (!HasError(one) && !data.value(u"isInfo"_q).toBool()
-						&& (ChannelInfos.value(chatId).value(u"chatType"_q).toString() == u"OutBroadcast"_q
-							|| (data.value(u"fromId"_q).toInt() == 1
-								&& data.value(u"state"_q).toInt() >= 26))) {
-						call(u"get_message_read_receipt_count"_q, { accountId, msgId }, [=](QJsonObject count) {
-							if (guard.expired() || epoch != _dialogsEpoch || _deletedMessages.contains(msgId)) return;
-							if (!HasError(count)) {
-								CoreReadReceipts.insert(msgId, count.value(u"result"_q).toInt());
-								if (ChannelInfos.value(chatId).value(u"chatType"_q).toString() == u"OutBroadcast"_q) {
-									ChannelViews.insert(msgId, count.value(u"result"_q).toInt());
-								}
-							}
-							done(one);
-							// Refresh after the callback has applied Core's new state.
-							if (const auto item = _session->data().message(
-									peerFromUser(UserId(peerUserForChat(chatId))), MsgId(msgId))) {
-								_session->data().notifyItemDataChange(item);
-								_session->data().requestItemViewRefresh(item);
-							}
-						});
-					} else {
 						done(one);
-					}
-				});
-		};
-		(*run)();
+						// Refresh after the callback has applied Core's new state.
+						if (const auto item = _session->data().message(
+								peerFromUser(UserId(peerUserForChat(chatId))), MsgId(msgId))) {
+							_session->data().notifyItemDataChange(item);
+							_session->data().requestItemViewRefresh(item);
+						}
+					});
+				} else {
+					done(one);
+				}
+			});
 	}
 
 	void answer(
@@ -3344,6 +3320,15 @@ std::optional<DeliveryState> MessageDelivery(int messageId) {
 		: state == 26 ? DeliveryState::Sent
 		: state == 24 ? DeliveryState::Failed
 		: DeliveryState::Pending;
+}
+
+bool CanDownloadMessage(int messageId) {
+	return Active() && CanDownloadMessageState(CoreMessages.value(messageId)
+		.value(u"downloadState"_q).toString());
+}
+
+void DownloadMessage(int messageId) {
+	if (GlobalBridge) GlobalBridge->downloadMessage(messageId);
 }
 
 void ApplyMessageData(not_null<HistoryItem*> item) {

@@ -53,6 +53,24 @@ int main(int argc, char **argv) {
 			continue;
 		}
 		if (method == u"writes"_s) { Reply(request, writes); continue; }
+		if (method == u"download_requests"_s) { Reply(request, historyCalls); continue; }
+		if (mode.startsWith(u"download-"_s)
+			&& (method == u"get_message"_s || method == u"download_full_message"_s)) {
+			historyCalls.append(QJsonObject{{u"method"_s, method}, {u"params"_s, args}});
+			if ((mode == u"download-reject-read"_s && method == u"get_message"_s)
+				|| (mode == u"download-reject-write"_s && method == u"download_full_message"_s)) {
+				std::cout << QJsonDocument(QJsonObject{
+					{u"id"_s, request[u"id"_s]},
+					{u"error"_s, QJsonObject{{u"message"_s, u"download rejected"_s}}},
+				}).toJson(QJsonDocument::Compact).constData() << std::endl;
+			} else if (method == u"get_message"_s) {
+				Reply(request, QJsonObject{{u"downloadState"_s,
+					mode == u"download-reject-write"_s ? u"Available"_s : mode.mid(9)}});
+			} else {
+				Reply(request, QJsonValue());
+			}
+			continue;
+		}
 		if (method == u"history_state"_s) {
 			Reply(request, QJsonObject{{u"ids"_s, historyIds}, {u"calls"_s, historyCalls}});
 			continue;

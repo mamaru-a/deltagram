@@ -92,7 +92,7 @@ text preserves the attachment bytes, and clearing the other draft persists.
 Set `DELTA_TEST_CORE_RPC` to run this case directly. `nix/test-rpc.sh` supplies
 the pinned server path so this case is required there.
 
-The suite now has 23 cases, passing sequentially against both Core versions.
+The suite now has 25 cases, passing sequentially against both Core versions.
 Added coverage includes acknowledged history/chat deletion, partial failures,
 account cancellation, timestamp-filtered deletion in batches, concurrent new
 messages, real-Core history deletion, and drafts appearing in chat-list previews
@@ -101,6 +101,12 @@ Draft preview IDs no longer become history anchors or sent-message bubbles.
 Native attachment cache IDs include the account identity. A boundary/collision
 regression covers overlapping message IDs; profile changes also clear playback
 state and close the media viewer. Rendered cross-profile media checks remain.
+
+Further cases cover hidden transport-event filtering and explicit downloads of
+partial messages. Download actions recheck Core state, stay within the account,
+and surface failure without automatic retries. Rendering no longer overrides
+Core's download limit. A live pinned-Core disposable fixture reached `Available`;
+manual download through the final GUI remains to be checked.
 
 The GUI changes also wait for Core before removing messages, apply incoming
 text edits, retain actual group sender identity, use Core unread state, guard

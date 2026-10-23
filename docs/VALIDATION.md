@@ -9,7 +9,7 @@ RPC failure handling. The first full remote GUI build passed at `4ddcae4`
 Later changes still require a full build and live regression checks; these
 results do not establish production readiness.
 
-Twenty-four Qt regression cases passed in Ubuntu 24.04 x86-64 with Qt 6.4.2,
+Twenty-five Qt regression cases passed in Ubuntu 24.04 x86-64 with Qt 6.4.2,
 including a real-Core two-account draft test against both Core 2.62.0 and the
 project's pinned 2.63.0-dev. The latter binary was extracted from the project's
 verified v0.2.5 release, whose Core source pin matches this checkout
@@ -127,6 +127,19 @@ the two-person inference; groups, channels, mailing lists and unknown chat types
 use counts when reactor identities are not loaded. The unsupported donor
 reactor-list action is no longer advertised. This preserves reaction selection
 and counts without claiming an identity that Core did not provide to that view.
+
+A pinned-Core-to-pinned-Core disposable check delivered a 256 KiB attachment
+as an `Available` placeholder, confirming the manual-download contract. The
+older reference client sent the same-sized attachment as a complete message;
+that delivery is not counted as partial-download evidence. Rendering previously
+had no manual download action and could issue up to eight automatic download
+requests for missing media. The client now exposes Download in the message
+context menu, rechecks Core state at activation, reports failure, and waits for
+Core events to update content. Reading a message no longer overrides Core's
+download limit. The 25-case suite covers downloadable, complete, in-progress,
+undecipherable and unknown states, rejected reads/downloads, exact account/message
+parameters, and account cancellation. Both Core versions pass sequentially.
+Final GUI download and byte-integrity checks remain pending.
 
 An immediate normal quit after typing a new disposable-chat draft preserved the
 complete text in Core and restored it in the old GUI composer. A runtime socket
