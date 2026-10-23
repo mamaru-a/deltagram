@@ -9,6 +9,13 @@ RPC failure handling. The first full remote GUI build passed at `4ddcae4`
 Later changes still require a full build and live regression checks; these
 results do not establish production readiness.
 
+The remote build at `ad04da9` failed compiling the bridge: the free history
+deletion entry point called a private peer-to-chat resolver. Deletion dispatch
+now stays inside the bridge, preserving the resolver's access boundary. The
+release build compiles that integration unit before the donor source set, then
+reuses its object in the full build. The failed run saved its compiler cache;
+no incremental records were removed. A replacement full build is required.
+
 Twenty-five Qt regression cases passed in Ubuntu 24.04 x86-64 with Qt 6.4.2,
 including a real-Core two-account draft test against both Core 2.62.0 and the
 project's pinned 2.63.0-dev. The latter binary was extracted from the project's

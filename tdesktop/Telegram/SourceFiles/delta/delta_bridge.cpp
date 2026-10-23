@@ -760,6 +760,23 @@ public:
 		}
 	}
 
+	void deleteHistory(
+			bool self,
+			int userId,
+			bool justClear,
+			bool revoke,
+			Fn<void(HistoryDeletionResult)> done,
+			std::optional<HistoryDateRange> dates) {
+		DeleteChatHistory(_rpc, _accountScope, _accountId,
+			chatForPeerUser(self ? kSelfUserId : userId),
+			!justClear && !self, revoke, [=](HistoryDeletionResult result) {
+				for (const auto id : result.deletedIds) _deletedMessages.insert(id);
+				_reload.start();
+				if (!result.error.isEmpty()) reportError(result.error);
+				if (done) done(std::move(result));
+			}, dates);
+	}
+
 	void saveDraft(int userId, const QString &text, int quotedMessageId) {
 		const auto chatId = chatForPeerUser(userId);
 		if (chatId > 0) _drafts->save(_accountId, chatId, text, quotedMessageId);
@@ -3161,14 +3178,7 @@ void DeleteHistory(
 		std::optional<HistoryDateRange> dates) {
 	const auto bridge = GlobalBridge;
 	if (!bridge) return;
-	DeleteChatHistory(bridge->_rpc, bridge->_accountScope, bridge->_accountId,
-		bridge->chatForPeerUser(self ? kSelfUserId : userId),
-		!justClear && !self, revoke, [=](HistoryDeletionResult result) {
-			for (const auto id : result.deletedIds) bridge->_deletedMessages.insert(id);
-			bridge->_reload.start();
-			if (!result.error.isEmpty()) bridge->reportError(result.error);
-			if (done) done(std::move(result));
-		}, dates);
+	bridge->deleteHistory(self, userId, justClear, revoke, std::move(done), dates);
 }
 
 std::optional<int> ChannelViewCount(int messageId) {
