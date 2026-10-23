@@ -1,6 +1,6 @@
 # Experimental compatibility tracker
 
-Last reviewed: 2026-10-07. Deltagram is experimental and is not yet a complete
+Last reviewed: 2026-10-23. Deltagram is experimental and is not yet a complete
 Delta Chat client. Core provides messaging protocols and encryption; retaining
 a Telegram widget does not establish that its action works with Core.
 
@@ -86,11 +86,19 @@ timeouts without retrying mutations, restart framing, account isolation,
 draft attachment preservation, draft deletion, serialized draft writes, visible
 write failures, and Core-ordered pagination with non-monotonic IDs.
 `nix/test-rpc.sh` runs this suite before its real-Core smoke test.
+An additional real-Core case passes against Core 2.62.0: two unconfigured
+accounts with identical chat IDs retain independent drafts; changing draft
+text preserves the attachment bytes, and clearing the other draft persists.
+Set `DELTA_TEST_CORE_RPC` to run this case directly. `nix/test-rpc.sh` supplies
+the pinned server path so this case is required there.
 
 The GUI changes also wait for Core before removing messages, apply incoming
 text edits, retain actual group sender identity, use Core unread state, guard
 callbacks for closed dialogs, and stop the event loop when Core exits.
 Forwarding uses Core message events instead of guessing the created IDs.
+Profile changes also cancel queued donor history/read requests without resuming
+their old generators. A failed or raced unread lookup retains a valid history
+anchor instead of inventing message ID 1.
 These paths require full-client regression checks; the standalone tests do not
 establish GUI behavior or live interoperability.
 

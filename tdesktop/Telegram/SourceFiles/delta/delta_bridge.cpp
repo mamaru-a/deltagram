@@ -617,7 +617,10 @@ QHash<QString, QString> PendingUploads;
 	if (pinned) {
 		flags |= MTPDdialog::Flag::f_pinned;
 	}
-	const auto readInbox = unread > 0 ? std::max(firstUnread - 1, 0) : topMessage;
+	// The unread snapshot can race a read/deletion, or its lookup can fail.
+	// Keep a real history anchor instead of inventing message ID 1.
+	const auto unreadAnchor = firstUnread > 0 ? firstUnread : topMessage;
+	const auto readInbox = unread > 0 ? std::max(unreadAnchor - 1, 0) : topMessage;
 	return MTP_dialog(
 		MTP_flags(flags),
 		MTP_peerUser(MTP_long(peerUser)),
@@ -1482,6 +1485,7 @@ public:
 		}
 		++_dialogsEpoch;
 		_accountScope.invalidate();
+		_session->data().histories().resetBackendRequests();
 		++_selfAvatarRevision;
 		_deletedMessages.clear();
 		_names.clear();

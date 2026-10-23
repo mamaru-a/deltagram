@@ -7,10 +7,88 @@
 
 using namespace Qt::StringLiterals;
 
+namespace {
+
+QJsonObject CoreCall(DeltaRpc &rpc, const QString &method, const QJsonArray &params) {
+	QEventLoop loop;
+	QTimer timeout;
+	timeout.setSingleShot(true);
+	QObject::connect(&timeout, &QTimer::timeout, &loop, &QEventLoop::quit);
+	auto reply = QJsonObject();
+	auto completed = false;
+	rpc.call(method, params, [&](QJsonObject result) {
+		reply = std::move(result);
+		completed = true;
+		loop.quit();
+	});
+	if (!completed) {
+		timeout.start(10000);
+		loop.exec();
+	}
+	if (!completed) rpc.stop();
+	return reply;
+}
+
+} // namespace
+
 class IntegrityTests final : public QObject {
 	Q_OBJECT
 
 private slots:
+	void realCoreDraftRoundTrip() {
+		const auto program = qEnvironmentVariable("DELTA_TEST_CORE_RPC");
+		if (program.isEmpty()) QSKIP("Set DELTA_TEST_CORE_RPC to test the real Core server.");
+		QTemporaryDir temporary;
+		QVERIFY(temporary.isValid());
+		auto attachment = QFile(temporary.filePath(u"attachment.txt"_s));
+		QVERIFY(attachment.open(QIODevice::WriteOnly));
+		attachment.write("draft attachment integrity\n");
+		attachment.close();
+		auto rpc = std::make_shared<DeltaRpc>();
+		rpc->start(program, temporary.filePath(u"accounts"_s));
+		const auto first = CoreCall(*rpc, u"add_account"_s, {})[u"result"_s].toInt();
+		const auto second = CoreCall(*rpc, u"add_account"_s, {})[u"result"_s].toInt();
+		QVERIFY(first > 0 && second > 0 && first != second);
+		const auto chatA = CoreCall(*rpc, u"create_chat_by_contact_id"_s, {first, 1})[u"result"_s].toInt();
+		const auto chatB = CoreCall(*rpc, u"create_chat_by_contact_id"_s, {second, 1})[u"result"_s].toInt();
+		QVERIFY(chatA > 0);
+		QCOMPARE(chatA, chatB);
+		QVERIFY(!CoreCall(*rpc, u"misc_set_draft"_s,
+			{first, chatA, u"first original"_s, attachment.fileName(), u"attachment.txt"_s, QJsonValue(), u"File"_s}).contains(u"error"_s));
+		QVERIFY(!CoreCall(*rpc, u"misc_set_draft"_s,
+			{second, chatB, u"second original"_s, QJsonValue(), QJsonValue(), QJsonValue(), QJsonValue()}).contains(u"error"_s));
+		auto errors = 0;
+		Delta::DraftStore drafts(rpc, [&](QString) { ++errors; });
+		auto loaded = 0;
+		drafts.load(first, chatA, [&](Delta::ComposeDraft draft, QString error) {
+			QVERIFY(error.isEmpty());
+			QCOMPARE(draft.text, u"first original"_s);
+			QVERIFY(QFileInfo::exists(draft.file));
+			++loaded;
+		});
+		drafts.load(second, chatB, [&](Delta::ComposeDraft draft, QString error) {
+			QVERIFY(error.isEmpty());
+			QCOMPARE(draft.text, u"second original"_s);
+			++loaded;
+		});
+		QTRY_COMPARE(loaded, 2);
+		drafts.save(first, chatA, u"changed in first"_s, 0);
+		auto saved = QJsonObject();
+		QTRY_VERIFY(([&] {
+			saved = CoreCall(*rpc, u"get_draft"_s, {first, chatA})[u"result"_s].toObject();
+			return saved[u"text"_s].toString() == u"changed in first"_s;
+		})());
+		QCOMPARE(saved[u"fileName"_s].toString(), u"attachment.txt"_s);
+		auto persisted = QFile(saved[u"file"_s].toString());
+		QVERIFY(persisted.open(QIODevice::ReadOnly));
+		QCOMPARE(persisted.readAll(), QByteArray("draft attachment integrity\n"));
+		QCOMPARE(CoreCall(*rpc, u"get_draft"_s, {second, chatB})[u"result"_s].toObject()[u"text"_s].toString(), u"second original"_s);
+		drafts.save(second, chatB, {}, 0);
+		QTRY_VERIFY(CoreCall(*rpc, u"get_draft"_s, {second, chatB})[u"result"_s].isNull());
+		QCOMPARE(errors, 0);
+		rpc->stop();
+	}
+
 	void deliversEventsAndStopsPendingRequests() {
 		DeltaRpc rpc;
 		auto events = 0;

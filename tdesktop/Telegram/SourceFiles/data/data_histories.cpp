@@ -173,6 +173,29 @@ void Histories::clearAll() {
 	_map.clear();
 }
 
+void Histories::resetBackendRequests() {
+	_readRequestsTimer.cancel();
+	// Do not use cancelRequest(): it resumes postponed generators, whose
+	// peer and message IDs belong to the account that is being detached.
+	for (const auto &[history, state] : _states) {
+		for (const auto &[id, sent] : state.sent) {
+			session().api().request(sent.id).cancel();
+		}
+	}
+	_states.clear();
+	_historyByRequest.clear();
+	_dialogFolderRequests.clear();
+	_dialogRequests.clear();
+	_dialogRequestsPending.clear();
+	_fakeChatListRequests.clear();
+	_chatListGroupRequests.clear();
+	_creatingTopics.clear();
+	_createdTopicIds.clear();
+	_creatingTopicRequests.clear();
+	_pendingDeliveryReport.clear();
+	_deliveryReportSent.clear();
+}
+
 void Histories::readInbox(not_null<History*> history) {
 	DEBUG_LOG(("Reading: readInbox called."));
 	if (history->lastServerMessageKnown()) {
@@ -449,7 +472,9 @@ void Histories::sendDialogRequests() {
 		_dialogRequests.emplace(history, std::move(callbacks));
 	}
 
+	const auto generation = Delta::AccountGeneration();
 	const auto finalize = [=] {
+		if (generation != Delta::AccountGeneration()) return;
 		for (const auto &history : histories) {
 			const auto state = lookup(history);
 			if (!state || !state->postponedRequestEntry) {
