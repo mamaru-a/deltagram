@@ -77,7 +77,7 @@ jobs:
         uses: nix-community/cache-nix-action@b16f249a0248efec86dd9d4224cb75f1ffa48bcc
         with:
           primary-key: nix-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.nix', 'flake.lock') }}
-          save: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
+          save: ${{ github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch') }}
       - name: Restore Qt compiler cache
         id: compiler-cache
         if: steps.build.outputs.required == 'true'
@@ -116,8 +116,8 @@ jobs:
             bash nix/test-rpc.sh
             ccache --show-stats
           '
-      - name: Save successful Qt compilation before packaging
-        if: steps.build.outputs.required == 'true' && steps.compiler-cache.outputs.cache-hit != 'true' && github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+      - name: Save incremental Qt compilation before packaging
+        if: always() && steps.build.outputs.required == 'true' && steps.compiler-cache.outputs.cache-primary-key != '' && steps.compiler-cache.outputs.cache-hit != 'true' && github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch')
         uses: actions/cache/save@3edfce9056124e459a23f683a21433670d47daca
         with:
           path: data/ccache
@@ -143,7 +143,7 @@ jobs:
           if-no-files-found: error
           retention-days: 3
       - name: Save pinned Core compilation before packaging
-        if: steps.build.outputs.required == 'true' && steps.rust-cache.outputs.cache-hit != 'true' && github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        if: steps.build.outputs.required == 'true' && steps.rust-cache.outputs.cache-primary-key != '' && steps.rust-cache.outputs.cache-hit != 'true' && github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch')
         uses: actions/cache/save@3edfce9056124e459a23f683a21433670d47daca
         with:
           path: |
