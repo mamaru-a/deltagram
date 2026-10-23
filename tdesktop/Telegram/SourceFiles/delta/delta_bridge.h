@@ -45,6 +45,7 @@ void StartSession(
 
 [[nodiscard]] bool Active();
 [[nodiscard]] int AccountGeneration();
+[[nodiscard]] rpl::producer<int> AccountViewResets();
 void SaveDraft(int userId, const QString &text, int quotedMessageId);
 void LoadDraft(int userId, Fn<void(ComposeDraft)> done);
 enum class DeliveryState { Pending, Failed, Sent, Read };
@@ -86,9 +87,12 @@ bool SendItemMedia(not_null<HistoryItem*> item, Fn<void(bool)> done);
 bool SendItemText(not_null<HistoryItem*> item, const QString &text, Fn<void(bool)> done);
 void SendReaction(int messageId, const QJsonArray &reactions);
 void SetSelfAvatar(const QString &path, Fn<void(QString)> done);
-void SearchMessages(
+void FindMessageIds(
 	int userId,
 	const QString &query,
+	Fn<void(QVector<int> ids, QString error)> done);
+void LoadSearchResults(
+	const QVector<int> &ids,
 	Fn<void(QVector<MTPMessage>, QVector<MTPUser>)> done);
 
 void LoadInviteQr(

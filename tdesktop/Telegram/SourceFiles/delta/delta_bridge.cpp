@@ -95,6 +95,7 @@ QSet<int> GroupChats;
 QSet<int> DirectChats;
 QHash<uint64, ContactRow> SenderContacts;
 rpl::variable<int> ChannelRevision = 0;
+rpl::variable<int> AccountViewRevision = 0;
 
 void RememberSubtitle(int userId, qint64 lastSeen, const QString &line) {
 	auto &slot = PeerSubtitles[userId];
@@ -1292,10 +1293,10 @@ public:
 			});
 	}
 
-	void searchMessages(
+	void findMessageIds(
 			int userId,
 			const QString &query,
-			Fn<void(QVector<MTPMessage>, QVector<MTPUser>)> done) {
+			Fn<void(QVector<int>, QString)> done) {
 		const auto chat = userId
 			? QJsonValue(chatForPeerUser(userId))
 			: QJsonValue(QJsonValue::Null);
@@ -1308,18 +1309,68 @@ public:
 					return;
 				}
 				if (HasError(reply)) {
-					done({}, {});
+					done({}, ErrorText(reply));
 					return;
 				}
-				auto ids = std::vector<int>();
-				for (const auto &value : reply.value(u"result"_q).toArray()) {
-					ids.push_back(value.toInt());
-					if (ids.size() >= 50) {
-						break;
-					}
+				if (!reply.value(u"result"_q).isArray()) {
+					done({}, u"Core returned invalid search results."_q);
+					return;
 				}
-				loadSearchHits(userId, ids, std::move(done));
+				auto ids = QVector<int>();
+				for (const auto &value : reply.value(u"result"_q).toArray()) {
+					const auto id = value.toInt();
+					if (!value.isDouble() || id <= 0 || value.toDouble() != id) {
+						done({}, u"Core returned invalid search results."_q);
+						return;
+					}
+					ids.push_back(id);
+				}
+				done(std::move(ids), {});
 			});
+	}
+
+	void loadSearchResults(
+			const QVector<int> &ids,
+			Fn<void(QVector<MTPMessage>, QVector<MTPUser>)> done) {
+		// Keep legacy callers bounded too; widgets normally ask for one page.
+		struct State {
+			int offset = 0;
+			QVector<MTPMessage> messages;
+			QVector<MTPUser> users;
+		};
+		const auto state = std::make_shared<State>();
+		const auto next = std::make_shared<Fn<void()>>();
+		const auto weakNext = std::weak_ptr<Fn<void()>>(next);
+		*next = [=] {
+			if (state->offset >= ids.size()) {
+				done(std::move(state->messages), std::move(state->users));
+				return;
+			}
+			const auto page = ids.mid(state->offset, 50);
+			state->offset += page.size();
+			const auto continuation = weakNext.lock();
+			loadSearchHits(0, std::vector<int>(page.begin(), page.end()), [=](
+					QVector<MTPMessage> messages, QVector<MTPUser> users) {
+				state->messages += messages;
+				state->users += users;
+				if (continuation) (*continuation)();
+			});
+		};
+		(*next)();
+	}
+
+	void searchMessages(
+			int userId,
+			const QString &query,
+			Fn<void(QVector<MTPMessage>, QVector<MTPUser>)> done) {
+		findMessageIds(userId, query, [=](QVector<int> ids, QString error) {
+			if (!error.isEmpty()) {
+				reportError(error);
+				done({}, {});
+				return;
+			}
+			loadSearchResults(ids, std::move(done));
+		});
 	}
 
 	void loadInviteQr(
@@ -1464,6 +1515,7 @@ public:
 		}
 		++_dialogsEpoch;
 		_accountScope.invalidate();
+		AccountViewRevision = AccountViewRevision.current() + 1;
 		_session->data().histories().resetBackendRequests();
 		++_selfAvatarRevision;
 		_deletedMessages.clear();
@@ -2185,6 +2237,7 @@ private:
 			QVector<MTPMessage> messages;
 			QSet<int> users;
 			int remaining = 0;
+			QString error;
 		};
 		const auto state = std::make_shared<State>();
 		state->remaining = int(ids.size());
@@ -2209,6 +2262,8 @@ private:
 						}
 						state->messages[i] = MessageFromJson(peerUser, data);
 						state->users.insert(peerUser);
+					} else if (state->error.isEmpty()) {
+						state->error = ErrorText(one);
 					}
 					if (--state->remaining == 0) {
 						auto users = QVector<MTPUser>();
@@ -2229,6 +2284,7 @@ private:
 								messages.push_back(message);
 							}
 						}
+						if (!state->error.isEmpty()) reportError(state->error);
 						done(std::move(messages), std::move(users));
 					}
 				});
@@ -3122,6 +3178,10 @@ int AccountGeneration() {
 	return GlobalBridge ? GlobalBridge->_dialogsEpoch : -1;
 }
 
+rpl::producer<int> AccountViewResets() {
+	return AccountViewRevision.changes();
+}
+
 void SaveDraft(int userId, const QString &text, int quotedMessageId) {
 	if (GlobalBridge) GlobalBridge->saveDraft(userId, text, quotedMessageId);
 }
@@ -3613,15 +3673,25 @@ void SetSelfAvatar(const QString &path, Fn<void(QString)> done) {
 	GlobalBridge->setSelfAvatar(path, std::move(done));
 }
 
-void SearchMessages(
+void FindMessageIds(
 		int userId,
 		const QString &query,
+		Fn<void(QVector<int>, QString)> done) {
+	if (!GlobalBridge) {
+		done({}, u"Delta Chat is not running."_q);
+		return;
+	}
+	GlobalBridge->findMessageIds(userId, query, std::move(done));
+}
+
+void LoadSearchResults(
+		const QVector<int> &ids,
 		Fn<void(QVector<MTPMessage>, QVector<MTPUser>)> done) {
 	if (!GlobalBridge) {
 		done({}, {});
 		return;
 	}
-	GlobalBridge->searchMessages(userId, query, std::move(done));
+	GlobalBridge->loadSearchResults(ids, std::move(done));
 }
 
 void ListTransports(Fn<void(QJsonArray, QString)> done) {

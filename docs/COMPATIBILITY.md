@@ -50,7 +50,7 @@ are not copied here. Deltagram evidence comes from [PROGRESS.md](PROGRESS.md),
 | Invite QR scanning | 🟡 Partial | Camera capture, QR image files and clipboard screenshots feed Core invites for an explicit Join. Image decoding is checked locally; physical camera capture needs hardware validation. |
 | Second-device setup | 🟡 Partial | Real Core backup QR generation exists; completed transfer to another device is unverified. |
 | Contact status and biographies | 🟡 Partial | Available Core contact status displayed; imported vCard biographies are unsupported by the current Core snapshot. |
-| Search | 🟡 Partial | Core message search is wired into the bridge; global/in-chat result navigation and help/HTML searches need separate checks. |
+| Search | 🟡 Partial | Core result IDs now feed paged global/in-chat search, with canceled-query/account guards and visible failures. Saved Messages self-peer loading no longer requires a Telegram phone number. Native checks for more than 50 matches and result navigation are pending; help/HTML searches need separate checks. |
 | App picker and webxdc | 🟡 Partial | Embedded app store exists; host rendering, draft preparation and synchronized webxdc updates are unverified. |
 | Calls | ❌ Unavailable | Delta Chat calling is not implemented. Chat-header call buttons are hidden, call entry points stop before device permissions, Telegram conference creation/joining is disabled, and tde2e is excluded. |
 | Service-event presentation | ❌ Unavailable | Recorded as unfinished in the development log. |

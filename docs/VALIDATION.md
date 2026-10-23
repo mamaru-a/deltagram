@@ -174,6 +174,21 @@ The final GUI must repeat delayed replacement, cancellation and profile-switch
 checks. The before-fix behavior was reproduced with disposable messages; the
 native fix still requires compilation and rendered verification.
 
+Search review also found a hard limit of 50 loaded hits, advertised as the whole
+result. Global and in-chat searches now retain Core's ordered ID snapshot and
+load 50-item pages, with the snapshot count and a continuation until exhausted.
+Profile changes clear search results/caches and invalidate pending loads. Failed
+search reads are visible rather than silently reported as a successful empty
+result. Legacy search loads are also processed in bounded batches.
+
+A disposable Saved Messages fixture contains 60 confirmed Core matches. Its
+older GUI showed none: donor self-peer loading required a Telegram phone number
+and rejected the Core profile in search, with matching diagnostic errors. Core
+self profiles now qualify as loaded without a phone number. The 60-result
+fixture, page navigation, failed reads, cancellation and account changes still
+require final native GUI verification. Core's own global-search limit remains
+authoritative; Deltagram no longer imposes the extra 50-result cutoff.
+
 An immediate normal quit after typing a new disposable-chat draft preserved the
 complete text in Core and restored it in the old GUI composer. A runtime socket
 snapshot showed no GUI-owned TCP sockets and Core-owned IMAP connections. The
