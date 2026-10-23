@@ -52,7 +52,7 @@ are not copied here. Deltagram evidence comes from [PROGRESS.md](PROGRESS.md),
 | Contact status and biographies | 🟡 Partial | Available Core contact status displayed; imported vCard biographies are unsupported by the current Core snapshot. |
 | Search | 🟡 Partial | Core message search is wired into the bridge; global/in-chat result navigation and help/HTML searches need separate checks. |
 | App picker and webxdc | 🟡 Partial | Embedded app store exists; host rendering, draft preparation and synchronized webxdc updates are unverified. |
-| Calls | ❌ Unavailable | Delta Chat calling is not implemented. Telegram conference creation/joining is disabled and tde2e is excluded. |
+| Calls | ❌ Unavailable | Delta Chat calling is not implemented. Chat-header call buttons are hidden, call entry points stop before device permissions, Telegram conference creation/joining is disabled, and tde2e is excluded. |
 | Service-event presentation | ❌ Unavailable | Recorded as unfinished in the development log. |
 | Settings privacy presentation | 🟡 Partial | Hiding the settings email remains unfinished. |
 
