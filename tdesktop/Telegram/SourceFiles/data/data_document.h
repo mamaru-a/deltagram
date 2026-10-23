@@ -298,6 +298,7 @@ public:
 	[[nodiscard]] QString mimeString() const;
 	[[nodiscard]] bool hasMimeType(const QString &mime) const;
 	void setMimeString(const QString &mime);
+	void setLocalFile(const QString &name, const QString &mime);
 	void setLocalVideo(const QString &name, const QString &mime,
 		const QSize &dimensions, int durationMs);
 

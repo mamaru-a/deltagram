@@ -4416,7 +4416,7 @@ bool HistoryItem::isService() const {
 	return Has<HistoryServiceData>();
 }
 
-void HistoryItem::setLocalVideo(
+void HistoryItem::setLocalDocument(
 		not_null<DocumentData*> document,
 		const QString &caption) {
 	if (!_media || _media->document() != document) {
@@ -4424,6 +4424,7 @@ void HistoryItem::setLocalVideo(
 			this, document, Data::MediaFile::Args{});
 	}
 	setText(TextWithEntities{ caption });
+	invalidateChatListEntry();
 	_history->owner().requestItemViewRefresh(this);
 }
 
@@ -4953,6 +4954,7 @@ void HistoryItem::createComponents(CreateConfig &&config) {
 	if (config.reply.messageId
 		|| config.reply.externalSenderId
 		|| !config.reply.externalSenderName.isEmpty()
+		|| !config.reply.quote.empty()
 		|| config.reply.storyId) {
 		mask |= HistoryMessageReply::Bit();
 	}

@@ -2757,7 +2757,9 @@ private:
 						existing->setText(TextWithEntities{
 							qs(built.c_message().vmessage()),
 						});
+						existing->invalidateChatListEntry();
 						_session->data().notifyItemDataChange(existing);
+						_session->data().updateDependentMessages(existing);
 						_session->data().requestItemViewRefresh(existing);
 					}
 					return;
@@ -3337,6 +3339,7 @@ void ApplyMessageData(not_null<HistoryItem*> item) {
 	}
 	const auto path = data.value(u"file"_q).toString();
 	const auto mime = data.value(u"fileMime"_q).toString();
+	const auto kind = data.value(u"viewType"_q).toString();
 	if (const auto media = item->media()) {
 		if (const auto document = media->document();
 			document && document->isVoiceMessage()
@@ -3344,21 +3347,30 @@ void ApplyMessageData(not_null<HistoryItem*> item) {
 			document->setLocation(Core::FileLocation(path));
 		}
 	}
-	if (LooksLikeVideo(data.value(u"viewType"_q).toString(), mime, path)
+	const auto video = LooksLikeVideo(kind, mime, path);
+	const auto file = kind == u"File"_q
+		&& !LooksLikeImage(kind, mime, path)
+		&& !LooksLikeVoice(kind, mime, path);
+	if ((video || file)
 		&& !path.isEmpty() && QFileInfo::exists(path)) {
 		const auto id = DocumentId(0x6000000000000000ULL | uint64(item->id.bare));
 		const auto document = item->history()->owner().document(id);
 		if (document->filepath(true) != path) {
-			document->setLocalVideo(
-				data.value(u"fileName"_q).toString(),
-				mime.isEmpty() ? u"video/mp4"_q : mime,
-				QSize(data.value(u"dimensionsWidth"_q).toInt(),
-					data.value(u"dimensionsHeight"_q).toInt()),
-				data.value(u"duration"_q).toInt());
+			const auto name = data.value(u"fileName"_q).toString();
+			if (video) {
+				document->setLocalVideo(name,
+					mime.isEmpty() ? u"video/mp4"_q : mime,
+					QSize(data.value(u"dimensionsWidth"_q).toInt(),
+						data.value(u"dimensionsHeight"_q).toInt()),
+					data.value(u"duration"_q).toInt());
+			} else {
+				document->setLocalFile(name.isEmpty() ? QFileInfo(path).fileName() : name,
+					mime.isEmpty() ? u"application/octet-stream"_q : mime);
+			}
 			document->size = QFileInfo(path).size();
 			document->setLocation(Core::FileLocation(path));
 		}
-		item->setLocalVideo(document, data.value(u"text"_q).toString());
+		item->setLocalDocument(document, data.value(u"text"_q).toString());
 	}
 	item->history()->owner().notifyItemDataChange(item);
 	item->history()->updateChatListEntry();

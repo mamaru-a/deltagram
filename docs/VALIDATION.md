@@ -43,6 +43,22 @@ anchor displayed an unsent draft as a bubble and hid existing messages. The
 bridge now separates draft presentation from the last real history message;
 the real-Core regression verifies this preview/history contract.
 
+Further checks on that same GUI passed deliberately rejected deletion (error
+toast, retained bubble and retained Core message), navigation from the group
+sender to the correct contact, bidirectional group text through both actual
+GUIs, a read receipt (Core state 28 and the rendered double check), an incoming
+edit, and a quoted GUI reply received by the reference client. The primary
+profile's stored draft also restored after reopening its DM.
+
+These checks exposed three presentation defects addressed after `ad04da9`:
+incoming edits did not invalidate the chat-list preview; ordinary downloaded
+files displayed only their caption; and retained quote text disappeared when
+the original message was absent. The changes refresh dependent presentation,
+reuse the native local-document view for files, and retain standalone quote
+components. Final compilation, file saving and rendered regression checks are
+still required. No new protocol implementation or fake transport object was
+added for these paths.
+
 Clear history, delete chat and date-range deletion now use Core RPCs and apply
 only confirmed removals. Added regression cases cover rejected reads/deletes,
 partial success, messages arriving after the snapshot, account switches,

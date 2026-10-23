@@ -124,6 +124,11 @@ by the Delta client. They are retained on disk; new drafts persist through Core.
 The first full remote GUI build passed at `4ddcae4`. Its GUI displayed the
 actual group sender and restored the alternate profile's own draft. Later
 history/deletion changes still await a full build and rendered verification.
+That GUI also passed rejected deletion, correct sender-profile navigation,
+bidirectional group text, a read receipt, incoming text edits and a quoted reply
+against the official desktop GUI. Live checks exposed stale edited previews,
+ordinary files rendered as captions only, and missing standalone quote text;
+the follow-up presentation fixes await the final build and GUI validation.
 
 Before release, build the final revision and exercise two disposable profiles
 with overlapping IDs: switch with an unsent draft and delayed edit, reject a

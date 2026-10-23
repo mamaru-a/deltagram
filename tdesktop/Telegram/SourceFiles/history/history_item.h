@@ -253,7 +253,7 @@ public:
 		_mainView = view;
 	}
 	void refreshMainView();
-	void setLocalVideo(not_null<DocumentData*> document, const QString &caption);
+	void setLocalDocument(not_null<DocumentData*> document, const QString &caption);
 	void clearMainView();
 	void removeMainView(
 		Data::ViewRemovalReason reason = Data::ViewRemovalReason::Removed);
