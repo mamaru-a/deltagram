@@ -28,6 +28,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/random.h"
 #include "main/main_session.h"
 #include "window/notifications_manager.h"
+#include "window/window_session_controller.h"
 #include "history/history.h"
 #include "history/history_item.h"
 #include "history/history_item_helpers.h"
@@ -973,6 +974,16 @@ void Histories::deleteMessagesByDates(
 
 void Histories::deleteMessages(const MessageIdsList &ids, bool revoke) {
 	if (Delta::Active()) {
+		for (const auto &id : ids) {
+			const auto item = _owner->message(id);
+			if (item && item->isSending()) {
+				for (const auto &window : session().windows()) {
+					window->showToast(
+						u"Wait for sending to finish before deleting this message."_q);
+				}
+				return;
+			}
+		}
 		auto coreIds = QVector<int>();
 		for (const auto &id : ids) {
 			if (IsClientMsgId(id.msg)) {

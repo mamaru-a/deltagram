@@ -86,7 +86,7 @@ timeouts without retrying mutations, restart framing, account isolation,
 draft attachment preservation, draft deletion, serialized draft writes, visible
 write failures, and Core-ordered pagination with non-monotonic IDs.
 `nix/test-rpc.sh` runs this suite before its real-Core smoke test.
-An additional real-Core case passes against Core 2.62.0: two unconfigured
+An additional real-Core case passes against Core 2.62.0 and pinned 2.63.0-dev: two unconfigured
 accounts with identical chat IDs retain independent drafts; changing draft
 text preserves the attachment bytes, and clearing the other draft persists.
 Set `DELTA_TEST_CORE_RPC` to run this case directly. `nix/test-rpc.sh` supplies
@@ -99,8 +99,17 @@ Forwarding uses Core message events instead of guessing the created IDs.
 Profile changes also cancel queued donor history/read requests without resuming
 their old generators. A failed or raced unread lookup retains a valid history
 anchor instead of inventing message ID 1.
+Messages still awaiting a Core send ID cannot be deleted locally; deletion
+becomes available after the send completes, avoiding apparent cancellation
+followed by the accepted message reappearing.
 These paths require full-client regression checks; the standalone tests do not
 establish GUI behavior or live interoperability.
+
+Live disposable-account checks passed between pinned Core 2.63.0-dev and the
+Core bundled with official Delta Chat Desktop 2.62.0: SecureJoin completion,
+bidirectional text, read receipts, edits preserving message IDs, quoted replies,
+remote deletion, group sender identity and byte-identical file delivery.
+These checks used the RPC APIs; fixed Deltagram GUI behavior is a separate gate.
 
 Existing local draft files lack an account identity and are no longer loaded
 by the Delta client. They are retained on disk; new drafts persist through Core.

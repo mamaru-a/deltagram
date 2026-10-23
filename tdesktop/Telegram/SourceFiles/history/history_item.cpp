@@ -3332,7 +3332,10 @@ bool HistoryItem::allowsMediaDownloadControls() const {
 }
 
 bool HistoryItem::canDelete() const {
-	if (isSponsored()) {
+	if (Delta::Active() && isSending()) {
+		// Core may already have accepted the send, but its ID is not known yet.
+		return false;
+	} else if (isSponsored()) {
 		return false;
 	} else if (isEphemeral()) {
 		return false;

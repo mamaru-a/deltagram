@@ -1,5 +1,44 @@
 # Publication validation
 
+## Client integrity checks — 2026-10-23
+
+The integrity branch adds account-scoped drafts and callbacks, Core-ordered
+pagination and unread handling, sender identity, confirmed deletion and bounded
+RPC failure handling. The full fixed GUI build and its live regression checks
+are still pending; these results do not establish production readiness.
+
+Fifteen Qt regression cases passed in Ubuntu 24.04 x86-64 with Qt 6.4.2,
+including a real-Core two-account draft test against both Core 2.62.0 and the
+project's pinned 2.63.0-dev. The latter binary was extracted from the project's
+verified v0.2.5 release, whose Core source pin matches this checkout
+(`8468f5b5dd603da09d81146abbc52aad48604c6c`).
+
+Explicitly authorized disposable accounts were isolated from existing profiles:
+**Deltagram integrity A**, **Deltagram integrity alternate** and
+**Delta Chat reference B**. The reference client is the verified official
+Delta Chat Desktop 2.62.0 Linux AppImage. No account passwords or addresses are
+included in this report.
+
+Real mail IO between pinned Core 2.63.0-dev and reference Core 2.62.0 passed
+SecureJoin readiness, A-to-B text delivery, read receipts, edits retaining the
+receiver's message ID, B-to-A quoted replies, remote deletion, group sender
+identity and attachment SHA-256 equality. These are Core API checks, not proof
+that the modified GUI renders each result correctly.
+
+The released Deltagram 0.2.5 GUI reproduced three regressions under Xvfb:
+an incoming group message omitted its sender label; a deliberately rejected
+Core deletion removed the message from the UI although Core retained it; and
+switching profiles copied an unsent primary-profile draft into the alternate
+profile's composer despite its distinct Core draft. These provide before-fix
+evidence for the corresponding changes. The reference Desktop client also sent
+a UI message for the subsequent fixed-GUI receive check.
+
+The pinned Nix toolchain configured the full GUI locally, preserving its Ninja
+and ccache records. Native CI and modified-source compilation are in progress.
+No new production release has been published.
+
+## Initial publication — 2026-10-05
+
 Checks run on 2026-10-05, x86_64 Linux:
 
 - Fresh single-user Nix installation, dependency closure build and shell entry.
