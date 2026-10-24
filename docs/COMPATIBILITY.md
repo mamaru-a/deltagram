@@ -42,7 +42,7 @@ are not copied here. Deltagram evidence comes from [PROGRESS.md](PROGRESS.md),
 | Text, images, files, videos and forwarding | 🟡 Partial | Live Core API checks passed bidirectional text and byte-identical file delivery against Delta Chat 2.62.0. MP4 sending, GUI forwarding and local playback have earlier local checks. `3c2def3` passed bidirectional GUI text, explicit partial download with rejection, byte-identical GUI saving, and anonymous forwarding. Save As defaults were corrected in `6a6d60d`; broader video/staging checks remain. |
 | Delivery and read indicators | 🟡 Partial | A live cross-client Core read receipt passed. The `9397be0` GUI displays a live read receipt; `d05d666` passes event-before-ack reconciliation. Multi-recipient behavior needs validation. |
 | Quotes and replies | 🟡 Partial | A live Core reply retained its quote across clients. Complete GUI create/display/jump behavior remains unverified. |
-| Message editing, deletion and chat archiving | 🟡 Partial | Live Core edits retained message IDs and remote deletion passed. Rejected deletion preserves messages in verified GUIs. `9397be0` passes plain-text GUI edits in both clients; Core-aware edit eligibility and broader deletion replay remain pending. |
+| Message editing, deletion and chat archiving | 🟡 Partial | Live Core edits retained message IDs and remote deletion passed. Rejected deletion preserves messages in verified GUIs. `9397be0` passes plain-text GUI edits in both clients; Core-aware edit eligibility passed on `e846f9b`; immediate quote retention after deletion passed on `8323369`. Broader deletion paths remain. |
 | Voice messages | 🟡 Partial | Native waveform, duration, play/pause and seeking are implemented; local attachment playback is verified. Microphone recording and live cross-client delivery still need broader testing. |
 | Multiple profiles | 🟡 Partial | Switching clears reused histories, drafts, pending messages and attachment caches. Core draft storage and asynchronous callbacks are scoped to the account. `3c2def3` passed distinct drafts, red/blue images, two-/four-second voice clips, and playback/search reset across overlapping message IDs. |
 | Profile and group photos | 🟡 Partial | Settings image selection/crop/save and account avatar colors checked locally with Core; group checks recorded. Complete camera workflows and live photo distribution need checking. |
@@ -80,24 +80,27 @@ They are **unverified**, rather than assumed to work because the donor UI has th
 ## Client integrity verification (2026-10-24)
 
 See [VALIDATION.md](VALIDATION.md) for revision-specific build, focused-test,
-Core API and GUI evidence. Full native/portable/package CI passed at `e846f9b`,
-including all 27 focused Qt cases against pinned Core. Edit capability guards
-await GUI replay; later draft/quote fixes await their native/live gate.
+Core API and GUI evidence. Full native/portable/package CI passed at `374244e`,
+including all 27 focused Qt cases and complete Debian 13/Ubuntu 22.04 runtime
+checks. The latest application-code artifact `8323369` was checksum-verified
+before GUI replay; the subsequent change adds only missing test dependencies.
 
 Disposable live GUI checks cover account/media isolation, crash-free repeated
 profile switches, paged global/in-chat search, explicit partial downloads,
 rejected Clear history, date-range deletion, send acknowledgement races,
 reaction rendering, configured-onboarding recovery, anonymous forwarding and
-standalone quotes. Fresh GUI provisioning and QR-image SecureJoin passed against
-official Desktop 2.62.0. The `9397be0` GUI sends editable plain text correctly
-and displays cross-client edits and read receipts.
+standalone quotes. Fresh provisioning and QR-image SecureJoin passed against
+official Desktop 2.62.0. Plain text, read receipts, edits, quoted replies and
+remote deletion work through both GUIs on the recorded artifacts.
 
-A rejected send with an already populated newer draft was lost after profile
-switching on `d05d666`. Its recovery fix is committed but awaits native/live
-validation. Interrupted sends and final callback/crash replays remain release
-gates. No production readiness or complete Delta Chat feature parity is claimed.
-Existing unscoped draft files are retained on disk and not loaded into another
-profile.
+The `8323369` GUI preserves rejected text alongside newer drafts and recovers
+late failures into the original profile after switching. Quote text survives
+immediate deletion of its original. Delayed dialog/edit callbacks and Core exit
+are handled without a crash; an already persisted draft returns after restart.
+Unacknowledged-send shutdown/crash durability remains unverified, alongside the
+broader gaps above. No production readiness or complete Delta Chat feature
+parity is claimed. Existing unscoped draft files are retained without loading
+into another profile.
 
 ## Updating this tracker
 

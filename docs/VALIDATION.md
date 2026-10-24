@@ -7,13 +7,15 @@ heavy local builds run in parallel; Ninja records and ccache are preserved.
 Commits and fork CI use `mamaru-a`. No production release has been published.
 
 Native compilation, all 27 focused Qt cases (29 including setup/cleanup),
-portable runtime checks and Debian/RPM/Arch/tar package verification passed at
-`e846f9b`: [CI run](https://github.com/mamaru-a/deltagram/actions/runs/40057490932).
-Downloaded `9397be0` native GUI/Core SHA-256 checksums match. Later
-rejected-send draft recovery and quote-deletion presentation changes require
-their own native/live validation.
-The standalone suite at `e846f9b` passes all 27 focused cases (29 including
-setup/cleanup) against pinned Core, with no skipped cases.
+portable runtime checks on Debian 13 and Ubuntu 22.04, and Debian/RPM/Arch/tar
+package verification passed at `374244e`:
+[CI run](https://github.com/mamaru-a/deltagram/actions/runs/40060351864).
+The latest application-code artifact, `8323369`, was downloaded and its GUI/Core
+SHA-256 checksums verified before live replay. `374244e` only completes the
+portable test dependency set; it does not change application code. The initial
+Ubuntu check reached GUI/RPC/WebKit/input/cursor success but its final GIO harness
+check required matching `libmount`/`libblkid` dependencies. The corrected run
+passes the complete check on both distributions.
 
 Live tests use isolated disposable profiles **Deltagram integrity A**,
 **Deltagram integrity alternate**, **Deltagram integrity onboarding**,
@@ -47,12 +49,25 @@ Ubuntu 24.04 under Xvfb.
   clients and Deltagram displays the read receipt. A reference-client quoted reply renders
   with the matching Core message ID. Remote deletion removes the original from
   both clients; immediate quote rendering after deletion exposed a separate
-  presentation bug fixed in `c3e4e8d`, awaiting replay.
+  presentation bug fixed in `c3e4e8d` and verified on `8323369`.
 - `4fd0cb2`: chat export and auto-delete controls are absent from the actual
   chat/privacy/advanced menus. Sharing restrictions are guarded in source.
 - `6a6d60d`: Save As suggests the original attachment filename and the previous
   user-selected directory, and saved bytes match the fixture SHA-256. Immediate
   normal quit preserves the complete latest draft across restart.
+
+The `e846f9b` GUI hides Edit for HTML messages and permits plain-text editing;
+the edited text reaches the reference GUI. On `8323369`, rejected sends with a
+newer composer draft preserve both texts in Core and across profile switches.
+A rejection arriving after switching profiles recovers the original profile's
+draft without changing the alternate profile. A live quoted reply remains
+visible immediately after deleting its original, without reopening the chat.
+
+The same `8323369` artifact passes delayed Connectivity closure and an edit reply
+arriving after a profile change. Terminating the disposable Core process shows a
+stopped state while the GUI remains responsive; restarting restores an already
+persisted draft. These checks do not prove recovery of an unacknowledged send
+interrupted by process exit.
 
 A network ownership snapshot on `a8c544f` found no GUI network sockets and mail
 connections owned by Core. This is a point-in-time check, not proof for every
@@ -111,24 +126,15 @@ substitute for GUI verification.
 
 ### Remaining release gates
 
-Production readiness is not established. Live testing on `d05d666` found that
-rejected text is lost on profile switching if a newer composer draft already
-exists. `1903f6e` preserves both texts in the draft; its native build and GUI
-replay are pending. Core-aware edit eligibility at `e846f9b` passed native CI and awaits GUI
-replay, including rejection of HTML-message editing and removal of the donor's
-unrelated edit-age limit.
+Production readiness is not established. Unacknowledged sends interrupted by
+application shutdown or Core failure still need a durability check. The known
+profile-switch crash, send acknowledgement races, rejected-send draft loss and
+quote-deletion presentation defects have passed their targeted live replays.
 
-A second rejected-send loss occurs when its reply arrives after switching
-profiles. The follow-up recovers text through the original account/chat in Core
-while keeping the stale view callback canceled. Its account/attachment draft
-regression passes against real Core; native and live verification are pending.
-
-Remaining checks include final-revision Core crash and callback lifetime
-replays, interrupted sends across profile changes/shutdown, and complete
-multi-stage deletion failure handling. The focused suite covers partial deletion
-failure, but the tested group delete dialog does not expose that combined path.
-The package gate passed in CI; an additional Ubuntu 22.04 portable-runtime check
-is now part of the sequential CI workflow and awaits its first run.
+The focused suite covers partial multi-stage deletion failure, but the tested
+group delete dialog does not expose that combined path. Broader operational and
+feature coverage below remains open. Native, package and the additional Ubuntu
+22.04 portable-runtime gates now pass.
 
 `docs/COMPATIBILITY.md` records wider feature gaps: inactive-profile
 notifications, attachment staging/media navigation, member management,
