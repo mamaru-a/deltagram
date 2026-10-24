@@ -6,6 +6,7 @@ This file is part of Delta Tel, a Telegram Desktop based Delta Chat client.
 #include "delta/message_order.h"
 #include "delta/message_visibility.h"
 #include "delta/message_download.h"
+#include "delta/message_capabilities.h"
 #include "delta/media_identity.h"
 #include "delta/avatar_image.h"
 
@@ -3402,6 +3403,10 @@ std::optional<DeliveryState> MessageDelivery(int messageId) {
 		: state == 26 ? DeliveryState::Sent
 		: state == 24 ? DeliveryState::Failed
 		: DeliveryState::Pending;
+}
+
+bool CanEditMessage(int messageId) {
+	return Active() && CanEditCoreMessage(CoreMessages.value(messageId));
 }
 
 bool CanDownloadMessage(int messageId) {

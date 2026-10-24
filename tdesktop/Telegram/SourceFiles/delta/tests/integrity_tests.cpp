@@ -5,6 +5,7 @@
 #include "message_order.h"
 #include "message_visibility.h"
 #include "message_download.h"
+#include "message_capabilities.h"
 #include "history_mutations.h"
 #include "media_identity.h"
 
@@ -40,6 +41,35 @@ class IntegrityTests final : public QObject {
 	Q_OBJECT
 
 private slots:
+	void editingFollowsCoreCapabilities() {
+		const auto editable = QJsonObject{
+			{u"fromId"_s, 1}, {u"isInfo"_s, false}, {u"hasHtml"_s, false},
+			{u"viewType"_s, u"Text"_s}, {u"text"_s, u"Original"_s},
+		};
+		QVERIFY(Delta::CanEditCoreMessage(editable));
+		QVERIFY(!Delta::CanEditCoreMessage({}));
+		for (const auto &field : {u"fromId"_s, u"isInfo"_s, u"hasHtml"_s,
+				u"viewType"_s, u"text"_s}) {
+			auto missing = editable;
+			missing.remove(field);
+			QVERIFY(!Delta::CanEditCoreMessage(missing));
+		}
+		for (const auto &change : {
+				QJsonObject{{u"fromId"_s, 10}},
+				QJsonObject{{u"isInfo"_s, true}},
+				QJsonObject{{u"hasHtml"_s, true}},
+				QJsonObject{{u"hasHtml"_s, u"false"_s}},
+				QJsonObject{{u"viewType"_s, u"Call"_s}},
+				QJsonObject{{u"text"_s, u""_s}}}) {
+			auto message = editable;
+			message.insert(change.begin().key(), change.begin().value());
+			QVERIFY(!Delta::CanEditCoreMessage(message));
+		}
+		auto caption = editable;
+		caption.insert(u"viewType"_s, u"File"_s);
+		QVERIFY(Delta::CanEditCoreMessage(caption));
+	}
+
 	void accountDiscoveryRequiresConfirmedState() {
 		for (const auto reply : {QJsonObject{{u"result"_s, QJsonArray()}},
 				QJsonObject{{u"result"_s, QJsonValue()}}, QJsonObject{{u"error"_s, u"unavailable"_s}}}) {

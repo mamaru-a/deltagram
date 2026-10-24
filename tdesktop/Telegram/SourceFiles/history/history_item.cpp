@@ -3246,13 +3246,17 @@ bool HistoryItem::allowsForward() const {
 }
 
 bool HistoryItem::isTooOldForEdit(TimeId now) const {
-	return !_history->peer->canEditMessagesIndefinitely()
+	return !Delta::Active()
+		&& !_history->peer->canEditMessagesIndefinitely()
 		&& !isScheduled()
 		&& !isWelcomeTemplate()
 		&& (now - date() >= _history->session().serverConfig().editTimeLimit);
 }
 
 bool HistoryItem::allowsEdit(TimeId now) const {
+	if (Delta::Active() && !Delta::CanEditMessage(id.bare)) {
+		return false;
+	}
 	const auto richPageSource = Get<HistoryMessageRichPageSource>();
 	const auto richPage = BestRichPage(richPageSource);
 	return !isService()

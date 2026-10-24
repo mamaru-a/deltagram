@@ -50,6 +50,7 @@ void SaveDraft(int userId, const QString &text, int quotedMessageId);
 void LoadDraft(int userId, Fn<void(ComposeDraft)> done);
 enum class DeliveryState { Pending, Failed, Sent, Read };
 [[nodiscard]] std::optional<DeliveryState> MessageDelivery(int messageId);
+[[nodiscard]] bool CanEditMessage(int messageId);
 void ApplyMessageData(not_null<HistoryItem*> item);
 [[nodiscard]] bool CanDownloadMessage(int messageId);
 void DownloadMessage(int messageId);
