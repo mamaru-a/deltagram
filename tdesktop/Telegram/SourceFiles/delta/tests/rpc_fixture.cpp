@@ -172,6 +172,14 @@ int main(int argc, char **argv) {
 				{u"text"_s, args[2]}, {u"file"_s, args[3]}, {u"fileName"_s, args[4]},
 				{u"quote"_s, QJsonObject{{u"messageId"_s, args[5]}}}, {u"viewType"_s, args[6]},
 			};
+			if (mode == u"discard-lost-ack"_s || mode == u"handoff-save-lost-ack"_s) {
+				if (mode == u"handoff-save-lost-ack"_s) drafts[key][u"file"_s] = u"/core/managed.bin"_s;
+				std::cout << QJsonDocument(QJsonObject{
+					{u"id"_s, request[u"id"_s]},
+					{u"error"_s, QJsonObject{{u"message"_s, u"reply lost after commit"_s}}},
+				}).toJson(QJsonDocument::Compact).constData() << std::endl;
+				continue;
+			}
 			if (mode == u"hold-first-save"_s && writes == 1) { held = request; continue; }
 			Reply(request, true);
 			continue;

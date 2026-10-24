@@ -792,6 +792,7 @@ public:
 		_drafts->load(_accountId, chatForPeerUser(userId), [=](ComposeDraft draft, QString error) {
 			if (guard.expired() || epoch != _dialogsEpoch || !error.isEmpty()) return;
 			done(std::move(draft));
+			ComposerRevision = ComposerRevision.current() + 1;
 		});
 	}
 
@@ -806,13 +807,13 @@ public:
 		return true;
 	}
 
-	void sendComposerText(int userId, const QString &text, int quote, Fn<void(bool)> done) {
+	void sendComposerDraft(int userId, ComposeDraft draft, Fn<void(bool)> done) {
 		if (!composerWritable(userId)) return;
 		const auto account = _accountId;
 		const auto chat = chatForPeerUser(userId);
 		const auto epoch = _dialogsEpoch;
 		const auto guard = _alive;
-		_drafts->sendText(account, chat, text, quote, [=](int id, QString error) {
+		const auto completed = [=](int id, QString error) {
 			if (guard.expired()) return;
 			if (!error.isEmpty()) reportError(error);
 			if (account == _accountId) {
@@ -827,8 +828,29 @@ public:
 				if (epoch == _dialogsEpoch && done) done(id > 0);
 			}
 			ComposerRevision = ComposerRevision.current() + 1;
+		};
+		if (draft.file.isEmpty()) {
+			_drafts->sendText(account, chat, draft.text, draft.quotedMessageId, completed);
+		} else {
+			_drafts->sendAttachment(account, chat, std::move(draft), completed);
+		}
+		ComposerRevision = ComposerRevision.current() + 1;
+	}
+
+	void discardDraftAttachment(int userId, const QString &file, Fn<void(bool)> done) {
+		const auto guard = _alive;
+		const auto epoch = _dialogsEpoch;
+		_drafts->discardAttachment(_accountId, chatForPeerUser(userId), file, [=](bool removed) {
+			if (guard.expired()) return;
+			if (!removed) reportError(u"Attachment removal was not confirmed. Review the saved draft before trying again."_q);
+			if (epoch == _dialogsEpoch && done) done(removed);
+			ComposerRevision = ComposerRevision.current() + 1;
 		});
 		ComposerRevision = ComposerRevision.current() + 1;
+	}
+
+	QString draftAttachmentName(int userId) const {
+		return _drafts->attachmentName(_accountId, chatForPeerUser(userId));
 	}
 
 	void start() {
@@ -3272,7 +3294,19 @@ bool PreparingSendPreventsQuit() {
 }
 
 void SendComposerText(int userId, const QString &text, int quote, Fn<void(bool)> done) {
-	if (GlobalBridge) GlobalBridge->sendComposerText(userId, text, quote, std::move(done));
+	if (GlobalBridge) GlobalBridge->sendComposerDraft(userId, ComposeDraft{ text, quote }, std::move(done));
+}
+
+void SendComposerAttachment(int userId, ComposeDraft draft, Fn<void(bool)> done) {
+	if (GlobalBridge) GlobalBridge->sendComposerDraft(userId, std::move(draft), std::move(done));
+}
+
+void DiscardDraftAttachment(int userId, const QString &file, Fn<void(bool)> done) {
+	if (GlobalBridge) GlobalBridge->discardDraftAttachment(userId, file, std::move(done));
+}
+
+QString DraftAttachmentName(int userId) {
+	return GlobalBridge ? GlobalBridge->draftAttachmentName(userId) : QString();
 }
 
 void SaveDraft(int userId, const QString &text, int quotedMessageId) {

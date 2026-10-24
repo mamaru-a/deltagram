@@ -51,6 +51,9 @@ void StartSession(
 [[nodiscard]] bool PreparingSendPreventsQuit();
 void SendComposerText(int userId, const QString &text, int quotedMessageId,
 	Fn<void(bool)> done);
+void SendComposerAttachment(int userId, ComposeDraft draft, Fn<void(bool)> done);
+void DiscardDraftAttachment(int userId, const QString &expectedFile, Fn<void(bool)> done);
+[[nodiscard]] QString DraftAttachmentName(int userId);
 void SaveDraft(int userId, const QString &text, int quotedMessageId);
 void LoadDraft(int userId, Fn<void(ComposeDraft)> done);
 enum class DeliveryState { Pending, Failed, Sent, Read };

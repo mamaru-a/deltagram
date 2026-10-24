@@ -25,6 +25,10 @@ enum class SendMediaType;
 class MessageLinksParser;
 struct InlineBotQuery;
 
+namespace Delta {
+struct ComposeDraft;
+} // namespace Delta
+
 namespace MTP {
 class Error;
 } // namespace MTP
@@ -511,6 +515,8 @@ private:
 	void updateOverStates(QPoint pos);
 	void clearOverStates();
 	void chooseAttach(std::optional<bool> overrideSendImagesAsPhotos = {});
+	void chooseNewAttachment(std::optional<bool> overrideSendImagesAsPhotos);
+	void sendDeltaAttachment(Delta::ComposeDraft draft);
 	void sendButtonClicked();
 	void stopStreamedDraft();
 	void newItemAdded(not_null<HistoryItem*> item);

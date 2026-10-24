@@ -158,6 +158,62 @@ void DraftStore::sendAttachment(int accountId, int chatId, ComposeDraft draft, S
 	beginSend(Key(accountId, chatId), std::move(draft), std::move(done));
 }
 
+void DraftStore::discardAttachment(int accountId, int chatId,
+		const QString &expectedFile, std::function<void(bool)> done) {
+	const auto key = Key(accountId, chatId);
+	auto &entry = _entries[key];
+	if (entry.send || expectedFile.isEmpty()) {
+		if (done) done(false);
+		return;
+	}
+	entry.send = Entry::Send{
+		ComposeDraft{ {}, 0, expectedFile },
+		[done = std::move(done)](int, QString error) {
+			if (done) done(error.isEmpty());
+		}, false, false, true,
+	};
+	ensureLoaded(key);
+}
+
+QString DraftStore::attachmentName(int accountId, int chatId) const {
+	const auto i = _entries.find(Key(accountId, chatId));
+	if (i == _entries.end() || i->second.value.file.isEmpty()) return {};
+	const auto &name = i->second.value.filename;
+	return name.isEmpty() ? u"Attachment"_s : name;
+}
+
+void DraftStore::startDiscard(Key key) {
+	auto &entry = _entries[key];
+	entry.send->started = true;
+	auto target = entry.value;
+	target.file.clear();
+	target.filename.clear();
+	target.viewType = u"Text"_s;
+	const auto remove = target.text.isEmpty() && !target.quotedMessageId;
+	const auto params = remove ? QJsonArray{key.first, key.second} : QJsonArray{
+		key.first, key.second, target.text, QJsonValue(), QJsonValue(),
+		target.quotedMessageId > 0 ? QJsonValue(target.quotedMessageId) : QJsonValue(),
+		u"Text"_s,
+	};
+	const auto guard = std::weak_ptr<bool>(_alive);
+	_rpc->call(remove ? u"remove_draft"_s : u"misc_set_draft"_s, params,
+		[=, this](QJsonObject reply) {
+			if (guard.expired()) return;
+			// Read back even on an error: Core may have committed the removal.
+			_rpc->call(u"get_draft"_s, {key.first, key.second}, [=, this](QJsonObject read) {
+				if (guard.expired()) return;
+				const auto value = read.value(u"result"_s).toObject();
+				const auto confirmed = !read.contains(u"error"_s)
+					&& value.value(u"file"_s).toString().isEmpty()
+					&& value.value(u"text"_s).toString() == target.text
+					&& value.value(u"quote"_s).toObject().value(u"messageId"_s).toInt() == target.quotedMessageId;
+				if (confirmed) _entries[key].value = target;
+				finishSend(key, 0, confirmed ? QString()
+					: u"Could not confirm attachment removal. Review the saved draft before trying again."_s);
+			});
+		});
+}
+
 void DraftStore::beginSend(Key key, ComposeDraft draft, SendCallback done) {
 	auto &entry = _entries[key];
 	if (entry.send || (draft.text.trimmed().isEmpty() && draft.file.isEmpty())) {
@@ -172,6 +228,10 @@ void DraftStore::startSend(Key key) {
 	auto &entry = _entries[key];
 	if (!entry.value.file.isEmpty() && entry.send->draft.file != entry.value.file) {
 		finishSend(key, 0, u"This chat already has an attachment draft. It was preserved; review or remove it before sending another message."_s);
+		return;
+	}
+	if (entry.send->discard) {
+		startDiscard(key);
 		return;
 	}
 	entry.send->started = true;
@@ -240,6 +300,9 @@ void DraftStore::finishSend(Key key, int messageId, QString error) {
 	const auto done = std::move(entry.send->done);
 	entry.send.reset();
 	if (messageId > 0) entry.value = {};
+	// An error response does not prove that Core rejected the mutation. Reload
+	// its draft before another operation, including the managed attachment path.
+	if (!error.isEmpty()) entry.loaded = false;
 	if (done) done(messageId, std::move(error));
 }
 

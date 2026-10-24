@@ -31,6 +31,9 @@ public:
 	// One handoff per chat. On rejection, load() returns Core's managed file
 	// path; callers must use it for recovery and must serialize attachment batches.
 	void sendAttachment(int accountId, int chatId, ComposeDraft draft, SendCallback done);
+	void discardAttachment(int accountId, int chatId, const QString &expectedFile,
+		std::function<void(bool)> done);
+	[[nodiscard]] QString attachmentName(int accountId, int chatId) const;
 	[[nodiscard]] bool sending(int accountId, int chatId) const;
 	[[nodiscard]] bool preparingSend() const;
 
@@ -42,6 +45,7 @@ private:
 			SendCallback done;
 			bool started = false;
 			bool prepared = false;
+			bool discard = false;
 		};
 		ComposeDraft value;
 		std::optional<Send> send;
@@ -55,6 +59,7 @@ private:
 	void beginSend(Key key, ComposeDraft draft, SendCallback done);
 	void flush(Key key);
 	void startSend(Key key);
+	void startDiscard(Key key);
 	void finishSend(Key key, int messageId, QString error);
 	void notifyReaders(Entry &entry, const QString &error);
 	std::shared_ptr<DeltaRpc> _rpc;

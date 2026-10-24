@@ -469,6 +469,7 @@ HistoryWidget::HistoryWidget(
 	Delta::ComposerChanges() | rpl::on_next([=] {
 		updateControlsVisibility();
 		updateSendButtonType();
+		updateFieldPlaceholder();
 	}, lifetime());
 	_field->cancelled(
 	) | rpl::on_next([=] {
@@ -4047,6 +4048,12 @@ void HistoryWidget::updateControlsVisibility() {
 		|| Delta::ComposerWritable(int(peerToUser(_peer->id).bare));
 	_field->rawTextEdit()->setReadOnly(!writable);
 	_attachToggle->setDisabled(!writable);
+	const auto attachment = (Delta::Active() && _peer)
+		? Delta::DraftAttachmentName(int(peerToUser(_peer->id).bare)) : QString();
+	const auto attachmentHint = attachment.isEmpty() ? tr::lng_attach(tr::now)
+		: u"Saved attachment: "_q + attachment + u". Click to review, send or remove."_q;
+	_attachToggle->setToolTip(attachmentHint);
+	_attachToggle->setAccessibleName(attachmentHint);
 	_fieldBarCancel->setDisabled(!writable);
 	auto fieldDisabledRemoved = (_fieldDisabled != nullptr);
 	auto fieldVisibilityChanged = false;
@@ -6326,6 +6333,55 @@ void HistoryWidget::finishAnimating() {
 
 void HistoryWidget::chooseAttach(
 		std::optional<bool> overrideSendImagesAsPhotos) {
+	if (!Delta::Active() || _editMsgId) {
+		chooseNewAttachment(overrideSendImagesAsPhotos);
+		return;
+	}
+	if (deltaComposerLocked() || !_peer || !_canSendMessages) return;
+	const auto history = _history;
+	const auto generation = Delta::AccountGeneration();
+	const auto userId = int(peerToUser(_peer->id).bare);
+	Delta::LoadDraft(userId, crl::guard(this, [=](Delta::ComposeDraft draft) {
+		if (_history != history || generation != Delta::AccountGeneration()
+			|| deltaComposerLocked()) return;
+		if (draft.file.isEmpty()) {
+			chooseNewAttachment(overrideSendImagesAsPhotos);
+			return;
+		}
+		controller()->show(Box([=](not_null<Ui::GenericBox*> box) {
+			box->setTitle(rpl::single(u"Saved attachment"_q));
+			box->addRow(object_ptr<Ui::FlatLabel>(box,
+				rpl::single(draft.filename + u"\n\nThe attachment is saved in this chat. Send it with the current caption, or remove the attachment and keep the caption."_q)
+					| rpl::map(tr::rich), st::infoAboutGigagroup));
+			const auto current = [=] {
+				return _history == history && generation == Delta::AccountGeneration()
+					&& !deltaComposerLocked();
+			};
+			box->addButton(rpl::single(u"Send"_q), crl::guard(this, [=] {
+				if (!current()) { box->closeBox(); return; }
+				auto send = draft;
+				send.text = _field->getTextWithTags().text;
+				send.quotedMessageId = int(replyTo().messageId.msg.bare);
+				box->closeBox();
+				sendDeltaAttachment(std::move(send));
+			}));
+			box->addButton(rpl::single(u"Remove attachment"_q), crl::guard(this, [=] {
+				if (!current()) { box->closeBox(); return; }
+				saveDraftWithTextNow();
+				box->closeBox();
+				Delta::DiscardDraftAttachment(userId, draft.file, crl::guard(this, [=](bool) {
+					if (_history == history && generation == Delta::AccountGeneration()) {
+						Delta::LoadDraft(userId, [](Delta::ComposeDraft) {});
+					}
+				}));
+			}));
+			box->addButton(tr::lng_cancel(), [=] { box->closeBox(); });
+		}));
+	}));
+}
+
+void HistoryWidget::chooseNewAttachment(
+		std::optional<bool> overrideSendImagesAsPhotos) {
 	if (deltaComposerLocked()) return;
 	if (_editMsgId) {
 		controller()->showToast(tr::lng_edit_caption_attach(tr::now));
@@ -6349,8 +6405,11 @@ void HistoryWidget::chooseAttach(
 		? FileDialog::PhotoVideoFilesFilter()
 		: FileDialog::AllOrImagesFilter();
 
+	const auto history = _history;
+	const auto generation = Delta::AccountGeneration();
 	const auto callbackOnResult = crl::guard(this, [=](
 			FileDialog::OpenResult &&result) {
+		if (_history != history || generation != Delta::AccountGeneration()) return;
 		if (result.paths.isEmpty() && result.remoteContent.isEmpty()) {
 			return;
 		}
@@ -7667,6 +7726,10 @@ void HistoryWidget::updateFieldPlaceholder() {
 			return tr::lng_edit_message_text();
 		} else if (!peer) {
 			return tr::lng_message_ph();
+		} else if (const auto attachment = (Delta::Active() && peer->isUser())
+			? Delta::DraftAttachmentName(int(peerToUser(peer->id).bare)) : QString();
+			!attachment.isEmpty()) {
+			return rpl::single(u"Saved attachment: "_q + attachment + u" — click the attachment button"_q);
 		} else if (peer->isUser() && Delta::IsChannel(peerToUser(peer->id).bare)) {
 			return tr::lng_broadcast_ph();
 		} else if ((_kbShown || _keyboard->forceReply())
@@ -7885,6 +7948,8 @@ bool HistoryWidget::confirmSendingFiles(
 		return false;
 	}
 
+	const auto history = _history;
+	const auto generation = Delta::AccountGeneration();
 	const auto cursor = _field->textCursor();
 	const auto position = cursor.position();
 	const auto anchor = cursor.anchor();
@@ -7902,12 +7967,14 @@ bool HistoryWidget::confirmSendingFiles(
 			std::shared_ptr<Ui::PreparedBundle> bundle,
 			Api::SendOptions options,
 			FullReplyTo currentReplyTo) {
+		if (_history != history || generation != Delta::AccountGeneration()) return;
 		if (!currentReplyTo.messageId && replyTo().messageId) {
 			cancelReply();
 		}
 		sendingFilesConfirmed(std::move(bundle), options);
 	}));
 	box->setCancelledCallback(crl::guard(this, [=] {
+		if (_history != history || generation != Delta::AccountGeneration()) return;
 		_field->setTextWithTags(text);
 		auto cursor = _field->textCursor();
 		cursor.setPosition(anchor);
@@ -7920,6 +7987,7 @@ bool HistoryWidget::confirmSendingFiles(
 		}
 	}));
 	box->takeTextWithTagsRequests() | rpl::on_next([=](TextWithTags &&text) {
+		if (_history != history || generation != Delta::AccountGeneration()) return;
 		_field->setTextWithTags(std::move(text));
 	}, box->lifetime());
 
@@ -7929,6 +7997,31 @@ bool HistoryWidget::confirmSendingFiles(
 	return true;
 }
 
+void HistoryWidget::sendDeltaAttachment(Delta::ComposeDraft draft) {
+	if (!_peer || deltaComposerLocked()) return;
+	const auto userId = int(peerToUser(_peer->id).bare);
+	const auto history = _history;
+	const auto generation = Delta::AccountGeneration();
+	// The confirmation dialog took the caption out of the composer. Restore it
+	// while Core saves the file, so rejection or shutdown cannot hide the text.
+	_field->setTextWithTags(TextWithTags{ draft.text });
+	saveDraftWithTextNow();
+	Delta::SendComposerAttachment(userId, std::move(draft), crl::guard(this, [=](bool sent) {
+		if (_history != history || generation != Delta::AccountGeneration()) return;
+		if (sent) {
+			clearFieldText();
+			cancelReply();
+			saveDraftWithTextNow();
+			fastShowAtEnd(history);
+			session().changes().historyUpdated(history, Data::HistoryUpdate::Flag::MessageSent);
+		} else {
+			Delta::LoadDraft(userId, [](Delta::ComposeDraft) {});
+			controller()->showToast(u"Check the chat, then use the attachment button to review the saved file before retrying."_q);
+		}
+		setInnerFocus();
+	}));
+}
+
 void HistoryWidget::sendingFilesConfirmed(
 		std::shared_ptr<Ui::PreparedBundle> bundle,
 		Api::SendOptions options) {
@@ -7936,6 +8029,22 @@ void HistoryWidget::sendingFilesConfirmed(
 	if (!_peer || showSendingFilesError(*bundle)) {
 		return;
 	}
+	// Ordinary single files can go directly to Core without the donor uploader.
+	// Media transforms and multi-file batches still need their preparation path.
+	if (Delta::Active() && bundle->totalCount == 1 && bundle->groups.size() == 1
+		&& bundle->groups.front().list.files.size() == 1) {
+		const auto &file = bundle->groups.front().list.files.front();
+		if (file.type == Ui::PreparedFile::Type::File && !file.path.isEmpty()
+			&& file.content.isEmpty() && !file.archive && !file.animationJob) {
+			sendDeltaAttachment(Delta::ComposeDraft{
+				file.caption.text, int(replyTo().messageId.msg.bare), file.path,
+				file.displayName.isEmpty() ? QFileInfo(file.path).fileName() : file.displayName,
+				u"File"_q,
+			});
+			return;
+		}
+	}
+
 	const auto ephemeralReply = session().ephemeralMessages()
 		.isEphemeralBotReply(replyTo().messageId);
 	if (bundle->totalCount > 1 && ephemeralReply) {
