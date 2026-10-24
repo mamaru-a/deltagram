@@ -1574,6 +1574,9 @@ void ShowDisableSharingBox(
 }
 
 void Filler::addToggleNoForwards() {
+	if (Delta::Active()) {
+		return;
+	}
 	const auto user = _peer->asUser();
 	if (!user
 		|| user->isInaccessible()

@@ -7,6 +7,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "settings/sections/settings_privacy_security.h"
 
+#include "delta/delta_bridge.h"
+
 #include "settings/settings_common_session.h"
 
 #include "api/api_authorizations.h"
@@ -552,23 +554,25 @@ void BuildSecuritySection(
 		.keywords = { u"security"_q, u"password"_q, u"passcode"_q },
 	});
 
-	auto ttlLabel = rpl::combine(
-		session->api().selfDestruct().periodDefaultHistoryTTL(),
-		tr::lng_settings_ttl_after_off()
-	) | rpl::map([](int ttl, const QString &none) {
-		return ttl ? Ui::FormatTTL(ttl) : none;
-	});
+	if (!Delta::Active()) {
+		auto ttlLabel = rpl::combine(
+			session->api().selfDestruct().periodDefaultHistoryTTL(),
+			tr::lng_settings_ttl_after_off()
+		) | rpl::map([](int ttl, const QString &none) {
+			return ttl ? Ui::FormatTTL(ttl) : none;
+		});
 
-	builder.addButton({
-		.id = u"security/ttl"_q,
-		.title = tr::lng_settings_ttl_title(),
-		.icon = { &st::menuIconTTL },
-		.label = std::move(ttlLabel),
-		.onClick = [showOther] {
-			showOther(GlobalTTLId());
-		},
-		.keywords = { u"ttl"_q, u"auto-delete"_q, u"timer"_q },
-	});
+		builder.addButton({
+			.id = u"security/ttl"_q,
+			.title = tr::lng_settings_ttl_title(),
+			.icon = { &st::menuIconTTL },
+			.label = std::move(ttlLabel),
+			.onClick = [showOther] {
+				showOther(GlobalTTLId());
+			},
+			.keywords = { u"ttl"_q, u"auto-delete"_q, u"timer"_q },
+		});
+	}
 
 	builder.add([session, updateTrigger = rpl::duplicate(updateTrigger)](const WidgetContext &ctx) mutable {
 		std::move(updateTrigger) | rpl::on_next([=] {
