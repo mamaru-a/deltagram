@@ -133,10 +133,11 @@ jobs:
             mkdir -p data/validation-artifacts
             cp data/tdesktop-release/bin/deltagram.stripped data/validation-artifacts/
             cp data/tdesktop-release/bin/deltagram.version data/validation-artifacts/
+            nm --numeric-sort --demangle data/tdesktop-release/bin/Telegram > data/validation-artifacts/deltagram.symbols
             strip --strip-all -o data/validation-artifacts/deltachat-rpc-server data/cargo-target/debug/deltachat-rpc-server
             cp data/delta-shell/Testing/Temporary/LastTest.log data/validation-artifacts/integrity-tests.log
             cd data/validation-artifacts
-            sha256sum deltagram.stripped deltachat-rpc-server > SHA256SUMS
+            sha256sum deltagram.stripped deltachat-rpc-server deltagram.symbols > SHA256SUMS
           '
       - name: Upload manual validation binaries
         if: github.event_name == 'workflow_dispatch' && steps.build.outputs.required == 'true' && steps.plan.outputs.publish != 'true'
