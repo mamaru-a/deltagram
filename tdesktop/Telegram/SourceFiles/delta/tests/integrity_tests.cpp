@@ -41,6 +41,83 @@ class IntegrityTests final : public QObject {
 	Q_OBJECT
 
 private slots:
+	void draftHandoffFailures_data() {
+		QTest::addColumn<QString>("mode");
+		QTest::addColumn<bool>("success");
+		QTest::addColumn<int>("sends");
+		QTest::newRow("accepted") << u"handoff-ok"_s << true << 1;
+		QTest::newRow("accepted-reply-lost") << u"handoff-lost-ack"_s << true << 1;
+		QTest::newRow("save-rejected") << u"handoff-reject-save"_s << false << 0;
+		QTest::newRow("send-rejected") << u"handoff-reject-send"_s << false << 1;
+		QTest::newRow("attachment-preserved") << u"attachment"_s << false << 0;
+	}
+
+	void draftHandoffFailures() {
+		QFETCH(QString, mode);
+		QFETCH(bool, success);
+		QFETCH(int, sends);
+		auto rpc = std::make_shared<DeltaRpc>();
+		rpc->start(QCoreApplication::applicationDirPath() + u"/delta_rpc_fixture"_s, mode);
+		Delta::DraftStore drafts(rpc, [](QString) {});
+		auto completed = false;
+		auto duplicateRejected = false;
+		drafts.sendText(2, 10, u"Keep this message"_s, 0, [&](int id, QString error) {
+			QCOMPARE(id > 0, success);
+			QCOMPARE(error.isEmpty(), success);
+			completed = true;
+		});
+		drafts.sendText(2, 10, u"Duplicate"_s, 0, [&](int id, QString error) {
+			QCOMPARE(id, 0);
+			QVERIFY(!error.isEmpty());
+			duplicateRejected = true;
+		});
+		QVERIFY(duplicateRejected);
+		drafts.save(2, 10, {}, 0);
+		QTRY_VERIFY(completed);
+		QCOMPARE(CoreCall(*rpc, u"sends"_s, {})[u"result"_s].toInt(), sends);
+		const auto draft = CoreCall(*rpc, u"inspect_draft"_s, {2, 10})[u"result"_s].toObject();
+		if (success) {
+			QVERIFY(draft.isEmpty());
+		} else if (sends) {
+			QCOMPARE(draft[u"text"_s].toString(), u"Keep this message"_s);
+		} else {
+			QCOMPARE(draft[u"text"_s].toString(), u"account-2"_s);
+		}
+		QCOMPARE(CoreCall(*rpc, u"inspect_draft"_s, {1, 10})[u"result"_s]
+			.toObject()[u"text"_s].toString(), u"account-1"_s);
+		rpc->stop();
+	}
+
+	void realCoreRejectedDraftHandoff() {
+		const auto program = qEnvironmentVariable("DELTA_TEST_CORE_RPC");
+		if (program.isEmpty()) QSKIP("Set DELTA_TEST_CORE_RPC to test the real Core server.");
+		QTemporaryDir temporary;
+		auto rpc = std::make_shared<DeltaRpc>();
+		const auto accounts = temporary.filePath(u"accounts"_s);
+		rpc->start(program, accounts);
+		const auto account = CoreCall(*rpc, u"add_account"_s, {})[u"result"_s].toInt();
+		const auto chat = CoreCall(*rpc, u"create_chat_by_contact_id"_s, {account, 1})[u"result"_s].toInt();
+		QVERIFY(account > 0 && chat > 0);
+		Delta::DraftStore drafts(rpc, [](QString) { QFAIL("Unexpected draft failure"); });
+		auto completed = false;
+		drafts.sendText(account, chat, u"Durable Core handoff"_s, 0, [&](int id, QString error) {
+			// An unconfigured account cannot send, even to Saved Messages.
+			QVERIFY(!error.isEmpty());
+			QCOMPARE(id, 0);
+			completed = true;
+		});
+		QVERIFY(drafts.sending(account, chat));
+		drafts.save(account, chat, {}, 0); // A stale UI clear cannot erase the pending draft.
+		QTRY_VERIFY(completed);
+		QVERIFY(!drafts.sending(account, chat));
+		rpc->stop();
+		rpc->start(program, accounts);
+		const auto persisted = CoreCall(*rpc, u"get_draft"_s, {account, chat})[u"result"_s].toObject();
+		QCOMPARE(persisted[u"text"_s].toString(), u"Durable Core handoff"_s);
+		QCOMPARE(persisted[u"state"_s].toInt(), 19);
+		rpc->stop();
+	}
+
 	void editingFollowsCoreCapabilities() {
 		const auto editable = QJsonObject{
 			{u"fromId"_s, 1}, {u"isInfo"_s, false}, {u"hasHtml"_s, false},

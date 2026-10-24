@@ -46,6 +46,11 @@ void StartSession(
 [[nodiscard]] bool Active();
 [[nodiscard]] int AccountGeneration();
 [[nodiscard]] rpl::producer<int> AccountViewResets();
+[[nodiscard]] rpl::producer<int> ComposerChanges();
+[[nodiscard]] bool ComposerWritable(int userId);
+[[nodiscard]] bool PreparingSendPreventsQuit();
+void SendComposerText(int userId, const QString &text, int quotedMessageId,
+	Fn<void(bool)> done);
 void SaveDraft(int userId, const QString &text, int quotedMessageId);
 void LoadDraft(int userId, Fn<void(ComposeDraft)> done);
 enum class DeliveryState { Pending, Failed, Sent, Read };

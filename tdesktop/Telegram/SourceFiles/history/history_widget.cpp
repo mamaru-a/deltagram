@@ -466,6 +466,10 @@ HistoryWidget::HistoryWidget(
 	) | rpl::on_next([=](Qt::KeyboardModifiers modifiers) {
 		sendWithModifiers(modifiers);
 	}, _field->lifetime());
+	Delta::ComposerChanges() | rpl::on_next([=] {
+		updateControlsVisibility();
+		updateSendButtonType();
+	}, lifetime());
 	_field->cancelled(
 	) | rpl::on_next([=] {
 		if (_peer && _peer->amMonoforumAdmin()) {
@@ -1656,7 +1660,7 @@ void HistoryWidget::initTabbedSelector() {
 
 	selector->emojiChosen(
 	) | rpl::filter([=] {
-		return !isHidden() && !_field->isHidden();
+		return !isHidden() && !_field->isHidden() && canWriteMessage();
 	}) | rpl::on_next([=](ChatHelpers::EmojiChosen data) {
 		Ui::InsertEmojiAtCursor(_field->textCursor(), data.emoji);
 	}, lifetime());
@@ -2465,6 +2469,7 @@ void HistoryWidget::migrateFieldToRichEditor() {
 }
 
 void HistoryWidget::fileChosen(ChatHelpers::FileChosen &&data) {
+	if (Delta::Active() && !canWriteMessage()) return;
 	controller()->hideLayer(anim::type::normal);
 	if (const auto info = data.document->sticker()
 		; info && info->setType == Data::StickersType::Emoji) {
@@ -4024,6 +4029,7 @@ bool HistoryWidget::contentOverlapped(const QRect &globalRect) {
 
 bool HistoryWidget::canWriteMessage() const {
 	return _history
+		&& (!Delta::Active() || Delta::ComposerWritable(int(peerToUser(_peer->id).bare)))
 		&& _canSendMessages
 		&& !isBlocked()
 		&& !isJoinChannel()
@@ -4033,6 +4039,11 @@ bool HistoryWidget::canWriteMessage() const {
 }
 
 void HistoryWidget::updateControlsVisibility() {
+	const auto writable = !Delta::Active() || !_peer
+		|| Delta::ComposerWritable(int(peerToUser(_peer->id).bare));
+	_field->rawTextEdit()->setReadOnly(!writable);
+	_attachToggle->setDisabled(!writable);
+	_fieldBarCancel->setDisabled(!writable);
 	auto fieldDisabledRemoved = (_fieldDisabled != nullptr);
 	auto fieldVisibilityChanged = false;
 	const auto hideExtra = hideExtraButtons();
@@ -5655,6 +5666,8 @@ void HistoryWidget::sendVoice(const VoiceToSend &data) {
 }
 
 void HistoryWidget::send(Api::SendOptions options) {
+	if (Delta::Active() && _peer
+		&& !Delta::ComposerWritable(int(peerToUser(_peer->id).bare))) return;
 	if (!_history) {
 		return;
 	} else if (_editMsgId) {
@@ -5841,6 +5854,29 @@ void HistoryWidget::sendTextWithTags(
 
 	const auto nextLocalMessageId = session().data().nextLocalMessageId();
 	const auto hasText = !message.textWithTags.text.trimmed().isEmpty();
+	if (Delta::Active() && hasText) {
+		const auto userId = int(peerToUser(_peer->id).bare);
+		if (!Delta::ComposerWritable(userId)) return;
+		const auto history = _history;
+		const auto generation = Delta::AccountGeneration();
+		const auto weak = base::make_weak(this);
+		saveDraftWithTextNow();
+		Delta::SendComposerText(userId, message.textWithTags.text,
+			int(message.action.replyTo.messageId.msg), [=](bool sent) {
+				if (!weak || !sent || generation != Delta::AccountGeneration()
+					|| _history != history) return;
+				clearFieldText();
+				cancelReply();
+				if (_preview) _preview->apply({ .removed = true });
+				saveDraftWithTextNow();
+				hideSelectorControlsAnimated();
+				fastShowAtEnd(history);
+				setInnerFocus();
+				session().changes().historyUpdated(history, Data::HistoryUpdate::Flag::MessageSent);
+				if (done) done();
+			});
+		return;
+	}
 
 	if (hasText
 		&& message.webPage.url.isEmpty()
@@ -6286,6 +6322,7 @@ void HistoryWidget::finishAnimating() {
 
 void HistoryWidget::chooseAttach(
 		std::optional<bool> overrideSendImagesAsPhotos) {
+	if (Delta::Active() && !canWriteMessage()) return;
 	if (_editMsgId) {
 		controller()->showToast(tr::lng_edit_caption_attach(tr::now));
 		return;
@@ -6602,6 +6639,7 @@ bool HistoryWidget::insertBotCommand(const QString &cmd) {
 }
 
 void HistoryWidget::insertTextAtCursor(const QString &text) {
+	if (Delta::Active() && !canWriteMessage()) return;
 	if (!_canSendTexts) {
 		return;
 	}
@@ -6801,10 +6839,11 @@ void HistoryWidget::updateSendButtonType() {
 		.starsToSend = stars,
 		.forbidden = forbidden,
 	});
-	_send->setDisabled(disabledBySlowmode
+	_send->setDisabled((Delta::Active() && _peer
+		&& !Delta::ComposerWritable(int(peerToUser(_peer->id).bare))) || (disabledBySlowmode
 		&& (type == Type::Send
 			|| type == Type::Record
-			|| type == Type::Round));
+			|| type == Type::Round)));
 
 	if (delay != 0) {
 		base::call_delayed(
@@ -7888,6 +7927,7 @@ bool HistoryWidget::confirmSendingFiles(
 void HistoryWidget::sendingFilesConfirmed(
 		std::shared_ptr<Ui::PreparedBundle> bundle,
 		Api::SendOptions options) {
+	if (Delta::Active() && !canWriteMessage()) return;
 	if (!_peer || showSendingFilesError(*bundle)) {
 		return;
 	}
@@ -10271,6 +10311,7 @@ void HistoryWidget::replyToMessage(FullReplyTo id) {
 void HistoryWidget::replyToMessage(
 		not_null<HistoryItem*> item,
 		FullReplyTo fields) {
+	if (Delta::Active() && !canWriteMessage()) return;
 	if (isJoinChannel()) {
 		return;
 	}
@@ -10410,6 +10451,7 @@ void HistoryWidget::setReplyFieldsFromProcessing() {
 void HistoryWidget::editMessage(
 		not_null<HistoryItem*> item,
 		const TextSelection &selection) {
+	if (Delta::Active() && !canWriteMessage()) return;
 	if (Iv::Editor::ActivateEditWindowFor(&session(), item->fullId())) {
 		return;
 	}
@@ -10663,6 +10705,7 @@ void HistoryWidget::cancelEdit() {
 }
 
 void HistoryWidget::cancelFieldAreaState() {
+	if (Delta::Active() && !canWriteMessage()) return;
 	controller()->hideLayer();
 	if (_previewDrawPreview) {
 		_preview->apply({ .removed = true });

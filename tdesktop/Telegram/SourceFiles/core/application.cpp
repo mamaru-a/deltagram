@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "core/application.h"
+#include "delta/delta_bridge.h"
 
 #include "data/data_abstract_structure.h"
 #include "data/data_channel.h"
@@ -1182,7 +1183,8 @@ bool Application::downloadPreventsQuit() {
 }
 
 bool Application::preventsQuit(QuitReason reason) {
-	if (exportPreventsQuit()
+	if (Delta::PreparingSendPreventsQuit()
+		|| exportPreventsQuit()
 		|| uploadPreventsQuit()
 		|| downloadPreventsQuit()) {
 		return true;

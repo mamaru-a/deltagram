@@ -28,6 +28,19 @@ Ubuntu 24.04 under Xvfb.
 
 ### Recent live regressions and fixes
 
+An additional shutdown regression was reproduced on `8323369`: a text draft
+was confirmed in Core before Send, but quitting while a rejected `send_msg`
+reply was delayed left neither the draft nor an outgoing message after restart.
+The replacement normal-text path saves and reads back a Core draft before
+`misc_send_draft`, retaining the composer until Core owns the outgoing message.
+It reconciles uncertain replies using the saved message ID without retrying the
+mutation. Editing is paused during this local handoff; normal quit is prevented
+only until the saved draft is confirmed. Attachment drafts fail closed.
+The focused suite currently passes 33 cases (35 including setup/cleanup),
+including a real-Core rejected-send/restart test and simulated lost-ack,
+save-rejection, send-rejection, duplicate-submit and account-isolation cases.
+Native compilation and disposable GUI replay of this replacement are pending.
+
 - `35f036c`: repeated switches between newly provisioned and alternate profiles
   preserve the correct lists and drafts without the reproduced segmentation
   fault. Reset now detaches dialog rows before clearing their backing list.

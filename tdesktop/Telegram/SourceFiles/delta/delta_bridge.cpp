@@ -98,6 +98,7 @@ QSet<int> DirectChats;
 QHash<uint64, ContactRow> SenderContacts;
 rpl::variable<int> ChannelRevision = 0;
 rpl::variable<int> AccountViewRevision = 0;
+rpl::variable<int> ComposerRevision = 0;
 
 void RememberSubtitle(int userId, qint64 lastSeen, const QString &line) {
 	auto &slot = PeerSubtitles[userId];
@@ -794,11 +795,48 @@ public:
 		});
 	}
 
+	bool composerWritable(int userId) const {
+		return _rpc->running()
+			&& !_drafts->sending(_accountId, chatForPeerUser(userId));
+	}
+
+	bool preparingSendPreventsQuit() {
+		if (!_drafts->preparingSend()) return false;
+		reportError(u"A message is being saved. Please try quitting again when saving finishes."_q);
+		return true;
+	}
+
+	void sendComposerText(int userId, const QString &text, int quote, Fn<void(bool)> done) {
+		if (!composerWritable(userId)) return;
+		const auto account = _accountId;
+		const auto chat = chatForPeerUser(userId);
+		const auto epoch = _dialogsEpoch;
+		const auto guard = _alive;
+		_drafts->sendText(account, chat, text, quote, [=](int id, QString error) {
+			if (guard.expired()) return;
+			if (!error.isEmpty()) reportError(error);
+			if (account == _accountId) {
+				if (id > 0) {
+					if (const auto history = _session->data().historyLoaded(peerFromUser(UserId(userId)))) {
+						history->clearLocalDraft({}, {});
+						history->clearCloudDraft({}, {});
+						history->applyCloudDraft({}, {});
+					}
+					if (!_deletedMessages.contains(id)) addIncoming(chat, id);
+				}
+				if (epoch == _dialogsEpoch && done) done(id > 0);
+			}
+			ComposerRevision = ComposerRevision.current() + 1;
+		});
+		ComposerRevision = ComposerRevision.current() + 1;
+	}
+
 	void start() {
 		const auto guard = _alive;
 		_rpc->setEventHandler([=](QJsonObject event) {
 			if (!guard.expired() && HasError(event)) {
 				_connectivity = 1000;
+				ComposerRevision = ComposerRevision.current() + 1;
 				reportError(u"Messaging stopped. Restart Deltagram to reconnect."_q);
 			}
 		});
@@ -1540,6 +1578,7 @@ public:
 		++_dialogsEpoch;
 		_accountScope.invalidate();
 		AccountViewRevision = AccountViewRevision.current() + 1;
+		ComposerRevision = ComposerRevision.current() + 1;
 		_session->data().histories().resetBackendRequests();
 		++_selfAvatarRevision;
 		_deletedMessages.clear();
@@ -3218,6 +3257,22 @@ int AccountGeneration() {
 
 rpl::producer<int> AccountViewResets() {
 	return AccountViewRevision.changes();
+}
+
+rpl::producer<int> ComposerChanges() {
+	return ComposerRevision.changes();
+}
+
+bool ComposerWritable(int userId) {
+	return GlobalBridge && GlobalBridge->composerWritable(userId);
+}
+
+bool PreparingSendPreventsQuit() {
+	return GlobalBridge && GlobalBridge->preparingSendPreventsQuit();
+}
+
+void SendComposerText(int userId, const QString &text, int quote, Fn<void(bool)> done) {
+	if (GlobalBridge) GlobalBridge->sendComposerText(userId, text, quote, std::move(done));
 }
 
 void SaveDraft(int userId, const QString &text, int quotedMessageId) {

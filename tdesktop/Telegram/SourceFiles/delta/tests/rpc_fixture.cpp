@@ -21,6 +21,8 @@ int main(int argc, char **argv) {
 	auto drafts = QMap<QString, QJsonObject>();
 	auto held = std::optional<QJsonObject>();
 	auto writes = 0;
+	auto sends = 0;
+	auto sentMessages = QMap<int, QJsonObject>();
 	auto historyIds = QJsonArray{10, 80, 12};
 	auto historyCalls = QJsonArray();
 	const auto mode = qEnvironmentVariable("DC_ACCOUNTS_PATH");
@@ -53,6 +55,31 @@ int main(int argc, char **argv) {
 			continue;
 		}
 		if (method == u"writes"_s) { Reply(request, writes); continue; }
+		if (method == u"sends"_s) { Reply(request, sends); continue; }
+		if (mode.startsWith(u"handoff-"_s) && method == u"get_message"_s) {
+			Reply(request, sentMessages.value(args[1].toInt()));
+			continue;
+		}
+		if (method == u"misc_send_draft"_s) {
+			++sends;
+			const auto key = QString::number(args[0].toInt()) + ':' + QString::number(args[1].toInt());
+			const auto id = drafts[key][u"id"_s].toInt();
+			if (mode != u"handoff-reject-send"_s) {
+				auto message = drafts[key];
+				message[u"state"_s] = 20;
+				sentMessages[id] = message;
+				drafts[key] = {};
+			}
+			if (mode == u"handoff-reject-send"_s || mode == u"handoff-lost-ack"_s) {
+				std::cout << QJsonDocument(QJsonObject{
+					{u"id"_s, request[u"id"_s]},
+					{u"error"_s, QJsonObject{{u"message"_s, u"send failed"_s}}},
+				}).toJson(QJsonDocument::Compact).constData() << std::endl;
+			} else {
+				Reply(request, id);
+			}
+			continue;
+		}
 		if (method == u"download_requests"_s) { Reply(request, historyCalls); continue; }
 		if (mode.startsWith(u"download-"_s)
 			&& (method == u"get_message"_s || method == u"download_full_message"_s)) {
@@ -124,7 +151,7 @@ int main(int argc, char **argv) {
 			const auto key = QString::number(args[0].toInt()) + ':' + QString::number(args[1].toInt());
 			if (!drafts.contains(key)) drafts[key] = {
 				{u"text"_s, u"account-%1"_s.arg(args[0].toInt())},
-				{u"file"_s, mode == u"plain"_s ? QString() : u"/fixture/attachment.bin"_s},
+				{u"file"_s, (mode == u"plain"_s || mode.startsWith(u"handoff-"_s)) ? QString() : u"/fixture/attachment.bin"_s},
 				{u"fileName"_s, u"attachment.bin"_s},
 				{u"viewType"_s, u"File"_s},
 			};
@@ -133,7 +160,7 @@ int main(int argc, char **argv) {
 				continue;
 			}
 			++writes;
-			if (mode == u"reject"_s) {
+			if (mode == u"reject"_s || mode == u"handoff-reject-save"_s) {
 				std::cout << QJsonDocument(QJsonObject{
 					{u"id"_s, request[u"id"_s]},
 					{u"error"_s, QJsonObject{{u"message"_s, u"write rejected"_s}}},
@@ -141,6 +168,7 @@ int main(int argc, char **argv) {
 				continue;
 			}
 			drafts[key] = method == u"remove_draft"_s ? QJsonObject() : QJsonObject{
+				{u"id"_s, 100 + writes}, {u"state"_s, 19}, {u"chatId"_s, args[1]},
 				{u"text"_s, args[2]}, {u"file"_s, args[3]}, {u"fileName"_s, args[4]},
 				{u"quote"_s, QJsonObject{{u"messageId"_s, args[5]}}}, {u"viewType"_s, args[6]},
 			};
