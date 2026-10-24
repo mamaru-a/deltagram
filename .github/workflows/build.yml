@@ -162,6 +162,7 @@ jobs:
           ./nix/develop.sh --command python3 nix/stage-release.py
           bash docker/build.sh
           bash docker/verify.sh
+          DELTA_TEST_IMAGE=ubuntu:22.04 bash docker/verify.sh
           bash docker/package-formats.sh
       - name: Upload verified manual validation packages
         if: github.event_name == 'workflow_dispatch' && inputs.verify_packages && steps.plan.outputs.publish != 'true'
@@ -178,6 +179,7 @@ jobs:
           ./nix/develop.sh --command python3 nix/stage-release.py
           bash docker/build.sh
           bash docker/verify.sh
+          DELTA_TEST_IMAGE=ubuntu:22.04 bash docker/verify.sh
           bash docker/package-formats.sh
           python3 scripts/ci-release.py --source-archive
           mkdir -p data/release-upload
