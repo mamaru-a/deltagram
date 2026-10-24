@@ -23,6 +23,7 @@ This file is part of Delta Tel, a Telegram Desktop based Delta Chat client.
 #include "data/data_session.h"
 #include "data/data_user.h"
 #include "dialogs/dialogs_main_list.h"
+#include "dialogs/dialogs_row.h"
 #include "history/history.h"
 #include "history/history_item.h"
 #include "history/history_item.h"
@@ -1545,16 +1546,26 @@ public:
 			users.push_back(user);
 		});
 		for (const auto &user : users) {
-			_session->data().deleteConversationLocally(user);
 			if (const auto history = _session->data().historyLoaded(user)) {
 				const auto pending = history->clientSideMessages();
 				for (const auto item : pending) item->destroy();
 				history->clearDrafts();
 			}
+			_session->data().deleteConversationLocally(user);
 		}
 		// DeleteChat marks an empty history as fully loaded. Profile changes
 		// must leave these reused peers unloaded so opening them fetches Core.
 		_session->data().histories().unloadAll();
+		// Draft and history cleanup can reinsert dialogs. Detach every remaining
+		// row through the session before clearing the list's counters: clear()
+		// alone destroys rows but leaves Entry::chatListLinks pointing at them.
+		auto entries = std::vector<not_null<Dialogs::Entry*>>();
+		for (const auto &row : _session->data().chatsList()->indexed()->all()) {
+			entries.push_back(row->entry());
+		}
+		for (const auto &entry : entries) {
+			_session->data().removeChatListEntry(entry);
+		}
 		_session->data().chatsList()->clear();
 		_session->data().chatsList()->setLoaded(false);
 	}
