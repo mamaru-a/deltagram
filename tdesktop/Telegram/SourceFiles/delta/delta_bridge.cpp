@@ -3157,6 +3157,9 @@ bool ApplySendResult(
 		FullMsgId pendingId,
 		int id,
 		const QString &error) {
+	const auto notify = gsl::finally([&] {
+		session->data().sendHistoryChangeNotifications();
+	});
 	const auto local = session->data().message(pendingId);
 	if (!error.isEmpty() || id <= 0) {
 		if (local) local->sendFailed();

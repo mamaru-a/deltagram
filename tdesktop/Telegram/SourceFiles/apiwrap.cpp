@@ -4995,14 +4995,61 @@ void ApiWrap::sendMessage(
 			.effectId = action.options.effectId,
 			.suggest = HistoryMessageSuggestInfo(action.options),
 		}, sending, media);
+		const auto restoreFailedDraft = [=] {
+			if (!action.options.scheduled
+				&& !action.options.shortcutId) {
+				const auto failed = _session->data().message(newId);
+				const auto local = history->localDraft(
+					draftTopicRootId,
+					draftMonoforumPeerId);
+				const auto cloud = history->cloudDraft(
+					draftTopicRootId,
+					draftMonoforumPeerId);
+				if (failed
+					&& Data::DraftIsNull(local)
+					&& Data::DraftIsNull(cloud)) {
+					const auto text = failed->originalText();
+					auto draft = Data::Draft();
+					draft.textWithTags = {
+						text.text,
+						TextUtilities::ConvertEntitiesToTextTags(
+							text.entities),
+					};
+					draft.reply = action.replyTo;
+					draft.suggest = action.options.suggest;
+					draft.cursor = MessageCursor(
+						int(text.text.size()),
+						int(text.text.size()),
+						Ui::kQFixedMax);
+					draft.webpage = webPageDraft;
+					if (!Data::DraftIsNull(&draft)) {
+						history->createCloudDraft(
+							draftTopicRootId,
+							draftMonoforumPeerId,
+							&draft);
+						history->applyCloudDraft(
+							draftTopicRootId,
+							draftMonoforumPeerId);
+						failed->destroy();
+					}
+				}
+			}
+			history->owner().sendHistoryChangeNotifications();
+		};
 		if (Delta::Active() && !sending.text.isEmpty()) {
 			// Core events can precede the send reply. Use the same reconciliation
 			// as files instead of replacing Core's item with the donor placeholder.
 			_session->data().unregisterMessageRandomId(randomId);
 			_session->data().unregisterMessageSentData(randomId);
 			const auto weak = base::make_weak(&history->session());
-			Delta::SendItemText(lastMessage, sending.text, [=](bool) {
-				if (weak.get() && clearCloudDraft) {
+			Delta::SendItemText(lastMessage, sending.text, [=](bool success) {
+				if (!weak.get()) {
+					return;
+				}
+				if (!success) {
+					restoreFailedDraft();
+				}
+				if (clearCloudDraft) {
 					history->finishSavingCloudDraft(
 						draftTopicRootId,
 						draftMonoforumPeerId,
@@ -5029,44 +5076,7 @@ void ApiWrap::sendMessage(
 				lastMessage->destroy();
 			} else {
 				sendMessageFail(error, peer, randomId, newId);
-				if (!action.options.scheduled
-					&& !action.options.shortcutId) {
-					const auto failed = _session->data().message(newId);
-					const auto local = history->localDraft(
-						draftTopicRootId,
-						draftMonoforumPeerId);
-					const auto cloud = history->cloudDraft(
-						draftTopicRootId,
-						draftMonoforumPeerId);
-					if (failed
-						&& Data::DraftIsNull(local)
-						&& Data::DraftIsNull(cloud)) {
-						const auto text = failed->originalText();
-						auto draft = Data::Draft();
-						draft.textWithTags = {
-							text.text,
-							TextUtilities::ConvertEntitiesToTextTags(
-								text.entities),
-						};
-						draft.reply = action.replyTo;
-						draft.suggest = action.options.suggest;
-						draft.cursor = MessageCursor(
-							int(text.text.size()),
-							int(text.text.size()),
-							Ui::kQFixedMax);
-						draft.webpage = webPageDraft;
-						if (!Data::DraftIsNull(&draft)) {
-							history->createCloudDraft(
-								draftTopicRootId,
-								draftMonoforumPeerId,
-								&draft);
-							history->applyCloudDraft(
-								draftTopicRootId,
-								draftMonoforumPeerId);
-							failed->destroy();
-						}
-					}
-				}
+				restoreFailedDraft();
 			}
 			if (clearCloudDraft) {
 				history->finishSavingCloudDraft(
