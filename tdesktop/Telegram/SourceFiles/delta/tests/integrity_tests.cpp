@@ -45,27 +45,38 @@ private slots:
 		QTest::addColumn<QString>("mode");
 		QTest::addColumn<bool>("success");
 		QTest::addColumn<int>("sends");
-		QTest::newRow("accepted") << u"handoff-ok"_s << true << 1;
-		QTest::newRow("accepted-reply-lost") << u"handoff-lost-ack"_s << true << 1;
-		QTest::newRow("save-rejected") << u"handoff-reject-save"_s << false << 0;
-		QTest::newRow("send-rejected") << u"handoff-reject-send"_s << false << 1;
-		QTest::newRow("attachment-preserved") << u"attachment"_s << false << 0;
+		QTest::addColumn<bool>("attachment");
+		QTest::newRow("accepted") << u"handoff-ok"_s << true << 1 << false;
+		QTest::newRow("accepted-reply-lost") << u"handoff-lost-ack"_s << true << 1 << false;
+		QTest::newRow("save-rejected") << u"handoff-reject-save"_s << false << 0 << false;
+		QTest::newRow("send-rejected") << u"handoff-reject-send"_s << false << 1 << false;
+		QTest::newRow("attachment-preserved") << u"attachment"_s << false << 0 << false;
+		QTest::newRow("file-accepted") << u"handoff-ok"_s << true << 1 << true;
+		QTest::newRow("file-accepted-reply-lost") << u"handoff-lost-ack"_s << true << 1 << true;
 	}
 
 	void draftHandoffFailures() {
 		QFETCH(QString, mode);
 		QFETCH(bool, success);
 		QFETCH(int, sends);
+		QFETCH(bool, attachment);
 		auto rpc = std::make_shared<DeltaRpc>();
 		rpc->start(QCoreApplication::applicationDirPath() + u"/delta_rpc_fixture"_s, mode);
 		Delta::DraftStore drafts(rpc, [](QString) {});
 		auto completed = false;
 		auto duplicateRejected = false;
-		drafts.sendText(2, 10, u"Keep this message"_s, 0, [&](int id, QString error) {
+		const auto done = [&](int id, QString error) {
 			QCOMPARE(id > 0, success);
 			QCOMPARE(error.isEmpty(), success);
 			completed = true;
-		});
+		};
+		if (attachment) {
+			drafts.sendAttachment(2, 10, Delta::ComposeDraft{
+				u"Keep this message"_s, 0, u"/fixture/upload.bin"_s, u"upload.bin"_s, u"File"_s,
+			}, done);
+		} else {
+			drafts.sendText(2, 10, u"Keep this message"_s, 0, done);
+		}
 		drafts.sendText(2, 10, u"Duplicate"_s, 0, [&](int id, QString error) {
 			QCOMPARE(id, 0);
 			QVERIFY(!error.isEmpty());
@@ -115,6 +126,57 @@ private slots:
 		const auto persisted = CoreCall(*rpc, u"get_draft"_s, {account, chat})[u"result"_s].toObject();
 		QCOMPARE(persisted[u"text"_s].toString(), u"Durable Core handoff"_s);
 		QCOMPARE(persisted[u"state"_s].toInt(), 19);
+		rpc->stop();
+	}
+
+	void realCoreRejectedAttachmentHandoff() {
+		const auto program = qEnvironmentVariable("DELTA_TEST_CORE_RPC");
+		if (program.isEmpty()) QSKIP("Set DELTA_TEST_CORE_RPC to test the real Core server.");
+		QTemporaryDir temporary;
+		QVERIFY(temporary.isValid());
+		const auto original = temporary.filePath(u"attachment.txt"_s);
+		auto file = QFile(original);
+		QVERIFY(file.open(QIODevice::WriteOnly));
+		const auto bytes = QByteArray("Core owns the recoverable attachment bytes.\n");
+		QCOMPARE(file.write(bytes), bytes.size());
+		file.close();
+		auto rpc = std::make_shared<DeltaRpc>();
+		const auto accounts = temporary.filePath(u"accounts"_s);
+		rpc->start(program, accounts);
+		const auto account = CoreCall(*rpc, u"add_account"_s, {})[u"result"_s].toInt();
+		const auto chat = CoreCall(*rpc, u"create_chat_by_contact_id"_s, {account, 1})[u"result"_s].toInt();
+		QVERIFY(account > 0 && chat > 0);
+		Delta::DraftStore drafts(rpc, [](QString) { QFAIL("Unexpected draft failure"); });
+		auto completed = false;
+		drafts.sendAttachment(account, chat,
+			Delta::ComposeDraft{ u"Recoverable attachment caption"_s, 0, original, u"attachment.txt"_s, u"File"_s },
+			[&](int id, QString error) {
+				QCOMPARE(id, 0); // This account has no configured transport.
+				QVERIFY(!error.isEmpty());
+				completed = true;
+			});
+		QVERIFY(drafts.preparingSend());
+		drafts.save(account, chat, {}, 0); // A stale donor clear cannot erase this file.
+		QTRY_VERIFY(completed);
+		QVERIFY(!drafts.preparingSend());
+		auto recovered = Delta::ComposeDraft();
+		drafts.load(account, chat, [&](Delta::ComposeDraft draft, QString error) {
+			QVERIFY(error.isEmpty());
+			recovered = std::move(draft);
+		});
+		QTRY_VERIFY(!recovered.file.isEmpty());
+		QVERIFY(recovered.file != original);
+		QVERIFY(QFile::remove(original));
+		rpc->stop();
+		rpc->start(program, accounts);
+		const auto persisted = CoreCall(*rpc, u"get_draft"_s, {account, chat})[u"result"_s].toObject();
+		QCOMPARE(persisted[u"text"_s].toString(), u"Recoverable attachment caption"_s);
+		QCOMPARE(persisted[u"state"_s].toInt(), 19);
+		QCOMPARE(persisted[u"fileName"_s].toString(), u"attachment.txt"_s);
+		QCOMPARE(persisted[u"file"_s].toString(), recovered.file);
+		QFile saved(recovered.file);
+		QVERIFY(saved.open(QIODevice::ReadOnly));
+		QCOMPARE(saved.readAll(), bytes);
 		rpc->stop();
 	}
 

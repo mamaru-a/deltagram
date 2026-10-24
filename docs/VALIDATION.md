@@ -166,6 +166,20 @@ coverage. The known profile-switch crash, send acknowledgement races,
 rejected-send draft loss and quote-deletion presentation defects have passed
 their targeted live replays.
 
+Attachment durability is now a confirmed defect on `ff64414`: with a rejected
+`send_msg` acknowledgement delayed, sending a file with a caption and quitting
+leaves neither a draft nor an outgoing message after restart. The original
+selected file remains on disk, but the client's send selection and caption are
+lost. Private evidence: `attachment-handoff-pending.png`,
+`attachment-handoff-lost.png`, and `handoff-attachment-baseline.json`.
+The draft handoff backend now accepts attachments and retains Core's managed
+blob path. A real-Core regression verifies rejected-send recovery after restart
+and byte equality after deleting the original temporary file. The expanded
+local focused suite passes 36 cases (38 including setup/cleanup). Attachment
+GUI integration, recovery presentation and multi-file sequencing are still in
+progress; the live client continues to use the old file-send path. This backend
+extension has not yet passed a full native CI build or GUI replay.
+
 The focused suite covers partial multi-stage deletion failure, but the tested
 group delete dialog does not expose that combined path. Broader operational and
 feature coverage below remains open. Native, package and the additional Ubuntu

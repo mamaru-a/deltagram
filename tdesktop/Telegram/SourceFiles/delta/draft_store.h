@@ -28,6 +28,9 @@ public:
 		std::function<void(ComposeDraft)> recovered = {});
 	void sendText(int accountId, int chatId, const QString &text, int quotedMessageId,
 		SendCallback done);
+	// One handoff per chat. On rejection, load() returns Core's managed file
+	// path; callers must use it for recovery and must serialize attachment batches.
+	void sendAttachment(int accountId, int chatId, ComposeDraft draft, SendCallback done);
 	[[nodiscard]] bool sending(int accountId, int chatId) const;
 	[[nodiscard]] bool preparingSend() const;
 
@@ -35,8 +38,7 @@ private:
 	using Key = std::pair<int, int>;
 	struct Entry {
 		struct Send {
-			QString text;
-			int quote = 0;
+			ComposeDraft draft;
 			SendCallback done;
 			bool started = false;
 			bool prepared = false;
@@ -50,6 +52,7 @@ private:
 		bool saving = false;
 	};
 	void ensureLoaded(Key key);
+	void beginSend(Key key, ComposeDraft draft, SendCallback done);
 	void flush(Key key);
 	void startSend(Key key);
 	void finishSend(Key key, int messageId, QString error);

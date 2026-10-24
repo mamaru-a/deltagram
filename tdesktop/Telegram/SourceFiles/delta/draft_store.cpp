@@ -147,36 +147,50 @@ bool DraftStore::preparingSend() const {
 
 void DraftStore::sendText(int accountId, int chatId, const QString &text,
 		int quotedMessageId, SendCallback done) {
-	const auto key = Key(accountId, chatId);
+	beginSend(Key(accountId, chatId), ComposeDraft{ text, quotedMessageId }, std::move(done));
+}
+
+void DraftStore::sendAttachment(int accountId, int chatId, ComposeDraft draft, SendCallback done) {
+	if (draft.file.isEmpty()) {
+		if (done) done(0, u"The attachment file is missing."_s);
+		return;
+	}
+	beginSend(Key(accountId, chatId), std::move(draft), std::move(done));
+}
+
+void DraftStore::beginSend(Key key, ComposeDraft draft, SendCallback done) {
 	auto &entry = _entries[key];
-	if (entry.send || text.trimmed().isEmpty()) {
+	if (entry.send || (draft.text.trimmed().isEmpty() && draft.file.isEmpty())) {
 		if (done) done(0, u"A message is already being saved, or its text is empty."_s);
 		return;
 	}
-	entry.send = Entry::Send{ text, quotedMessageId, std::move(done) };
+	entry.send = Entry::Send{ std::move(draft), std::move(done) };
 	ensureLoaded(key);
 }
 
 void DraftStore::startSend(Key key) {
 	auto &entry = _entries[key];
-	if (!entry.value.file.isEmpty()) {
-		finishSend(key, 0, u"This chat has an attachment draft. It was preserved; send or remove the attachment before sending text."_s);
+	if (!entry.value.file.isEmpty() && entry.send->draft.file != entry.value.file) {
+		finishSend(key, 0, u"This chat already has an attachment draft. It was preserved; review or remove it before sending another message."_s);
 		return;
 	}
 	entry.send->started = true;
-	const auto text = entry.send->text;
-	const auto quote = entry.send->quote;
+	const auto target = entry.send->draft;
+	const auto text = target.text;
+	const auto quote = target.quotedMessageId;
 	const auto guard = std::weak_ptr<bool>(_alive);
 	_rpc->call(u"misc_set_draft"_s, {key.first, key.second, text,
-		QJsonValue(), QJsonValue(), quote > 0 ? QJsonValue(quote) : QJsonValue(), u"Text"_s},
+		target.file.isEmpty() ? QJsonValue() : QJsonValue(target.file),
+		target.filename.isEmpty() ? QJsonValue() : QJsonValue(target.filename),
+		quote > 0 ? QJsonValue(quote) : QJsonValue(),
+		target.viewType.isEmpty() ? (target.file.isEmpty() ? u"Text"_s : u"File"_s) : target.viewType},
 		[=, this](QJsonObject reply) {
 			if (guard.expired()) return;
 			if (reply.contains(u"error"_s)) {
 				finishSend(key, 0, Failure(reply));
 				return;
 			}
-			_entries[key].value.text = text;
-			_entries[key].value.quotedMessageId = quote;
+			_entries[key].value = target;
 			_rpc->call(u"get_draft"_s, {key.first, key.second}, [=, this](QJsonObject read) {
 				if (guard.expired()) return;
 				const auto draft = read.value(u"result"_s).toObject();
@@ -185,10 +199,15 @@ void DraftStore::startSend(Key key) {
 					|| draft.value(u"state"_s).toInt() != 19
 					|| draft.value(u"chatId"_s).toInt() != key.second
 					|| draft.value(u"text"_s).toString() != text
-					|| !draft.value(u"file"_s).toString().isEmpty()) {
+					|| draft.value(u"file"_s).toString().isEmpty() != target.file.isEmpty()) {
 					finishSend(key, 0, u"Could not confirm the saved draft. Nothing was sent."_s);
 					return;
 				}
+				// Core copies the attachment into its managed blob store. Keep that
+				// durable path for recovery instead of the original picker/temp path.
+				_entries[key].value.file = draft.value(u"file"_s).toString();
+				_entries[key].value.filename = draft.value(u"fileName"_s).toString();
+				_entries[key].value.viewType = draft.value(u"viewType"_s).toString();
 				_entries[key].send->prepared = true;
 				_rpc->call(u"misc_send_draft"_s, {key.first, key.second},
 					[=, this](QJsonObject sent) {
