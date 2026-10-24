@@ -5866,7 +5866,7 @@ void HistoryWidget::sendTextWithTags(
 		const auto weak = base::make_weak(this);
 		saveDraftWithTextNow();
 		Delta::SendComposerText(userId, message.textWithTags.text,
-			int(message.action.replyTo.messageId.msg), [=](bool sent) {
+			int(message.action.replyTo.messageId.msg.bare), [=](bool sent) {
 				if (!weak || !sent || generation != Delta::AccountGeneration()
 					|| _history != history) return;
 				clearFieldText();
