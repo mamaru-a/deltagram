@@ -1486,7 +1486,19 @@ void DocumentData::setLocation(const Core::FileLocation &loc) {
 		setLoadedInMediaCacheLocation();
 	} else if (loc.check()) {
 		_location = loc;
+		_flags &= ~Flag::BackendFileLocation;
 	}
+}
+
+void DocumentData::setBackendFileLocation(const Core::FileLocation &loc) {
+	if (loc.check()) {
+		setLocation(loc);
+		_flags |= Flag::BackendFileLocation;
+	}
+}
+
+bool DocumentData::hasBackendFileLocation() const {
+	return _flags & Flag::BackendFileLocation;
 }
 
 QString DocumentData::filepath(bool check) const {

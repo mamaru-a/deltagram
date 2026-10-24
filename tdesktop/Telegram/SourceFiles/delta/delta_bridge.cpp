@@ -3430,7 +3430,7 @@ void ApplyMessageData(not_null<HistoryItem*> item) {
 		if (const auto document = media->document();
 			document && document->isVoiceMessage()
 			&& !path.isEmpty() && QFileInfo::exists(path)) {
-			document->setLocation(Core::FileLocation(path));
+			document->setBackendFileLocation(Core::FileLocation(path));
 		}
 	}
 	const auto video = LooksLikeVideo(kind, mime, path);
@@ -3454,7 +3454,7 @@ void ApplyMessageData(not_null<HistoryItem*> item) {
 					mime.isEmpty() ? u"application/octet-stream"_q : mime);
 			}
 			document->size = QFileInfo(path).size();
-			document->setLocation(Core::FileLocation(path));
+			document->setBackendFileLocation(Core::FileLocation(path));
 		}
 		item->setLocalDocument(document, data.value(u"text"_q).toString());
 	}

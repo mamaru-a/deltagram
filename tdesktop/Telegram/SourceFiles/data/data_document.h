@@ -165,6 +165,8 @@ public:
 	[[nodiscard]] const Core::FileLocation &location(
 		bool check = false) const;
 	void setLocation(const Core::FileLocation &loc);
+	void setBackendFileLocation(const Core::FileLocation &loc);
+	[[nodiscard]] bool hasBackendFileLocation() const;
 
 	bool saveFromData();
 	bool saveFromDataSilent();
@@ -346,6 +348,7 @@ private:
 		StoryDocument = 0x1000,
 		SilentVideo = 0x2000,
 		FileSaveForbidden = 0x4000,
+		BackendFileLocation = 0x8000,
 	};
 	using Flags = base::flags<Flag>;
 	friend constexpr bool is_flag_type(Flag) { return true; };
