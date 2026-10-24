@@ -1660,7 +1660,7 @@ void HistoryWidget::initTabbedSelector() {
 
 	selector->emojiChosen(
 	) | rpl::filter([=] {
-		return !isHidden() && !_field->isHidden() && canWriteMessage();
+		return !isHidden() && !_field->isHidden() && canWriteMessage() && !deltaComposerLocked();
 	}) | rpl::on_next([=](ChatHelpers::EmojiChosen data) {
 		Ui::InsertEmojiAtCursor(_field->textCursor(), data.emoji);
 	}, lifetime());
@@ -2469,7 +2469,7 @@ void HistoryWidget::migrateFieldToRichEditor() {
 }
 
 void HistoryWidget::fileChosen(ChatHelpers::FileChosen &&data) {
-	if (Delta::Active() && !canWriteMessage()) return;
+	if (deltaComposerLocked()) return;
 	controller()->hideLayer(anim::type::normal);
 	if (const auto info = data.document->sticker()
 		; info && info->setType == Data::StickersType::Emoji) {
@@ -4029,13 +4029,17 @@ bool HistoryWidget::contentOverlapped(const QRect &globalRect) {
 
 bool HistoryWidget::canWriteMessage() const {
 	return _history
-		&& (!Delta::Active() || Delta::ComposerWritable(int(peerToUser(_peer->id).bare)))
 		&& _canSendMessages
 		&& !isBlocked()
 		&& !isJoinChannel()
 		&& !isMuteUnmute()
 		&& !isBotStart()
 		&& !isSearching();
+}
+
+bool HistoryWidget::deltaComposerLocked() const {
+	return Delta::Active() && _peer
+		&& !Delta::ComposerWritable(int(peerToUser(_peer->id).bare));
 }
 
 void HistoryWidget::updateControlsVisibility() {
@@ -6322,7 +6326,7 @@ void HistoryWidget::finishAnimating() {
 
 void HistoryWidget::chooseAttach(
 		std::optional<bool> overrideSendImagesAsPhotos) {
-	if (Delta::Active() && !canWriteMessage()) return;
+	if (deltaComposerLocked()) return;
 	if (_editMsgId) {
 		controller()->showToast(tr::lng_edit_caption_attach(tr::now));
 		return;
@@ -6639,7 +6643,7 @@ bool HistoryWidget::insertBotCommand(const QString &cmd) {
 }
 
 void HistoryWidget::insertTextAtCursor(const QString &text) {
-	if (Delta::Active() && !canWriteMessage()) return;
+	if (deltaComposerLocked()) return;
 	if (!_canSendTexts) {
 		return;
 	}
@@ -7861,6 +7865,7 @@ bool HistoryWidget::confirmSendingFiles(
 bool HistoryWidget::confirmSendingFiles(
 		Ui::PreparedList &&list,
 		const QString &insertTextOnCancel) {
+	if (deltaComposerLocked()) return false;
 	if (_editMsgId) {
 		if (_canReplaceMedia || _canAddMedia) {
 			EditCaptionBox::StartMediaReplace(
@@ -7927,7 +7932,7 @@ bool HistoryWidget::confirmSendingFiles(
 void HistoryWidget::sendingFilesConfirmed(
 		std::shared_ptr<Ui::PreparedBundle> bundle,
 		Api::SendOptions options) {
-	if (Delta::Active() && !canWriteMessage()) return;
+	if (deltaComposerLocked()) return;
 	if (!_peer || showSendingFilesError(*bundle)) {
 		return;
 	}
@@ -8002,6 +8007,7 @@ bool HistoryWidget::confirmSendingFiles(
 		not_null<const QMimeData*> data,
 		std::optional<bool> overrideSendImagesAsPhotos,
 		const QString &insertTextOnCancel) {
+	if (deltaComposerLocked()) return false;
 	if (!canWriteMessage()) {
 		if (_composeSearch) {
 			_composeSearch->hideAnimated();
@@ -10311,7 +10317,7 @@ void HistoryWidget::replyToMessage(FullReplyTo id) {
 void HistoryWidget::replyToMessage(
 		not_null<HistoryItem*> item,
 		FullReplyTo fields) {
-	if (Delta::Active() && !canWriteMessage()) return;
+	if (deltaComposerLocked()) return;
 	if (isJoinChannel()) {
 		return;
 	}
@@ -10451,7 +10457,7 @@ void HistoryWidget::setReplyFieldsFromProcessing() {
 void HistoryWidget::editMessage(
 		not_null<HistoryItem*> item,
 		const TextSelection &selection) {
-	if (Delta::Active() && !canWriteMessage()) return;
+	if (deltaComposerLocked()) return;
 	if (Iv::Editor::ActivateEditWindowFor(&session(), item->fullId())) {
 		return;
 	}
@@ -10705,7 +10711,7 @@ void HistoryWidget::cancelEdit() {
 }
 
 void HistoryWidget::cancelFieldAreaState() {
-	if (Delta::Active() && !canWriteMessage()) return;
+	if (deltaComposerLocked()) return;
 	controller()->hideLayer();
 	if (_previewDrawPreview) {
 		_preview->apply({ .removed = true });

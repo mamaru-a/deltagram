@@ -588,6 +588,7 @@ private:
 	[[nodiscard]] MsgId resolveReplyToTopicRootId();
 	[[nodiscard]] Data::ForumTopic *resolveReplyToTopic();
 	[[nodiscard]] bool canWriteMessage() const;
+	[[nodiscard]] bool deltaComposerLocked() const;
 	[[nodiscard]] bool hasEnoughLinesForAi() const;
 	[[nodiscard]] bool hasEnoughLinesForExpand() const;
 	[[nodiscard]] bool textExceedsMaxSize() const;
