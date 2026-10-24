@@ -1036,11 +1036,36 @@ public:
 			data.insert(u"quotedMessageId"_q, quotedId);
 		}
 		const auto guard = _alive;
-		call(
+		const auto accountId = _accountId;
+		const auto chatId = chatForPeerUser(userId);
+		const auto epoch = _dialogsEpoch;
+		_rpc->call(
 			u"send_msg"_q,
-			{ _accountId, chatForPeerUser(userId), data },
+			{ accountId, chatId, data },
 			[=](QJsonObject result) {
 				if (guard.expired()) {
+					return;
+				}
+				if (epoch != _dialogsEpoch) {
+					// The view callback belongs to the old profile, but rejected
+					// text still belongs in that profile's Core draft.
+					if (HasError(result) || result.value(u"result"_q).toInt() <= 0) {
+						_drafts->recoverText(accountId, chatId, text, quotedId,
+							[=](ComposeDraft recovered) {
+								if (guard.expired() || accountId != _accountId) return;
+								const auto peerId = peerFromUser(UserId(userId));
+								const auto history = _session->data().historyLoaded(peerId);
+								if (!history) return;
+								auto draft = Data::Draft(
+									TextWithTags{ recovered.text },
+									FullReplyTo{ .messageId = recovered.quotedMessageId > 0
+										? FullMsgId(peerId, MsgId(recovered.quotedMessageId)) : FullMsgId() },
+									SuggestOptions(), MessageCursor(), Data::WebPageDraft());
+								history->createCloudDraft({}, {}, &draft);
+								history->applyCloudDraft({}, {});
+							});
+						reportError(u"An earlier message could not be sent. Check the sending profile's draft."_q);
+					}
 					return;
 				}
 				if (HasError(result)) {

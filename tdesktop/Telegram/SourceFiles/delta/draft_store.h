@@ -23,6 +23,8 @@ public:
 	DraftStore(std::shared_ptr<DeltaRpc> rpc, std::function<void(QString)> error);
 	void load(int accountId, int chatId, Callback done);
 	void save(int accountId, int chatId, const QString &text, int quotedMessageId);
+	void recoverText(int accountId, int chatId, const QString &text, int quotedMessageId,
+		std::function<void(ComposeDraft)> recovered = {});
 
 private:
 	using Key = std::pair<int, int>;

@@ -35,6 +35,30 @@ void DraftStore::save(int accountId, int chatId, const QString &text, int quoted
 	ensureLoaded(key);
 }
 
+void DraftStore::recoverText(
+		int accountId,
+		int chatId,
+		const QString &text,
+		int quotedMessageId,
+		std::function<void(ComposeDraft)> recovered) {
+	if (text.isEmpty()) return;
+	const auto guard = std::weak_ptr<bool>(_alive);
+	load(accountId, chatId, [=, this](ComposeDraft draft, QString error) {
+		if (guard.expired() || !error.isEmpty()) return;
+		const auto combined = draft.text.isEmpty()
+			? text
+			: text + u"\n\n"_s + draft.text;
+		const auto quote = draft.text.isEmpty() && draft.file.isEmpty()
+			&& !draft.quotedMessageId
+			? quotedMessageId
+			: draft.quotedMessageId;
+		save(accountId, chatId, combined, quote);
+		draft.text = combined;
+		draft.quotedMessageId = quote;
+		if (recovered) recovered(std::move(draft));
+	});
+}
+
 void DraftStore::ensureLoaded(Key key) {
 	auto &entry = _entries[key];
 	if (entry.loaded) {

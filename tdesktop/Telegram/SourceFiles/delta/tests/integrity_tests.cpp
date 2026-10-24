@@ -481,6 +481,14 @@ private slots:
 		QVERIFY(persisted.open(QIODevice::ReadOnly));
 		QCOMPARE(persisted.readAll(), QByteArray("draft attachment integrity\n"));
 		QCOMPARE(CoreCall(*rpc, u"get_draft"_s, {second, chatB})[u"result"_s].toObject()[u"text"_s].toString(), u"second original"_s);
+		drafts.recoverText(first, chatA, u"rejected after switching"_s, 0);
+		QTRY_VERIFY(([&] {
+			saved = CoreCall(*rpc, u"get_draft"_s, {first, chatA})[u"result"_s].toObject();
+			return saved[u"text"_s].toString()
+				== u"rejected after switching\n\nchanged in first"_s;
+		})());
+		QCOMPARE(saved[u"fileName"_s].toString(), u"attachment.txt"_s);
+		QCOMPARE(CoreCall(*rpc, u"get_draft"_s, {second, chatB})[u"result"_s].toObject()[u"text"_s].toString(), u"second original"_s);
 		drafts.save(second, chatB, {}, 0);
 		QTRY_VERIFY(CoreCall(*rpc, u"get_draft"_s, {second, chatB})[u"result"_s].isNull());
 		QCOMPARE(errors, 0);
