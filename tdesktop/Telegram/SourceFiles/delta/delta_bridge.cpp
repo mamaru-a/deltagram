@@ -3160,6 +3160,7 @@ bool ApplySendResult(
 	const auto local = session->data().message(pendingId);
 	if (!error.isEmpty() || id <= 0) {
 		if (local) local->sendFailed();
+		bridge->reportError(error.isEmpty() ? u"Message was not sent."_q : error);
 		return false;
 	}
 	if (local && local->isSending()) {

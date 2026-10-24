@@ -4995,6 +4995,23 @@ void ApiWrap::sendMessage(
 			.effectId = action.options.effectId,
 			.suggest = HistoryMessageSuggestInfo(action.options),
 		}, sending, media);
+		if (Delta::Active() && !sending.text.isEmpty()) {
+			// Core events can precede the send reply. Use the same reconciliation
+			// as files instead of replacing Core's item with the donor placeholder.
+			_session->data().unregisterMessageRandomId(randomId);
+			_session->data().unregisterMessageSentData(randomId);
+			const auto weak = base::make_weak(&history->session());
+			Delta::SendItemText(lastMessage, sending.text, [=](bool) {
+				if (weak.get() && clearCloudDraft) {
+					history->finishSavingCloudDraft(
+						draftTopicRootId,
+						draftMonoforumPeerId,
+						base::unixtime::now());
+				}
+			});
+			isFirst = false;
+			continue;
+		}
 		const auto done = [=](
 				const MTPUpdates &result,
 				const MTP::Response &response) {
