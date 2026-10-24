@@ -40,6 +40,8 @@ The focused suite currently passes 33 cases (35 including setup/cleanup),
 including a real-Core rejected-send/restart test and simulated lost-ack,
 save-rejection, send-rejection, duplicate-submit and account-isolation cases.
 Native compilation and disposable GUI replay of this replacement are pending.
+Combined forwarding and attachment sends still use their existing send paths;
+this handoff change covers the normal text composer.
 
 - `35f036c`: repeated switches between newly provisioned and alternate profiles
   preserve the correct lists and drafts without the reproduced segmentation

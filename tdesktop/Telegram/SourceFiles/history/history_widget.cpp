@@ -5858,7 +5858,7 @@ void HistoryWidget::sendTextWithTags(
 
 	const auto nextLocalMessageId = session().data().nextLocalMessageId();
 	const auto hasText = !message.textWithTags.text.trimmed().isEmpty();
-	if (Delta::Active() && hasText) {
+	if (Delta::Active() && hasText && !readyToForward()) {
 		const auto userId = int(peerToUser(_peer->id).bare);
 		if (!Delta::ComposerWritable(userId)) return;
 		const auto history = _history;
