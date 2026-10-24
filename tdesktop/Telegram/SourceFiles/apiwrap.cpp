@@ -5006,8 +5006,8 @@ void ApiWrap::sendMessage(
 					draftTopicRootId,
 					draftMonoforumPeerId);
 				if (failed
-					&& Data::DraftIsNull(local)
-					&& Data::DraftIsNull(cloud)) {
+					&& (Delta::Active()
+						|| (Data::DraftIsNull(local) && Data::DraftIsNull(cloud)))) {
 					const auto text = failed->originalText();
 					auto draft = Data::Draft();
 					draft.textWithTags = {
@@ -5022,6 +5022,26 @@ void ApiWrap::sendMessage(
 						int(text.text.size()),
 						Ui::kQFixedMax);
 					draft.webpage = webPageDraft;
+					const auto current = !Data::DraftIsNull(local) ? local : cloud;
+					if (Delta::Active() && !Data::DraftIsNull(current)) {
+						// A rejected send must survive switching profiles even when
+						// the user has started another message. Keep both texts in
+						// the editable draft; never resend the rejected text here.
+						auto recovered = draft.textWithTags;
+						recovered.text += u"\n\n"_q;
+						const auto offset = int(recovered.text.size());
+						recovered.text += current->textWithTags.text;
+						for (auto tag : current->textWithTags.tags) {
+							tag.offset += offset;
+							recovered.tags.push_back(std::move(tag));
+						}
+						draft = *current;
+						draft.textWithTags = std::move(recovered);
+						draft.cursor = MessageCursor(
+							int(draft.textWithTags.text.size()),
+							int(draft.textWithTags.text.size()),
+							Ui::kQFixedMax);
+					}
 					if (!Data::DraftIsNull(&draft)) {
 						history->createCloudDraft(
 							draftTopicRootId,
