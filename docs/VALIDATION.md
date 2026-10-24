@@ -1,217 +1,146 @@
 # Publication validation
 
-## Client integrity checks — 2026-10-23
+## Client integrity checks — 2026-10-24
 
-The integrity branch adds account-scoped drafts and callbacks, Core-ordered
-pagination and unread handling, sender identity, confirmed deletion and bounded
-RPC failure handling. The first full remote GUI build passed at `4ddcae4`
-([CI run](https://github.com/mamaru-a/deltagram/actions/runs/40013044075)).
-Later changes still require a full build and live regression checks; these
-results do not establish production readiness.
+Heavy native builds run remotely, one at a time with four compiler jobs. No
+heavy local builds run in parallel; Ninja records and ccache are preserved.
+Commits and fork CI use `mamaru-a`. No production release has been published.
 
-The later full build at `b06680e` passed native compilation, 25 focused cases
-(27 including setup/cleanup), and portable/runtime/package verification
-([CI run](https://github.com/mamaru-a/deltagram/actions/runs/40035115951)).
-Downloaded GUI/Core checksums match. That GUI renders regular files natively
-and hides the chat-header call button. Replaying the partial attachment found
-that ordinary chats use a second context-menu implementation, which still
-lacked Download. Both menus now invoke the same guarded Core action. This
-follow-up and the later onboarding/search changes need a new native build;
-the preserved partial attachment remains available for final replay.
+Native compilation, all 27 focused Qt cases (29 including setup/cleanup),
+portable runtime checks and Debian/RPM/Arch/tar package verification passed at
+`e846f9b`: [CI run](https://github.com/mamaru-a/deltagram/actions/runs/40057490932).
+Downloaded `9397be0` native GUI/Core SHA-256 checksums match. Later
+rejected-send draft recovery and quote-deletion presentation changes require
+their own native/live validation.
+The standalone suite at `e846f9b` passes all 27 focused cases (29 including
+setup/cleanup) against pinned Core, with no skipped cases.
 
-The remote build at `ad04da9` failed compiling the bridge: the free history
-deletion entry point called a private peer-to-chat resolver. Deletion dispatch
-now stays inside the bridge, preserving the resolver's access boundary. The
-release build compiles that integration unit before the donor source set, then
-reuses its object in the full build. The failed run saved its compiler cache;
-no incremental records were removed. A replacement full build is required.
+Live tests use isolated disposable profiles **Deltagram integrity A**,
+**Deltagram integrity alternate**, **Deltagram integrity onboarding**,
+**Deltagram integrity recovery**, and **Delta Chat reference B**.
+The development GUI reports 0.2.1 beta with pinned Core 2.63.0-dev
+(`8468f5b5dd603da09d81146abbc52aad48604c6c`). The independent reference client is
+official Delta Chat Desktop 2.62.0. No passwords or account addresses are included
+in this report. The supported build target is Linux x86-64; GUI checks use
+Ubuntu 24.04 under Xvfb.
 
-Twenty-six Qt regression cases passed in Ubuntu 24.04 x86-64 with Qt 6.4.2,
-including a real-Core two-account draft test against both Core 2.62.0 and the
-project's pinned 2.63.0-dev. The latter binary was extracted from the project's
-verified v0.2.5 release, whose Core source pin matches this checkout
-(`8468f5b5dd603da09d81146abbc52aad48604c6c`).
+### Recent live regressions and fixes
 
-Explicitly authorized disposable accounts were isolated from existing profiles:
-**Deltagram integrity A**, **Deltagram integrity alternate** and
-**Delta Chat reference B**. The reference client is the verified official
-Delta Chat Desktop 2.62.0 Linux AppImage. No account passwords or addresses are
-included in this report.
+- `35f036c`: repeated switches between newly provisioned and alternate profiles
+  preserve the correct lists and drafts without the reproduced segmentation
+  fault. Reset now detaches dialog rows before clearing their backing list.
+- `35f036c`: rejected reactions display an error and retain Core state. Accepted
+  reactions reach both actual GUIs without extra transport-message bubbles;
+  group reactions show counts without inventing reactor identities.
+- `35f036c`: rejected date-range deletion preserves all six fixture messages.
+  Accepted deletion removes the five selected messages while retaining the
+  message outside the selected day.
+- `a8c544f`: an account provisioned successfully but rejected during selection
+  remains available in the profile menu. Retrying setup creates no duplicate
+  account and performs no repeated configuration writes.
+- `d05d666`: an event arriving before its send acknowledgement produces one
+  outgoing authoritative message. Deleting that message before acknowledgement
+  leaves no ghost or stale pending bubble. A rejected text send restores an
+  empty composer and persists the recovered draft through Core.
+- `9397be0`: ordinary text is sent as Core text without an unnecessary HTML body.
+  The reference GUI renders it normally; a subsequent GUI edit reaches both
+  clients and Deltagram displays the read receipt. A reference-client quoted reply renders
+  with the matching Core message ID. Remote deletion removes the original from
+  both clients; immediate quote rendering after deletion exposed a separate
+  presentation bug fixed in `c3e4e8d`, awaiting replay.
+- `4fd0cb2`: chat export and auto-delete controls are absent from the actual
+  chat/privacy/advanced menus. Sharing restrictions are guarded in source.
+- `6a6d60d`: Save As suggests the original attachment filename and the previous
+  user-selected directory, and saved bytes match the fixture SHA-256. Immediate
+  normal quit preserves the complete latest draft across restart.
 
-Real mail IO between pinned Core 2.63.0-dev and reference Core 2.62.0 passed
-SecureJoin readiness, A-to-B text delivery, read receipts, edits retaining the
-receiver's message ID, B-to-A quoted replies, remote deletion, group sender
-identity and attachment SHA-256 equality. These are Core API checks, not proof
-that the modified GUI renders each result correctly.
+A network ownership snapshot on `a8c544f` found no GUI network sockets and mail
+connections owned by Core. This is a point-in-time check, not proof for every
+execution path.
 
-The released Deltagram 0.2.5 GUI reproduced three regressions under Xvfb:
-an incoming group message omitted its sender label; a deliberately rejected
-Core deletion removed the message from the UI although Core retained it; and
-switching profiles copied an unsent primary-profile draft into the alternate
-profile's composer despite its distinct Core draft. These provide before-fix
-evidence for the corresponding changes. The reference Desktop client also sent
-a UI message for the subsequent fixed-GUI receive check.
+### Confirmed on the checksum-verified `3c2def3` GUI
 
-The checksum-verified `4ddcae4` GUI (development version 0.2.1) displayed the
-correct incoming group sender label and restored the alternate profile's own
-Core draft. It also exposed another defect: Core's chat-list preview can be a
-draft, whose ID is absent from message history. Using that ID as the history
-anchor displayed an unsent draft as a bubble and hid existing messages. The
-bridge now separates draft presentation from the last real history message;
-the real-Core regression verifies this preview/history contract.
+- Deleted originals retain standalone quote text. Forwarded messages display
+  an anonymous forwarding label without invented sender identity or timestamp.
+- Core drafts appear in the composer/list preview without becoming history
+  bubbles. Repeated profile switches restore each profile's own content.
+- Reused message IDs display the primary profile's red image/two-second voice
+  and the alternate profile's blue image/four-second voice correctly. Switching
+  during playback clears the player and search state.
+- Both global and in-chat Saved Messages searches show all 60 fixture matches,
+  load past the first 50 and navigate to the selected message. Delayed replies
+  do not replace newer queries or reopen canceled searches. Rejected searches
+  show an error, and profile changes clear results/caches.
+- A partial 256 KiB attachment remained partial while reading the chat. The
+  explicit Download action surfaced a rejected request without retrying. A
+  second explicit request completed; native rendering retained the real caption.
+  Core bytes and a GUI Save As copy matched the original SHA-256 exactly. The
+  temporary Core download limit was restored. Save As incorrectly suggested
+  Core's blob filename/directory; `6a6d60d` fixes that default; its targeted GUI replay passed.
+- Rejected Clear history calls (immediate and delayed) display an error and
+  preserve all three fixture messages in Core and the UI.
+- Fresh GUI onboarding created one configured disposable profile after five
+  repeated clicks and five Enter presses. Rejected/malformed profile discovery
+  made no setup writes; the existing profiles stayed unchanged.
+- Importing the reference client's invite QR image through the GUI completed
+  SecureJoin. Both actual GUIs exchanged text; Core reported read state 28 and
+  Deltagram displayed the double check.
 
-Further checks on that same GUI passed deliberately rejected deletion (error
-toast, retained bubble and retained Core message), navigation from the group
-sender to the correct contact, bidirectional group text through both actual
-GUIs, a read receipt (Core state 28 and the rendered double check), an incoming
-edit, and a quoted GUI reply received by the reference client. The primary
-profile's stored draft also restored after reopening its DM.
+### Focused and earlier live evidence
 
-The same GUI survived closing Connectivity before a delayed reply arrived.
-An edit whose reply was delayed 15 seconds remained in the primary account
-after switching to the alternate profile; the alternate account contained no
-matching edit and its UI retained its own chat list. Terminating the directly
-launched, CI-built Core 2.63.0-dev with Connectivity pending kept the GUI
-responsive, displayed "Messaging stopped. Restart Deltagram to reconnect.",
-and changed the status to "Not connected". The test confirmed that the Core
-process exited. An earlier harness attempt killed only the bundle launcher,
-leaving its Core child alive; that attempt is not counted as crash evidence.
+The standalone Qt suite passes against Core 2.62.0 and pinned 2.63.0-dev. It
+covers reordered replies, malformed responses, startup/exit/timeout handling,
+no automatic mutation retry, account callback cancellation, independently
+persisted drafts with overlapping IDs, serialized draft writes, hidden transport
+messages, explicit download states, account-keyed media IDs, non-monotonic
+history ordering, confirmed single/bulk/history deletion, partial failure,
+timestamp selection, and messages arriving outside a deletion snapshot.
 
-A subsequent source review found that native photo/document cache identities
-still depended only on message IDs. They now include the Core account ID, with
-a regression checking repeated IDs and boundary values. Profile changes close
-the media viewer and reset playback/playlist state before reusing histories.
-The expanded 23-case suite passes against both Core versions. Actual attachment
-display and playback across profile switches remain part of final GUI checks.
+The earlier `4ddcae4` GUI passed group sender/profile navigation, rejected
+message deletion, bidirectional group messages, a read receipt, incoming edits,
+a quoted reply, delayed Connectivity closure, a delayed edit across profiles,
+and direct Core termination with a request pending. Live reactions reached
+both clients but exposed hidden reaction bubbles and invented group reactor
+avatars; source fixes followed. The `b06680e` GUI passed successful Clear history
+(Core and UI empty) and rejected chat deletion with visible feedback.
 
-These checks exposed three presentation defects addressed after `ad04da9`:
-incoming edits did not invalidate the chat-list preview; ordinary downloaded
-files displayed only their caption; and retained quote text disappeared when
-the original message was absent. The changes refresh dependent presentation,
-reuse the native local-document view for files, and retain standalone quote
-components. Final compilation, file saving and rendered regression checks are
-still required. No new protocol implementation or fake transport object was
-added for these paths.
+Core API checks independently passed SecureJoin, bidirectional text/read
+receipts, stable-ID edits, quotes, remote deletion, group identity and attachment
+byte equality between pinned Core and the reference client. API checks do not
+substitute for GUI verification.
 
-Clear history, delete chat and date-range deletion now use Core RPCs and apply
-only confirmed removals. Added regression cases cover rejected reads/deletes,
-partial success, messages arriving after the snapshot, account switches,
-timestamp selection across batches, and actual Core deletion. The standalone
-suite passed sequentially against both Core versions, with one compiler job.
-These latest GUI paths await the next remote build and rendered checks.
+### Remaining release gates
 
-Further disposable checks reproduced an attachment identity collision: after
-viewing the alternate profile's four-second voice message, the primary profile's
-two-second message with the same Core ID displayed four seconds. The account-keyed
-cache fix still requires confirmation in the final artifact.
+Production readiness is not established. Live testing on `d05d666` found that
+rejected text is lost on profile switching if a newer composer draft already
+exists. `1903f6e` preserves both texts in the draft; its native build and GUI
+replay are pending. Core-aware edit eligibility at `e846f9b` passed native CI and awaits GUI
+replay, including rejection of HTML-message editing and removal of the donor's
+unrelated edit-age limit.
 
-A successful single-message deletion attempt exposed a JSON array construction
-bug: Core received a scalar message ID and rejected the request. Single/bulk and
-history deletion now share one account-scoped helper with an explicit nested ID
-array. The real-Core regression deletes one selected message while retaining its
-neighbor and passes against both Core versions.
+A second rejected-send loss occurs when its reply arrives after switching
+profiles. The follow-up recovers text through the original account/chat in Core
+while keeping the stale view callback canceled. Its account/attachment draft
+regression passes against real Core; native and live verification are pending.
 
-Delaying a send reply by 60 seconds, then deleting the accepted message through
-Core, left a ghost local bubble after the reply arrived although Core search was
-empty. Acknowledgements now remove pending items for confirmed deletions and
-reuse an existing authoritative Core item when its event arrived first, avoiding
-duplicate native IDs. They also preserve already-loaded delivery metadata.
-These native acknowledgement changes await compilation and GUI replay.
+Remaining checks include final-revision Core crash and callback lifetime
+replays, interrupted sends across profile changes/shutdown, and complete
+multi-stage deletion failure handling. The focused suite covers partial deletion
+failure, but the tested group delete dialog does not expose that combined path.
+The package gate passed in CI; an additional Ubuntu 22.04 portable-runtime check
+is now part of the sequential CI workflow and awaits its first run.
 
-Forwarding a reference-client message through the GUI to Saved Messages created
-the correct Core message but falsely labeled it "Forwarded from Me". Core's
-forwarding API deliberately omits the original sender. The client now maps its
-forwarded flag to a generic native "Forwarded message" label, including screen
-reader text, without manufacturing a sender or original timestamp. The old
-synthetic forwarding header was removed. This presentation awaits final GUI
-validation; the delivered text and Core forwarded flag were verified live.
+`docs/COMPATIBILITY.md` records wider feature gaps: inactive-profile
+notifications, attachment staging/media navigation, member management,
+keyboard/RTL and screen-reader coverage, second-device transfer, webxdc, camera
+workflows and advanced email presentation. Unsupported donor export, sharing
+restrictions and auto-delete controls are disabled rather than routed to
+Telegram. Calls remain unavailable before device permissions.
 
-A reaction sent through the Deltagram GUI reached the reference Desktop GUI,
-but the older Deltagram artifact also rendered Core's internal reaction message
-as a separate emoji bubble. Its ID was absent from Core's visible history.
-New event-driven items now require membership in that history; existing visible
-items refresh directly. The 24-case suite checks visible/hidden IDs, failed
-lookups, account cancellation, and a real Core draft excluded from history.
-Both Core versions pass. A rejected reaction removal also left the old GUI
-disagreeing with Core; reaction responses now surface errors and refresh the
-authoritative reaction state without retrying the mutation. Final GUI replay
-must verify both fixes.
-
-The reference GUI's reaction also reached Deltagram and exposed a donor
-assumption: a Core group occupies a donor user peer, so the one-to-one renderer
-invented the group itself as the reactor. Only confirmed Core direct chats use
-the two-person inference; groups, channels, mailing lists and unknown chat types
-use counts when reactor identities are not loaded. The unsupported donor
-reactor-list action is no longer advertised. This preserves reaction selection
-and counts without claiming an identity that Core did not provide to that view.
-
-A pinned-Core-to-pinned-Core disposable check delivered a 256 KiB attachment
-as an `Available` placeholder, confirming the manual-download contract. The
-older reference client sent the same-sized attachment as a complete message;
-that delivery is not counted as partial-download evidence. Rendering previously
-had no manual download action and could issue up to eight automatic download
-requests for missing media. The client now exposes Download in the message
-context menu, rechecks Core state at activation, reports failure, and waits for
-Core events to update content. Reading a message no longer overrides Core's
-download limit. The 25-case suite covers downloadable, complete, in-progress,
-undecipherable and unknown states, rejected reads/downloads, exact account/message
-parameters, and account cancellation. Both Core versions pass sequentially.
-Final GUI download and byte-integrity checks remain pending.
-Incoming refreshes also apply native file/video presentation after the fallback
-text adapter, so an empty attachment caption cannot become a filename placeholder
-after delivery or download events. Final GUI replay includes this update order.
-
-Onboarding source review found that failed `is_configured` reads were treated
-as false, allowing an existing profile to be nominated for setup writes. A
-shared read-only inventory now requires valid account IDs and explicit boolean
-states for every account, preserves Core order despite reordered replies, and
-returns no setup candidate on any failed/malformed read. The 26-case suite adds
-failure, malformed-type/ID, ordering and real-Core inventory coverage; both Core
-versions pass. Previously prepared setup accounts are rechecked before writes.
-Onboarding now also acknowledges selection before opening, coalesces overlapping
-preparation requests, prevents repeated Create submissions, and preserves the
-setup account when provisioning succeeded but opening failed. Final GUI checks
-must verify rejected discovery leaves profile configuration unchanged and rapid
-submission creates exactly one profile. These are source/test fixes, not yet
-rendered proof.
-
-A delayed global-search reply on the older GUI replaced the results of a newer
-query: a query with no matches displayed the earlier query's matching message.
-Core search callbacks now bind to the widget lifetime and a search generation;
-changing/cancelling the search invalidates earlier results. They also compare
-the current input, covering the interval before the next debounced request.
-The final GUI must repeat delayed replacement, cancellation and profile-switch
-checks. The before-fix behavior was reproduced with disposable messages; the
-native fix still requires compilation and rendered verification.
-
-Search review also found a hard limit of 50 loaded hits, advertised as the whole
-result. Global and in-chat searches now retain Core's ordered ID snapshot and
-load 50-item pages, with the snapshot count and a continuation until exhausted.
-Profile changes clear search results/caches and invalidate pending loads. Failed
-search reads are visible rather than silently reported as a successful empty
-result. Legacy search loads are also processed in bounded batches.
-
-A disposable Saved Messages fixture contains 60 confirmed Core matches. Its
-older GUI showed none: donor self-peer loading required a Telegram phone number
-and rejected the Core profile in search, with matching diagnostic errors. Core
-self profiles now qualify as loaded without a phone number. The 60-result
-fixture, page navigation, failed reads, cancellation and account changes still
-require final native GUI verification. Core's own global-search limit remains
-authoritative; Deltagram no longer imposes the extra 50-result cutoff.
-
-An immediate normal quit after typing a new disposable-chat draft preserved the
-complete text in Core and restored it in the old GUI composer. A runtime socket
-snapshot showed no GUI-owned TCP sockets and Core-owned IMAP connections. The
-donor session startup remains disabled in source. These checks are repeated on
-the final artifact; they do not replace the broader release gates.
-
-The pinned Nix toolchain configured the full GUI locally, preserving its Ninja
-and ccache records. The RPC transport, draft store, bridge, welcome flow, call
-guards, peer handling and initial history-request changes compiled with its
-release flags. Remaining local compilation was stopped to avoid laptop resource
-pressure; later pending-send, unread-anchor, history-deletion and draft-preview
-changes await native CI. Heavy
-builds now run remotely. No new production release has been published.
+The initial failures and follow-up commits remain in Git/CI history. Private
+fixture IDs, failure-injection policy, hashes and screenshots are kept under the
+ignored `data/integrity-live/` and isolated test-container directories. Existing
+unscoped draft files are retained on disk and never loaded into another profile.
 
 ## Initial publication — 2026-10-05
 

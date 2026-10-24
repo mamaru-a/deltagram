@@ -1,6 +1,6 @@
 # Experimental compatibility tracker
 
-Last reviewed: 2026-10-23. Deltagram is experimental and is not yet a complete
+Last reviewed: 2026-10-24. Deltagram is experimental and is not yet a complete
 Delta Chat client. Core provides messaging protocols and encryption; retaining
 a Telegram widget does not establish that its action works with Core.
 
@@ -27,11 +27,11 @@ are not copied here. Deltagram evidence comes from [PROGRESS.md](PROGRESS.md),
 | Contacts and contact deletion | ✅ Locally checked | Search, profile opening, chat creation and confirmed deletion have isolated checks. |
 | Shared contact cards | ✅ Locally checked | Send/import, card photo and profile navigation checked. Core does not import vCard NOTE biographies; available Core contact status is displayed. |
 | Group creation | ✅ Locally checked | Name/photo and member selection persist through Core; selection chips and stored members checked. |
-| Invitation links | 🟡 Partial | Contact/group/channel previews, confirmation and navigation checked locally. SecureJoin completed over real mail IO in the Core API check; the complete GUI join flow remains unverified. |
+| Invitation links | 🟡 Partial | Contact/group/channel previews, confirmation and navigation checked locally. Fresh disposable GUI onboarding and QR-image SecureJoin passed against official Desktop 2.62.0 on `3c2def3`. Physical camera scanning remains unverified. |
 | Channel profiles | ✅ Locally checked | Adaptive page/modal navigation, centered cover, large photo preview, contained action menu, description links, photo/name/description updates, mute control and Core media counts. Media rows open the selected message. |
 | Broadcast channels | ✅ Locally checked | Creation and subscriber write restrictions checked. Owner counts are Core read receipts, not public view totals. |
 | Message information | ✅ Locally checked | Context action and Core-backed details checked. |
-| Reactions | 🟡 Partial | Live GUI reactions reached both clients. Follow-up fixes exclude hidden reaction transport messages, reconcile rejected changes and avoid invented group/channel reactor avatars. Final rendered verification remains. Reactor-list browsing is unavailable. |
+| Reactions | 🟡 Partial | Live GUI replay on `35f036c` confirms bidirectional reactions, rejected-change recovery, hidden transport-message filtering and group counts without invented avatars. Reactor-list browsing is unavailable. |
 | Profile sidebar | ✅ Locally checked | Optional experimental toggle replaces the folder strip with profile photos/names. Switching, active colors, immediate toggling and restart persistence checked locally. |
 | Profile ordering | ✅ Locally checked | Core RPC ordering and UI feedback recorded. |
 
@@ -39,21 +39,22 @@ are not copied here. Deltagram evidence comes from [PROGRESS.md](PROGRESS.md),
 
 | Capability | Status | Remaining work or validation |
 | --- | --- | --- |
-| Text, images, files, videos and forwarding | 🟡 Partial | Live Core API checks passed bidirectional text and byte-identical file delivery against Delta Chat 2.62.0. MP4 sending, GUI forwarding and local playback have earlier local checks. Rebuilt GUI delivery, download and forwarding remain to be verified. |
-| Delivery and read indicators | 🟡 Partial | A live cross-client Core read receipt passed. Pending, delivered and read rendering have earlier offline fixture checks; rebuilt GUI indicators and multi-recipient behavior need validation. |
+| Text, images, files, videos and forwarding | 🟡 Partial | Live Core API checks passed bidirectional text and byte-identical file delivery against Delta Chat 2.62.0. MP4 sending, GUI forwarding and local playback have earlier local checks. `3c2def3` passed bidirectional GUI text, explicit partial download with rejection, byte-identical GUI saving, and anonymous forwarding. Save As defaults were corrected in `6a6d60d`; broader video/staging checks remain. |
+| Delivery and read indicators | 🟡 Partial | A live cross-client Core read receipt passed. The `9397be0` GUI displays a live read receipt; `d05d666` passes event-before-ack reconciliation. Multi-recipient behavior needs validation. |
 | Quotes and replies | 🟡 Partial | A live Core reply retained its quote across clients. Complete GUI create/display/jump behavior remains unverified. |
-| Message editing, deletion and chat archiving | 🟡 Partial | Live Core edits retained message IDs and remote deletion passed. The released GUI reproduced optimistic deletion after Core rejected it; the fix and two-client GUI behavior still need verification. |
+| Message editing, deletion and chat archiving | 🟡 Partial | Live Core edits retained message IDs and remote deletion passed. Rejected deletion preserves messages in verified GUIs. `9397be0` passes plain-text GUI edits in both clients; Core-aware edit eligibility and broader deletion replay remain pending. |
 | Voice messages | 🟡 Partial | Native waveform, duration, play/pause and seeking are implemented; local attachment playback is verified. Microphone recording and live cross-client delivery still need broader testing. |
-| Multiple profiles | 🟡 Partial | Switching clears reused histories, drafts, pending messages and attachment caches. Core draft storage and asynchronous callbacks are scoped to the account. End-to-end switching with overlapping chat/message IDs still needs GUI validation. |
+| Multiple profiles | 🟡 Partial | Switching clears reused histories, drafts, pending messages and attachment caches. Core draft storage and asynchronous callbacks are scoped to the account. `3c2def3` passed distinct drafts, red/blue images, two-/four-second voice clips, and playback/search reset across overlapping message IDs. |
 | Profile and group photos | 🟡 Partial | Settings image selection/crop/save and account avatar colors checked locally with Core; group checks recorded. Complete camera workflows and live photo distribution need checking. |
-| Onboarding and relay settings | 🟡 Partial | Core transport configuration and backup restore paths exist; full live onboarding needs validation. |
+| Onboarding and relay settings | 🟡 Partial | Fresh GUI creation, repeated-submit protection, fail-closed discovery, QR-image join and live exchange passed on `3c2def3`. Configured-account recovery without duplicate provisioning passed on `a8c544f`; backup restore remains unverified. |
 | Invite QR scanning | 🟡 Partial | Camera capture, QR image files and clipboard screenshots feed Core invites for an explicit Join. Image decoding is checked locally; physical camera capture needs hardware validation. |
 | Second-device setup | 🟡 Partial | Real Core backup QR generation exists; completed transfer to another device is unverified. |
 | Contact status and biographies | 🟡 Partial | Available Core contact status displayed; imported vCard biographies are unsupported by the current Core snapshot. |
-| Search | 🟡 Partial | Core result IDs now feed paged global/in-chat search, with canceled-query/account guards and visible failures. Saved Messages self-peer loading no longer requires a Telegram phone number. Native checks for more than 50 matches and result navigation are pending; help/HTML searches need separate checks. |
+| Search | 🟡 Partial | Core result IDs now feed paged global/in-chat search, with canceled-query/account guards and visible failures. Saved Messages self-peer loading no longer requires a Telegram phone number. `3c2def3` passed all 60 global/in-chat matches, final-page navigation, delayed replacement/cancellation and visible rejection. Help/HTML searches need separate checks. |
 | App picker and webxdc | 🟡 Partial | Embedded app store exists; host rendering, draft preparation and synchronized webxdc updates are unverified. |
 | Calls | ❌ Unavailable | Delta Chat calling is not implemented. Chat-header call buttons are hidden, call entry points stop before device permissions, Telegram conference creation/joining is disabled, and tde2e is excluded. |
 | Service-event presentation | ❌ Unavailable | Recorded as unfinished in the development log. |
+| Donor export, sharing restrictions and auto-delete controls | ❌ Unavailable | These Telegram-only actions are hidden/guarded; no Core-backed implementation is claimed. |
 | Settings privacy presentation | 🟡 Partial | Hiding the settings email remains unfinished. |
 
 ## Compatibility checks still needed
@@ -64,7 +65,7 @@ They are **unverified**, rather than assumed to work because the donor UI has th
 | Feature area | Status | Checks to record |
 | --- | --- | --- |
 | Media browser | ❓ Unverified | Combined media list, previous/next, delete and return to message. |
-| Chat management | ❓ Unverified | Clear history, bulk selection, bulk read state and last-read positioning. |
+| Chat management | ❓ Unverified | Clear history rejection/success and date-range deletion have targeted GUI checks; bulk read state and last-read positioning still need coverage. |
 | Member profiles | ❓ Unverified | Opening a profile from a group member list. |
 | Attachments | ❓ Unverified | Staging, multiple files/images/videos and image editing before send. |
 | Notifications | ❓ Unverified | Background delivery and unread indicators for inactive profiles. |
@@ -76,80 +77,27 @@ They are **unverified**, rather than assumed to work because the donor UI has th
 | Trust information | ❓ Unverified | Core-backed verification details and “verified by” presentation. |
 | Group duplication | ❓ Unverified | Cloning a group with correct Core membership semantics. |
 
-## Client integrity regressions (2026-10-23)
+## Client integrity verification (2026-10-24)
 
-The standalone `delta_integrity_tests` target exercises the production Qt RPC
-transport, account callback guard, Core draft adapter and history pagination.
-Fourteen cases pass in Ubuntu 24.04 x86-64 with Qt 6.4.2: reordered replies,
-event delivery, shutdown, failed startup, subprocess exit, malformed responses,
-timeouts without retrying mutations, restart framing, account isolation,
-draft attachment preservation, draft deletion, serialized draft writes, visible
-write failures, and Core-ordered pagination with non-monotonic IDs.
-`nix/test-rpc.sh` runs this suite before its real-Core smoke test.
-An additional real-Core case passes against Core 2.62.0 and pinned 2.63.0-dev: two unconfigured
-accounts with identical chat IDs retain independent drafts; changing draft
-text preserves the attachment bytes, and clearing the other draft persists.
-Set `DELTA_TEST_CORE_RPC` to run this case directly. `nix/test-rpc.sh` supplies
-the pinned server path so this case is required there.
+See [VALIDATION.md](VALIDATION.md) for revision-specific build, focused-test,
+Core API and GUI evidence. Full native/portable/package CI passed at `e846f9b`,
+including all 27 focused Qt cases against pinned Core. Edit capability guards
+await GUI replay; later draft/quote fixes await their native/live gate.
 
-The suite now has 26 cases, passing sequentially against both Core versions.
-Added coverage includes acknowledged history/chat deletion, partial failures,
-account cancellation, timestamp-filtered deletion in batches, concurrent new
-messages, real-Core history deletion, and drafts appearing in chat-list previews
-but not in history. Clear-history UI paths now wait for Core confirmation.
-Draft preview IDs no longer become history anchors or sent-message bubbles.
-Native attachment cache IDs include the account identity. A boundary/collision
-regression covers overlapping message IDs; profile changes also clear playback
-state and close the media viewer. Rendered cross-profile media checks remain.
+Disposable live GUI checks cover account/media isolation, crash-free repeated
+profile switches, paged global/in-chat search, explicit partial downloads,
+rejected Clear history, date-range deletion, send acknowledgement races,
+reaction rendering, configured-onboarding recovery, anonymous forwarding and
+standalone quotes. Fresh GUI provisioning and QR-image SecureJoin passed against
+official Desktop 2.62.0. The `9397be0` GUI sends editable plain text correctly
+and displays cross-client edits and read receipts.
 
-Further cases cover hidden transport-event filtering and explicit downloads of
-partial messages. Download actions recheck Core state, stay within the account,
-and surface failure without automatic retries. Rendering no longer overrides
-Core's download limit. A live pinned-Core disposable fixture reached `Available`;
-manual download through the final GUI remains to be checked.
-
-Account discovery now fails closed on failed or malformed configuration reads;
-only a confirmed unconfigured account can receive setup writes. The inventory
-regression includes reordered replies and both real Core versions. Native setup
-coalescing and repeated-submit guards await final GUI validation.
-
-The GUI changes also wait for Core before removing messages, apply incoming
-text edits, retain actual group sender identity, use Core unread state, guard
-callbacks for closed dialogs, and stop the event loop when Core exits.
-Forwarding uses Core message events instead of guessing the created IDs.
-Profile changes also cancel queued donor history/read requests without resuming
-their old generators. A failed or raced unread lookup retains a valid history
-anchor instead of inventing message ID 1.
-Messages still awaiting a Core send ID cannot be deleted locally; deletion
-becomes available after the send completes, avoiding apparent cancellation
-followed by the accepted message reappearing.
-These paths require full-client regression checks; the standalone tests do not
-establish GUI behavior or live interoperability.
-
-Live disposable-account checks passed between pinned Core 2.63.0-dev and the
-Core bundled with official Delta Chat Desktop 2.62.0: SecureJoin completion,
-bidirectional text, read receipts, edits preserving message IDs, quoted replies,
-remote deletion, group sender identity and byte-identical file delivery.
-These checks used the RPC APIs; fixed Deltagram GUI behavior is a separate gate.
-
-Existing local draft files lack an account identity and are no longer loaded
-by the Delta client. They are retained on disk; new drafts persist through Core.
-
-The first full remote GUI build passed at `4ddcae4`. Its GUI displayed the
-actual group sender and restored the alternate profile's own draft. Later
-history/deletion changes still await a full build and rendered verification.
-That GUI also passed rejected deletion, correct sender-profile navigation,
-bidirectional group text, a read receipt, incoming text edits and a quoted reply
-against the official desktop GUI. Live checks exposed stale edited previews,
-ordinary files rendered as captions only, and missing standalone quote text;
-the follow-up presentation fixes await the final build and GUI validation.
-
-Before release, build the final revision and exercise two disposable profiles
-with overlapping IDs: switch with an unsent draft and delayed edit, reject a
-deletion, receive an edit, open a group sender, paginate non-monotonic message
-IDs, close Connectivity while loading, and kill Core with requests pending.
-Then verify send/receive, edits, deletions and read receipts against another
-Delta Chat client using explicitly authorized test accounts.
+A rejected send with an already populated newer draft was lost after profile
+switching on `d05d666`. Its recovery fix is committed but awaits native/live
+validation. Interrupted sends and final callback/crash replays remain release
+gates. No production readiness or complete Delta Chat feature parity is claimed.
+Existing unscoped draft files are retained on disk and not loaded into another
+profile.
 
 ## Updating this tracker
 
