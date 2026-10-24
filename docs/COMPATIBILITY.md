@@ -80,10 +80,9 @@ They are **unverified**, rather than assumed to work because the donor UI has th
 ## Client integrity verification (2026-10-24)
 
 See [VALIDATION.md](VALIDATION.md) for revision-specific build, focused-test,
-Core API and GUI evidence. Full native/portable/package CI passed at `374244e`,
-including all 27 focused Qt cases and complete Debian 13/Ubuntu 22.04 runtime
-checks. The latest application-code artifact `8323369` was checksum-verified
-before GUI replay; the subsequent change adds only missing test dependencies.
+Core API and GUI evidence. Full native/portable/package CI passed at `ff64414`,
+including all 33 focused Qt cases and complete Debian 13/Ubuntu 22.04 runtime
+checks. Its GUI/Core/symbol artifacts were checksum-verified before live replay.
 
 Disposable live GUI checks cover account/media isolation, crash-free repeated
 profile switches, paged global/in-chat search, explicit partial downloads,
@@ -97,10 +96,14 @@ The `8323369` GUI preserves rejected text alongside newer drafts and recovers
 late failures into the original profile after switching. Quote text survives
 immediate deletion of its original. Delayed dialog/edit callbacks and Core exit
 are handled without a crash; an already persisted draft returns after restart.
-Unacknowledged-send shutdown/crash durability remains unverified, alongside the
-broader gaps above. No production readiness or complete Delta Chat feature
-parity is claimed. Existing unscoped draft files are retained without loading
-into another profile.
+The `ff64414` normal-text composer keeps Core's durable draft until handoff.
+Live replay passes rejected-send quit/restart with quote retention, accepted-send
+quit before acknowledgement without duplicates, committed-send error replies,
+quit during persistence, pending-send profile switches and Core-crash recovery.
+The independent reference GUI displays the accepted texts and quote. Combined
+forwarding and attachment-send durability and the broader gaps above remain
+open. No production readiness or complete Delta Chat feature parity is claimed.
+Existing unscoped draft files are retained without loading into another profile.
 
 ## Updating this tracker
 

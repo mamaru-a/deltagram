@@ -6,16 +6,14 @@ Heavy native builds run remotely, one at a time with four compiler jobs. No
 heavy local builds run in parallel; Ninja records and ccache are preserved.
 Commits and fork CI use `mamaru-a`. No production release has been published.
 
-Native compilation, all 27 focused Qt cases (29 including setup/cleanup),
+Native compilation, all 33 focused Qt cases (35 including setup/cleanup),
 portable runtime checks on Debian 13 and Ubuntu 22.04, and Debian/RPM/Arch/tar
-package verification passed at `374244e`:
-[CI run](https://github.com/mamaru-a/deltagram/actions/runs/40060351864).
-The latest application-code artifact, `8323369`, was downloaded and its GUI/Core
-SHA-256 checksums verified before live replay. `374244e` only completes the
-portable test dependency set; it does not change application code. The initial
-Ubuntu check reached GUI/RPC/WebKit/input/cursor success but its final GIO harness
-check required matching `libmount`/`libblkid` dependencies. The corrected run
-passes the complete check on both distributions.
+package verification passed at `ff64414`:
+[CI run](https://github.com/mamaru-a/deltagram/actions/runs/40064157870).
+The GUI, Core and symbol-file SHA-256 checksums were verified before disposable
+live replay. The preceding `b8e700d` run caught a strong message-ID conversion
+error; `ff64414` fixes it. Builds were serialized and compiler caches preserved.
+The earlier `374244e` run completed both portable runtime dependency checks.
 
 Live tests use isolated disposable profiles **Deltagram integrity A**,
 **Deltagram integrity alternate**, **Deltagram integrity onboarding**,
@@ -36,10 +34,30 @@ The replacement normal-text path saves and reads back a Core draft before
 It reconciles uncertain replies using the saved message ID without retrying the
 mutation. Editing is paused during this local handoff; normal quit is prevented
 only until the saved draft is confirmed. Attachment drafts fail closed.
-The focused suite currently passes 33 cases (35 including setup/cleanup),
+The focused suite passes 33 cases (35 including setup/cleanup),
 including a real-Core rejected-send/restart test and simulated lost-ack,
 save-rejection, send-rejection, duplicate-submit and account-isolation cases.
-Native compilation and disposable GUI replay of this replacement are pending.
+The checksum-verified `ff64414` GUI passes:
+
+- Rejected send followed by normal quit: text and quote return after restart;
+  one explicit retry creates one Core message and the reference GUI shows its
+  quote correctly. Typing during the handoff does not change the locked composer.
+- Accepted send with its acknowledgement delayed past quit: restart shows the
+  same single outgoing message and an empty composer, with no duplicate draft.
+- An injected error reply after Core commits: the known message ID reconciles
+  successfully without another send. The reference GUI receives one message.
+- Quit before draft confirmation: a visible saving notice prevents normal exit;
+  the send completes once Core confirms persistence.
+- Profile switches during pending sends: the original text remains visible on
+  return; rejected sends retain it and accepted sends clear only that profile.
+  The alternate profile's existing draft remains unchanged.
+- Core process failure during a pending send: the GUI reports messaging stopped;
+  the saved text returns after restart and no outgoing message was invented.
+
+Private evidence is in `data/integrity-live/handoff-evidence.json` and the
+`handoff-*.png` captures. The reference GUI displays the accepted messages and
+quote. A point-in-time process/socket check records zero TCP connections owned
+by the GUI and seven owned by Core; this is not a continuous network trace.
 Combined forwarding and attachment sends still use their existing send paths;
 this handoff change covers the normal text composer.
 
@@ -141,10 +159,12 @@ substitute for GUI verification.
 
 ### Remaining release gates
 
-Production readiness is not established. Unacknowledged sends interrupted by
-application shutdown or Core failure still need a durability check. The known
-profile-switch crash, send acknowledgement races, rejected-send draft loss and
-quote-deletion presentation defects have passed their targeted live replays.
+Production readiness is not established. Normal-text send handoff durability
+now passes the recorded shutdown, Core-failure and uncertain-reply replays.
+Combined forwarding and attachment-send durability still need equivalent
+coverage. The known profile-switch crash, send acknowledgement races,
+rejected-send draft loss and quote-deletion presentation defects have passed
+their targeted live replays.
 
 The focused suite covers partial multi-stage deletion failure, but the tested
 group delete dialog does not expose that combined path. Broader operational and
