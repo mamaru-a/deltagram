@@ -1029,11 +1029,8 @@ public:
 			const QString &text,
 			int quotedId,
 			Fn<void(int, QString)> done) {
-		auto html = text.toHtmlEscaped();
-		html.replace(u"\n"_q, u"<br>"_q);
 		QJsonObject data;
 		data.insert(u"text"_q, text);
-		data.insert(u"html"_q, html);
 		if (quotedId > 0) {
 			data.insert(u"quotedMessageId"_q, quotedId);
 		}
