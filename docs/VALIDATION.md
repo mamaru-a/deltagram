@@ -172,13 +172,22 @@ leaves neither a draft nor an outgoing message after restart. The original
 selected file remains on disk, but the client's send selection and caption are
 lost. Private evidence: `attachment-handoff-pending.png`,
 `attachment-handoff-lost.png`, and `handoff-attachment-baseline.json`.
-The draft handoff backend now accepts attachments and retains Core's managed
-blob path. A real-Core regression verifies rejected-send recovery after restart
-and byte equality after deleting the original temporary file. The expanded
-local focused suite passes 36 cases (38 including setup/cleanup). Attachment
-GUI integration, recovery presentation and multi-file sequencing are still in
-progress; the live client continues to use the old file-send path. This backend
-extension has not yet passed a full native CI build or GUI replay.
+The draft handoff backend accepts attachments and retains Core's managed blob
+path. A real-Core regression verifies rejected-send recovery after restart,
+byte equality after deleting the original temporary file, and explicit removal
+that retains the caption. `be7b043` connects ordinary single-file submissions
+to this handoff and adds a saved-attachment review/send/remove dialog behind
+the attachment button. File-dialog callbacks are guarded against chat/profile
+changes. Failed handoffs reload Core state, including when a save reply is lost.
+
+The local focused suite passes 41 cases (43 including setup/cleanup, no skips),
+including rejected removal, stale-file protection and committed writes with lost
+replies. Native/portable/package CI is running for `be7b043`:
+[CI run](https://github.com/mamaru-a/deltagram/actions/runs/40069205736).
+Its GUI recovery/retry/removal replay is pending. The running disposable GUI is
+still `ff64414`; source and backend tests do not establish a live fix. Multi-file
+batches, transformed media and combined forwarding retain their old send paths
+and remain release gates.
 
 The focused suite covers partial multi-stage deletion failure, but the tested
 group delete dialog does not expose that combined path. Broader operational and
