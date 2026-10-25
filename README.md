@@ -78,13 +78,15 @@ Working in local checks:
   Delta Chat Desktop 2.62.0, including restored history and image bytes.
 - Prepared-image, uncompressed-image and ZIP recovery across normal restart,
   including older quoted attachments and uncertain send acknowledgements.
+- Explicit local Retry after a rejected prepared-image save, with duplicate
+  actions blocked and matching bytes delivered to the reference client.
 
 Incomplete or not yet verified:
 
 - Voice playback UI, service events and complete profile-switch refresh.
 - Delta Chat calls; Telegram conferences are disabled.
-- Multi-file recovery, direct retry before Core owns a prepared attachment,
-  and broader interruption cases.
+- Multi-file recovery and broader interruption cases for prepared attachments.
+- Search-result restart crash: the serializer fix awaits native/live replay.
 - Camera/mobile QR flows and broad end-to-end compatibility.
 - Accessibility, RTL, advanced media/search and full webxdc behavior need validation.
 

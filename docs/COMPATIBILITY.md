@@ -175,10 +175,13 @@ clients. `252bfa0` also verifies failed pre-save attachment retention, blocked
 normal quit/profile switching, and explicit Delete cleanup/unlock with caption
 retention. A prepared send with a lost acknowledgement reconciles once and
 survives restart with no duplicate; both clients retain the prepared image bytes.
-Direct retry before Core ownership is implemented in `7d64366`; its native
-validation passed, but disposable Retry replay was interrupted by a reproducible
-search-result crash while loading saved recent peers. The serializer fix and
-unchanged-cache replay are pending native validation. Broader interruption
+Direct retry before Core ownership passes native validation and disposable
+unquoted-image replay on `7d64366`: repeated save rejection retains private
+prepared bytes, a delayed Retry blocks duplicate actions, and one send delivers
+identical bytes to both clients. Normal restart retains one message and no draft.
+A separate quoted Retry setup exposed a reproducible search-result crash while
+loading saved recent peers. The serializer fix and unchanged-cache replay are
+pending native validation. Broader interruption
 checks and recent-search suggestion isolation across profiles remain open.
 
 `ca039dc` adds Core-backed batch compose storage, and `8a2b78c` adds durable-send

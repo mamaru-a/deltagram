@@ -681,7 +681,20 @@ to use the saved-attachment review flow.
 All 89 focused checks passed for that source revision. Its remote native,
 portable-runtime and package validation passed in
 [run 40198373254](https://github.com/mamaru-a/deltagram/actions/runs/40198373254).
-Direct local Retry has not yet been replayed with that native artifact.
+Direct local Retry passes disposable replay with that checksum-verified artifact.
+Two rejected attachment saves leave the same private prepared JPEG retained and
+the local message failed. After removing the rejection, one explicit Retry with
+an eight-second save delay marks it pending and removes Retry/Delete from its
+context menu. The audit records exactly one `misc_send_draft` call. Core message
+179 and reference message 177 contain the same caption and prepared bytes
+(`fb6f1dbd5258f4579cd08469d636bd9952cdd655a3b45d6b7213dad59c1a6bf3`).
+Both GUIs display the image; the composer and Core draft clear, staging is
+removed, and the other disposable profiles and alternate draft stay unchanged.
+Normal quit/restart retains that single delivered message and an empty draft.
+Fault injection is cleared. This case is unquoted; it does not establish quoted
+local Retry or arbitrary process-interruption recovery. Private evidence:
+`attachment-local-retry-after-restart.json`, `media-local-retry-reference-bytes.json`,
+`media-local-retry-after-restart.json`, and the `local-retry-*.png` screenshots.
 Subsequent test review corrected temporary JSON-reference lifetimes in two
 Retry assertions; those assertions now retain owned JSON objects.
 
@@ -756,7 +769,10 @@ fields/conversions, rejects invalid peer types and unsupported record versions,
 checks truncated records before applying their fields, and bounds saved
 recent/top-peer counts. No account or cache files were deleted for recovery.
 
-The source audit passes. Native compilation and replay against the unchanged
+The source audit passes. Serial native/package validation of `490cadd`, including
+the queue recovery/discard controls, is running in
+[run 40202325093](https://github.com/mamaru-a/deltagram/actions/runs/40202325093).
+Native compilation and replay against the unchanged
 disposable cache remain pending; the 116 focused backend checks do not exercise
 this GUI serializer. Private evidence: `retry-native-crash.trace`,
 `retry-trace-search.png`, and the checksum-verified artifact symbols. Recent/top
