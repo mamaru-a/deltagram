@@ -211,7 +211,8 @@ PeerData *readPeer(
 	qint32 version = 0, photoHasVideo = 0;
 	stream >> peerIdSerialized >> versionTag;
 	const auto peerId = DeserializePeerId(peerIdSerialized);
-	if (stream.status() != QDataStream::Ok || !peerId
+	if (stream.status() != QDataStream::Ok
+		|| !(peerId.value & PeerId::kChatTypeMask) || (peerId.value >> 56)
 		|| (!peerIsUser(peerId) && !peerIsChat(peerId) && !peerIsChannel(peerId))) {
 		stream.setStatus(QDataStream::ReadCorruptData);
 		return nullptr;
@@ -242,9 +243,6 @@ PeerData *readPeer(
 		: session->data().peerLoaded(peerId);
 	const auto apply = !loaded || !loaded->isLoaded();
 	const auto result = loaded ? loaded : session->data().peer(peerId).get();
-	if (apply) {
-		result->setLoadedStatus(PeerData::LoadedStatus::Normal);
-	}
 	if (const auto user = result->asUser()) {
 		QString first, last, phone, username, inlinePlaceholder;
 		quint64 access;
@@ -268,6 +266,7 @@ PeerData *readPeer(
 		userpicAccessHash = access;
 
 		if (apply) {
+			result->setLoadedStatus(PeerData::LoadedStatus::Normal);
 			const auto showPhone = !user->isServiceUser()
 				&& (user->id != selfId)
 				&& (contact <= 0);
@@ -334,6 +333,7 @@ PeerData *readPeer(
 			>> inviteLink;
 		if (stream.status() != QDataStream::Ok) return nullptr;
 		if (apply) {
+			result->setLoadedStatus(PeerData::LoadedStatus::Normal);
 			const auto creator = UserId(
 				BareId(uint32(field1)) | (BareId(uint32(field2) >> 8) << 32));
 			chat->setName(name);
@@ -405,6 +405,7 @@ PeerData *readPeer(
 		userpicAccessHash = access;
 
 		if (apply) {
+			result->setLoadedStatus(PeerData::LoadedStatus::Normal);
 			channel->setName(name, QString());
 			channel->setAccessHash(access);
 			channel->date = date;
@@ -470,7 +471,8 @@ QString peekUserPhone(int streamAppVersion, QDataStream &stream) {
 	stream >> peerIdSerialized >> versionTag;
 	const auto peerId = DeserializePeerId(peerIdSerialized);
 	DEBUG_LOG(("peekUserPhone.id: %1").arg(peerId.value));
-	if (stream.status() != QDataStream::Ok || !peerId || !peerIsUser(peerId)) {
+	if (stream.status() != QDataStream::Ok || !peerId || !peerIsUser(peerId)
+		|| (peerId.value >> 56)) {
 		return nullptr;
 	}
 	if (versionTag == kVersionTag) {
@@ -492,9 +494,7 @@ QString peekUserPhone(int streamAppVersion, QDataStream &stream) {
 
 	QString first, last, phone;
 	stream >> first >> last >> phone;
-	DEBUG_LOG(("peekUserPhone.data: %1 %2 %3"
-		).arg(first, last, phone));
-	return phone;
+	return (stream.status() == QDataStream::Ok) ? phone : QString();
 }
 
 } // namespace Serialize

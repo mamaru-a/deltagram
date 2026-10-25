@@ -789,6 +789,14 @@ or process restart. Core profiles no longer invoke donor top-peer requests.
 The publication audit passes, but this follow-up still needs native compilation
 and GUI profile-switch/restart checks; the active `490cadd` build predates it.
 
+Further serializer review found that a truncated peer record could mark a newly
+created peer as loaded before its fields had been read successfully. The
+follow-up delays that transition until the complete type-specific record is
+valid, rejects zero bare IDs and excess ID bits, and returns no phone from a
+truncated peek. It also removes the debug log containing the parsed name/phone.
+These malformed-record changes pass the source audit; native/runtime validation
+is still pending and they are not covered by the focused backend test target.
+
 ### Second-device dialog integrity — 2026-10-25
 
 On the disposable `be7b043` GUI, two rapid Continue clicks started two
