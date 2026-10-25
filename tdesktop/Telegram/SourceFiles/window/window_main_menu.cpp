@@ -352,7 +352,7 @@ void MainMenu::ToggleAccountsButton::paintEvent(QPaintEvent *e) {
 
 	const auto path = Ui::ToggleUpDownArrowPath(
 		0. + width() - st::mainMenuTogglePosition.x(),
-		0. + height() - st::mainMenuTogglePosition.y(),
+		0. + std::max(st::semiboldFont->height, st::mainMenuBadgeSize) / 2,
 		st::mainMenuToggleSize,
 		st::mainMenuToggleFourStrokes,
 		_toggledAnimation.value(_toggled ? 1. : 0.));
@@ -377,9 +377,7 @@ void MainMenu::ToggleAccountsButton::paintUnreadBadge(Painter &p) {
 	const auto right = width()
 		- st::mainMenuTogglePosition.x()
 		- st::mainMenuToggleSize * 3;
-	const auto top = height()
-		- st::mainMenuTogglePosition.y()
-		- st::mainMenuBadgeSize / 2;
+	const auto top = std::max(0, (st::semiboldFont->height - st.size) / 2);
 	p.setOpacity(progress);
 	Ui::PaintUnreadBadge(p, _unreadBadge, right, top, st);
 }
