@@ -668,7 +668,7 @@ void Uploader::deliverDelta(
 		return;
 	}
 	Delta::RememberPendingFile(itemId.peer.value, itemId.msg.bare,
-		path, file->filename, file, file->forceFile);
+		path, file->filename, file, file->forceFile, file->to.preparedSend);
 	if (file->type == SendMediaType::Photo) {
 		session().data().photo(file->id)->uploadingData = nullptr;
 	} else if (file->type == SendMediaType::File

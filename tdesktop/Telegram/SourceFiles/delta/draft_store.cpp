@@ -150,12 +150,13 @@ void DraftStore::sendText(int accountId, int chatId, const QString &text,
 	beginSend(Key(accountId, chatId), ComposeDraft{ text, quotedMessageId }, std::move(done));
 }
 
-void DraftStore::sendAttachment(int accountId, int chatId, ComposeDraft draft, SendCallback done) {
+void DraftStore::sendAttachment(int accountId, int chatId, ComposeDraft draft,
+		SendCallback done, PreparedCallback prepared) {
 	if (draft.file.isEmpty()) {
 		if (done) done(0, u"The attachment file is missing."_s);
 		return;
 	}
-	beginSend(Key(accountId, chatId), std::move(draft), std::move(done));
+	beginSend(Key(accountId, chatId), std::move(draft), std::move(done), std::move(prepared));
 }
 
 void DraftStore::discardAttachment(int accountId, int chatId,
@@ -214,13 +215,15 @@ void DraftStore::startDiscard(Key key) {
 		});
 }
 
-void DraftStore::beginSend(Key key, ComposeDraft draft, SendCallback done) {
+void DraftStore::beginSend(Key key, ComposeDraft draft, SendCallback done,
+		PreparedCallback prepared) {
 	auto &entry = _entries[key];
 	if (entry.send || (draft.text.trimmed().isEmpty() && draft.file.isEmpty())) {
 		if (done) done(0, u"A message is already being saved, or its text is empty."_s);
 		return;
 	}
 	entry.send = Entry::Send{ std::move(draft), std::move(done) };
+	entry.send->preparedCallback = std::move(prepared);
 	ensureLoaded(key);
 }
 
@@ -246,7 +249,8 @@ void DraftStore::startSend(Key key) {
 		target.viewType.isEmpty() ? (target.file.isEmpty() ? u"Text"_s : u"File"_s) : target.viewType},
 		[=, this](QJsonObject reply) {
 			if (guard.expired()) return;
-			if (reply.contains(u"error"_s)) {
+			const auto saveError = reply.contains(u"error"_s) ? Failure(reply) : QString();
+			if (!saveError.isEmpty() && !_entries[key].send->preparedCallback) {
 				finishSend(key, 0, Failure(reply));
 				return;
 			}
@@ -259,6 +263,7 @@ void DraftStore::startSend(Key key) {
 					|| draft.value(u"state"_s).toInt() != 19
 					|| draft.value(u"chatId"_s).toInt() != key.second
 					|| draft.value(u"text"_s).toString() != text
+					|| draft.value(u"quote"_s).toObject().value(u"messageId"_s).toInt() != quote
 					|| draft.value(u"file"_s).toString().isEmpty() != target.file.isEmpty()) {
 					finishSend(key, 0, u"Could not confirm the saved draft. Nothing was sent."_s);
 					return;
@@ -269,6 +274,17 @@ void DraftStore::startSend(Key key) {
 				_entries[key].value.filename = draft.value(u"fileName"_s).toString();
 				_entries[key].value.viewType = draft.value(u"viewType"_s).toString();
 				_entries[key].send->prepared = true;
+				// Report ownership before attempting the send. Prepared-media callers
+				// may now release their temporary source and recover this Core draft.
+				const auto prepared = _entries[key].send->preparedCallback;
+				if (prepared) prepared(_entries[key].value);
+				if (guard.expired()) return;
+				if (!saveError.isEmpty()) {
+					// A lost save reply is reconciled for recovery, never retried or
+					// followed by a send the caller cannot distinguish from rejection.
+					finishSend(key, 0, saveError);
+					return;
+				}
 				_rpc->call(u"misc_send_draft"_s, {key.first, key.second},
 					[=, this](QJsonObject sent) {
 						if (guard.expired()) return;

@@ -198,7 +198,12 @@ int main(int argc, char **argv) {
 				{u"viewType"_s, u"File"_s},
 			};
 			if (method == u"get_draft"_s || method == u"inspect_draft"_s) {
-				Reply(request, drafts[key]);
+				auto value = drafts[key];
+				if (method == u"get_draft"_s && mode == u"handoff-wrong-quote"_s
+					&& value[u"id"_s].toInt() > 0) {
+					value[u"quote"_s] = QJsonObject{{u"messageId"_s, 999}};
+				}
+				Reply(request, value);
 				continue;
 			}
 			++writes;

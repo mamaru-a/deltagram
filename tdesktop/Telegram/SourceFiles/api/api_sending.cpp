@@ -1176,6 +1176,7 @@ struct ConfirmedLocalFile {
 	action.replyTo = file->to.replyTo;
 	action.generateLocal = true;
 	action.replaceMediaOf = file->to.replaceMediaOf;
+	action.preparedSend = file->to.preparedSend;
 
 	auto caption = PrepareConfirmedFileCaption(history, session, file);
 	const auto flags = PrepareConfirmedFileFlags(

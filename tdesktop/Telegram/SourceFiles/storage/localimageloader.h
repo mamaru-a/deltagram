@@ -163,16 +163,19 @@ struct FileLoadTo {
 		PeerId peer,
 		Api::SendOptions options,
 		FullReplyTo replyTo,
-		MsgId replaceMediaOf)
+		MsgId replaceMediaOf,
+		std::shared_ptr<Delta::PreparedSend> preparedSend = {})
 	: peer(peer)
 	, options(options)
 	, replyTo(replyTo)
-	, replaceMediaOf(replaceMediaOf) {
+	, replaceMediaOf(replaceMediaOf)
+	, preparedSend(std::move(preparedSend)) {
 	}
 	PeerId peer;
 	Api::SendOptions options;
 	FullReplyTo replyTo;
 	MsgId replaceMediaOf;
+	std::shared_ptr<Delta::PreparedSend> preparedSend;
 };
 
 using UploadFileParts = std::vector<QByteArray>;

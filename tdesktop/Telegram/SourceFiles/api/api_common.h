@@ -9,8 +9,14 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "data/data_drafts.h"
 
+#include <memory>
+
 class History;
 class PhotoData;
+
+namespace Delta {
+class PreparedSend;
+} // namespace Delta
 
 namespace Data {
 class Thread;
@@ -64,6 +70,7 @@ struct SendAction {
 	bool clearDraft = true;
 	bool generateLocal = true;
 	MsgId replaceMediaOf = 0;
+	std::shared_ptr<Delta::PreparedSend> preparedSend;
 
 	[[nodiscard]] MTPInputReplyTo mtpReplyTo() const;
 

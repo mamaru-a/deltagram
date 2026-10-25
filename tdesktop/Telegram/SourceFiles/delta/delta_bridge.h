@@ -32,6 +32,11 @@ class Instance;
 
 namespace Delta {
 
+class PreparedSend;
+// Holds the composer/quit reservation until preparation is abandoned or Core
+// confirms ownership. Carries no protocol data into the preparation workers.
+[[nodiscard]] std::shared_ptr<PreparedSend> BeginPreparedSend(int userId);
+
 void AnswerRequest(
 	not_null<MTP::Instance*> instance,
 	mtpRequestId requestId,
@@ -93,7 +98,8 @@ void AddContact(
 	Fn<void(int userId, QString error)> done);
 
 void RememberPendingFile(uint64 peer, int64 msg, const QString &path,
-	const QString &filename, std::shared_ptr<void> owner, bool forceFile);
+	const QString &filename, std::shared_ptr<void> owner, bool forceFile,
+	std::shared_ptr<PreparedSend> preparation = {});
 void ForgetPendingFile(uint64 peer, int64 msg);
 bool SendItemMedia(not_null<HistoryItem*> item, Fn<void(bool)> done);
 bool SendItemText(not_null<HistoryItem*> item, const QString &text, Fn<void(bool)> done);

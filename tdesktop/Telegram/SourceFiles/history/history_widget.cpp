@@ -1165,6 +1165,8 @@ HistoryWidget::HistoryWidget(
 		const auto lastKeyboardUsed = lastForceReplyReplied(
 			action.replyTo.messageId);
 		if (action.replaceMediaOf) {
+		} else if (action.preparedSend) {
+			fastShowAtEnd(action.history);
 		} else if (action.options.scheduled) {
 			cancelReplyOrSuggest(lastKeyboardUsed);
 			crl::on_main(this, [=, history = action.history] {
@@ -8071,6 +8073,14 @@ void HistoryWidget::sendingFilesConfirmed(
 		if (!checked) {
 			return;
 		}
+	}
+
+	if (Delta::Active() && bundle->totalCount == 1 && bundle->groups.size() == 1
+		&& bundle->groups.front().list.files.size() == 1) {
+		_field->setTextWithTags(bundle->groups.front().list.files.front().caption);
+		saveDraftWithTextNow();
+		action.preparedSend = Delta::BeginPreparedSend(int(peerToUser(_peer->id).bare));
+		if (!action.preparedSend) return;
 	}
 
 	auto &api = session().api();

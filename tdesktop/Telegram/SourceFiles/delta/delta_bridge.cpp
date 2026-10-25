@@ -60,9 +60,23 @@ This file is part of Delta Tel, a Telegram Desktop based Delta Chat client.
 
 #include <algorithm>
 #include <limits>
+#include <map>
 #include <memory>
 
 namespace Delta {
+
+class PreparedSend final {
+public:
+	~PreparedSend() { if (released) released(); }
+	int account = 0;
+	int chat = 0;
+	int epoch = 0;
+	bool owned = false;
+	bool finished = false;
+	ComposeDraft saved;
+	Fn<void()> released;
+};
+
 namespace {
 
 constexpr auto kSelfUserId = 1'000'000;
@@ -187,6 +201,7 @@ struct PendingUpload {
 	QString filename;
 	std::shared_ptr<void> owner;
 	bool forceFile = false;
+	std::shared_ptr<PreparedSend> preparation;
 };
 QHash<QString, PendingUpload> PendingUploads;
 
@@ -810,14 +825,88 @@ public:
 	}
 
 	bool composerWritable(int userId) const {
-		return _rpc->running()
+		const auto chat = chatForPeerUser(userId);
+		const auto i = _preparations.find({ _accountId, chat });
+		const auto preparation = (i != _preparations.end()) ? i->second.lock() : nullptr;
+		return !_switching && _rpc->running()
+			&& (!preparation || preparation->finished)
 			&& !_drafts->sending(_accountId, chatForPeerUser(userId));
 	}
 
+	std::shared_ptr<PreparedSend> beginPreparedSend(int userId) {
+		if (!composerWritable(userId)) return {};
+		const auto chat = chatForPeerUser(userId);
+		if (chat <= 0) return {};
+		auto result = std::make_shared<PreparedSend>();
+		result->account = _accountId;
+		result->chat = chat;
+		result->epoch = _dialogsEpoch;
+		const auto guard = _alive;
+		result->released = [=] {
+			// The final preparation owner may be released by a worker thread.
+			crl::on_main([=] {
+				if (!guard.expired()) ComposerRevision = ComposerRevision.current() + 1;
+			});
+		};
+		_preparations[{ _accountId, chat }] = result;
+		ComposerRevision = ComposerRevision.current() + 1;
+		return result;
+	}
+
+	bool hasUnsavedPreparation() const {
+		for (const auto &[key, weak] : _preparations) {
+			const auto preparation = weak.lock();
+			if (preparation && !preparation->owned) return true;
+		}
+		return false;
+	}
+
 	bool preparingSendPreventsQuit() {
-		if (!_drafts->preparingSend()) return false;
-		reportError(u"A message is being saved. Please try quitting again when saving finishes."_q);
+		if (!_drafts->preparingSend() && !hasUnsavedPreparation()) return false;
+		reportError(u"A message has not finished saving. Wait for it to finish, or remove the failed attachment before quitting."_q);
 		return true;
+	}
+
+	void sendPreparedFile(std::shared_ptr<PreparedSend> preparation,
+			ComposeDraft draft, Fn<void(int, QString)> done) {
+		if (preparation->account != _accountId || preparation->epoch != _dialogsEpoch) {
+			done(0, u"The attachment belongs to an earlier profile view."_q);
+			return;
+		}
+		const auto guard = _alive;
+		const auto finished = [=](int id, QString error) {
+			if (guard.expired()) return;
+			if (preparation->account == _accountId && preparation->epoch == _dialogsEpoch) {
+				if (id > 0 && !_deletedMessages.contains(id) && !CoreMessages.contains(id)) {
+					CoreMessages.insert(id, QJsonObject{{ u"state"_q, 20 }});
+				}
+				done(id, std::move(error));
+				if (id > 0 && !_deletedMessages.contains(id)) addIncoming(preparation->chat, id);
+			}
+			preparation->finished = preparation->owned;
+			ComposerRevision = ComposerRevision.current() + 1;
+		};
+		_drafts->sendAttachment(preparation->account, preparation->chat, std::move(draft),
+			[=](int id, QString error) {
+				if (guard.expired()) return;
+				if (id <= 0 && preparation->owned) {
+					// A failed reply may follow a committed send. Restore only the
+					// draft Core still reports, never the old pre-send snapshot.
+					_drafts->load(preparation->account, preparation->chat,
+						[=](ComposeDraft current, QString loadError) {
+							if (guard.expired()) return;
+							preparation->saved = loadError.isEmpty() ? std::move(current) : ComposeDraft();
+							finished(id, error);
+						});
+				} else {
+					finished(id, std::move(error));
+				}
+			}, [=](ComposeDraft saved) {
+				if (guard.expired()) return;
+				preparation->saved = std::move(saved);
+				preparation->owned = true;
+			});
+		ComposerRevision = ComposerRevision.current() + 1;
 	}
 
 	void sendComposerDraft(int userId, ComposeDraft draft, Fn<void(bool)> done) {
@@ -1644,6 +1733,10 @@ public:
 	}
 
 	void switchProfile(int accountId, Fn<void(QString)> done) {
+		if (hasUnsavedPreparation()) {
+			done(u"An attachment has not finished saving. Wait for it to finish, or remove the failed attachment before switching profiles."_q);
+			return;
+		}
 		if (_switching) {
 			done(u"A profile switch is already in progress."_q);
 			return;
@@ -3199,6 +3292,7 @@ public:
 	const not_null<Main::Session*> _session;
 	const std::shared_ptr<DeltaRpc> _rpc;
 	std::unique_ptr<DraftStore> _drafts;
+	std::map<std::pair<int, int>, std::weak_ptr<PreparedSend>> _preparations;
 	std::unique_ptr<BackupTransfers> _backups;
 	int _accountId = 0;
 	QString _selfName;
@@ -3257,6 +3351,10 @@ qint64 MessageMediaId(int messageId) {
 
 bool Active() {
 	return GlobalBridge != nullptr;
+}
+
+std::shared_ptr<PreparedSend> BeginPreparedSend(int userId) {
+	return GlobalBridge ? GlobalBridge->beginPreparedSend(userId) : nullptr;
 }
 
 int AccountGeneration() {
@@ -3649,10 +3747,11 @@ void AddContact(
 }
 
 void RememberPendingFile(uint64 peer, int64 msg, const QString &path,
-		const QString &filename, std::shared_ptr<void> owner, bool forceFile) {
+		const QString &filename, std::shared_ptr<void> owner, bool forceFile,
+		std::shared_ptr<PreparedSend> preparation) {
 	if (!path.isEmpty()) {
 		PendingUploads.insert(PendingKey(peer, msg), {
-			path, filename, std::move(owner), forceFile,
+			path, filename, std::move(owner), forceFile, std::move(preparation),
 		});
 	}
 }
@@ -3719,7 +3818,10 @@ bool SendItemMedia(not_null<HistoryItem*> item, Fn<void(bool)> done) {
 		}
 	}
 	if (path.isEmpty() || !QFileInfo::exists(path)) {
-		return false;
+		item->sendFailed();
+		GlobalBridge->reportError(u"The prepared attachment is no longer available. Nothing was sent."_q);
+		if (done) done(false);
+		return true;
 	}
 	auto decoded = ::Images::Read({
 		.path = path,
@@ -3773,31 +3875,60 @@ bool SendItemMedia(not_null<HistoryItem*> item, Fn<void(bool)> done) {
 	const auto fullId = item->fullId();
 	const auto weak = base::make_weak(&item->history()->session());
 	const auto bridge = GlobalBridge;
-	bridge->sendFile(
-		userId,
-		path,
-		caption,
-		prepared.forceFile ? u"File"_q : viewType,
-		quotedId,
-		[=](int id, QString error) {
-			const auto session = weak.get();
-			if (!session) {
-				if (done) {
-					done(false);
+	const auto completed = [=](int id, QString error) {
+		const auto session = weak.get();
+		if (!session) {
+			if (done) {
+				done(false);
+			}
+			return;
+		}
+		// Capturing the preparation object keeps generated files alive until
+		// Core has finished reading them, including across a profile switch.
+		// Until Core owns a durable copy, rejection retains the local source.
+		const auto owned = prepared.preparation && prepared.preparation->owned;
+		if ((id > 0 && error.isEmpty()) || owned) {
+			PendingUploads.remove(pendingKey);
+		} else if (session->data().message(fullId)) {
+			PendingUploads.insert(pendingKey, prepared);
+		}
+		if (owned) {
+			const auto history = session->data().historyLoaded(fullId.peer);
+			if (history) {
+				history->clearLocalDraft({}, {});
+				history->clearCloudDraft({}, {});
+				if (id <= 0 && !prepared.preparation->saved.file.isEmpty()) {
+					const auto &saved = prepared.preparation->saved;
+					auto draft = Data::Draft(TextWithTags{ saved.text },
+						FullReplyTo{ .messageId = saved.quotedMessageId > 0
+							? FullMsgId(fullId.peer, MsgId(saved.quotedMessageId)) : FullMsgId() },
+						SuggestOptions(), MessageCursor(), Data::WebPageDraft());
+					history->createCloudDraft({}, {}, &draft);
 				}
+				history->applyCloudDraft({}, {});
+			}
+			if (id <= 0) {
+				if (const auto local = session->data().message(fullId)) local->destroy();
+				if (history) history->requestChatListMessage();
+				session->data().sendHistoryChangeNotifications();
+				bridge->reportError(u"The send was not confirmed. Check the chat and use the attachment button to review its saved draft."_q);
+				if (done) done(false);
 				return;
 			}
-			// Capturing the preparation object keeps generated files alive until
-			// Core has finished reading them, including across a profile switch.
-			// Rejected sends keep their file for explicit retry or removal.
-			if (id > 0 && error.isEmpty()) {
-				PendingUploads.remove(pendingKey);
-			} else if (session->data().message(fullId)) {
-				PendingUploads.insert(pendingKey, prepared);
-			}
-			const auto success = ApplySendResult(bridge, session, fullId, id, error);
-			if (done) done(success);
-		}, prepared.filename);
+		}
+		const auto success = ApplySendResult(bridge, session, fullId, id, error);
+		if (done) done(success);
+	};
+	if (prepared.preparation) {
+		bridge->sendPreparedFile(prepared.preparation, ComposeDraft{
+			caption, quotedId, path, prepared.filename,
+			prepared.forceFile ? u"File"_q : viewType,
+		}, completed);
+	} else {
+		bridge->sendFile(userId, path, caption,
+			prepared.forceFile ? u"File"_q : viewType,
+			quotedId, completed, prepared.filename);
+	}
 	return true;
 }
 

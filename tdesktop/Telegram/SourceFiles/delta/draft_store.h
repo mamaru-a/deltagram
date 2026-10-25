@@ -21,6 +21,7 @@ class DraftStore final {
 public:
 	using Callback = std::function<void(ComposeDraft, QString)>;
 	using SendCallback = std::function<void(int, QString)>;
+	using PreparedCallback = std::function<void(ComposeDraft)>;
 	DraftStore(std::shared_ptr<DeltaRpc> rpc, std::function<void(QString)> error);
 	void load(int accountId, int chatId, Callback done);
 	void save(int accountId, int chatId, const QString &text, int quotedMessageId);
@@ -30,7 +31,10 @@ public:
 		SendCallback done);
 	// One handoff per chat. On rejection, load() returns Core's managed file
 	// path; callers must use it for recovery and must serialize attachment batches.
-	void sendAttachment(int accountId, int chatId, ComposeDraft draft, SendCallback done);
+	// prepared() runs only after Core confirms its durable draft, before send.
+	// It can also report a committed save after a lost reply; that case never sends.
+	void sendAttachment(int accountId, int chatId, ComposeDraft draft, SendCallback done,
+		PreparedCallback prepared = {});
 	void discardAttachment(int accountId, int chatId, const QString &expectedFile,
 		std::function<void(bool)> done);
 	[[nodiscard]] QString attachmentName(int accountId, int chatId) const;
@@ -46,6 +50,7 @@ private:
 			bool started = false;
 			bool prepared = false;
 			bool discard = false;
+			PreparedCallback preparedCallback;
 		};
 		ComposeDraft value;
 		std::optional<Send> send;
@@ -56,7 +61,8 @@ private:
 		bool saving = false;
 	};
 	void ensureLoaded(Key key);
-	void beginSend(Key key, ComposeDraft draft, SendCallback done);
+	void beginSend(Key key, ComposeDraft draft, SendCallback done,
+		PreparedCallback prepared = {});
 	void flush(Key key);
 	void startSend(Key key);
 	void startDiscard(Key key);

@@ -329,6 +329,55 @@ private slots:
 		rpc->stop();
 	}
 
+	void preparedAttachmentOwnership_data() {
+		QTest::addColumn<QString>("mode");
+		QTest::addColumn<bool>("owned");
+		QTest::addColumn<bool>("sent");
+		QTest::addColumn<int>("sends");
+		QTest::newRow("accepted") << u"handoff-ok"_s << true << true << 1;
+		QTest::newRow("send-rejected") << u"handoff-reject-send"_s << true << false << 1;
+		QTest::newRow("send-reply-lost") << u"handoff-lost-ack"_s << true << true << 1;
+		QTest::newRow("save-rejected") << u"handoff-reject-save"_s << false << false << 0;
+		QTest::newRow("save-reply-lost") << u"handoff-save-lost-ack"_s << true << false << 0;
+		QTest::newRow("different-quote") << u"handoff-wrong-quote"_s << false << false << 0;
+	}
+
+	void preparedAttachmentOwnership() {
+		QFETCH(QString, mode);
+		QFETCH(bool, owned);
+		QFETCH(bool, sent);
+		QFETCH(int, sends);
+		auto rpc = std::make_shared<DeltaRpc>();
+		rpc->start(RPC_FIXTURE_PATH, mode);
+		Delta::DraftStore drafts(rpc, [](QString) {});
+		auto order = QStringList();
+		auto completed = false;
+		drafts.sendAttachment(2, 10, Delta::ComposeDraft{
+			u"Prepared caption"_s, 73, u"/picker/image.jpg"_s, u"image.jpg"_s, u"Image"_s,
+		}, [&](int id, QString error) {
+			QCOMPARE(id > 0, sent);
+			QCOMPARE(error.isEmpty(), sent);
+			order.push_back(u"finished"_s);
+			completed = true;
+		}, [&](Delta::ComposeDraft saved) {
+			QVERIFY(!drafts.preparingSend());
+			QVERIFY(drafts.sending(2, 10));
+			QCOMPARE(saved.text, u"Prepared caption"_s);
+			QCOMPARE(saved.quotedMessageId, 73);
+			QVERIFY(!saved.file.isEmpty());
+			order.push_back(u"owned"_s);
+		});
+		QVERIFY(drafts.preparingSend());
+		QTRY_VERIFY(completed);
+		QCOMPARE(order, owned
+			? QStringList({u"owned"_s, u"finished"_s})
+			: QStringList({u"finished"_s}));
+		QCOMPARE(CoreCall(*rpc, u"sends"_s, {})[u"result"_s].toInt(), sends);
+		QCOMPARE(CoreCall(*rpc, u"inspect_draft"_s, {1, 10})[u"result"_s]
+			.toObject()[u"text"_s].toString(), u"account-1"_s);
+		rpc->stop();
+	}
+
 	void realCoreRejectedDraftHandoff() {
 		const auto program = qEnvironmentVariable("DELTA_TEST_CORE_RPC");
 		if (program.isEmpty()) QSKIP("Set DELTA_TEST_CORE_RPC to test the real Core server.");
@@ -378,12 +427,23 @@ private slots:
 		QVERIFY(account > 0 && chat > 0);
 		Delta::DraftStore drafts(rpc, [](QString) { QFAIL("Unexpected draft failure"); });
 		auto completed = false;
+		auto owned = false;
 		drafts.sendAttachment(account, chat,
 			Delta::ComposeDraft{ u"Recoverable attachment caption"_s, 0, original, u"attachment.txt"_s, u"File"_s },
 			[&](int id, QString error) {
 				QCOMPARE(id, 0); // This account has no configured transport.
 				QVERIFY(!error.isEmpty());
+				QVERIFY(owned);
 				completed = true;
+			}, [&](Delta::ComposeDraft prepared) {
+				QVERIFY(!prepared.file.isEmpty() && prepared.file != original);
+				QFile saved(prepared.file);
+				QVERIFY(saved.open(QIODevice::ReadOnly));
+				QCOMPARE(saved.readAll(), bytes);
+				// The input can disappear before send completion: Core already
+				// owns the bytes needed for restart recovery.
+				QVERIFY(QFile::remove(original));
+				owned = true;
 			});
 		QVERIFY(drafts.preparingSend());
 		drafts.save(account, chat, {}, 0); // A stale donor clear cannot erase this file.
@@ -396,7 +456,7 @@ private slots:
 		});
 		QTRY_VERIFY(!recovered.file.isEmpty());
 		QVERIFY(recovered.file != original);
-		QVERIFY(QFile::remove(original));
+		QVERIFY(!QFile::exists(original));
 		rpc->stop();
 		rpc->start(program, accounts);
 		const auto persisted = CoreCall(*rpc, u"get_draft"_s, {account, chat})[u"result"_s].toObject();
