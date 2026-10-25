@@ -35,6 +35,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include <QtCore/QDir>
 #include <QtCore/QFileInfo>
+#include <QtCore/QTemporaryFile>
 
 namespace Storage {
 namespace {
@@ -641,12 +642,23 @@ void Uploader::deliverDelta(
 		} else if (file->type == SendMediaType::Audio && !namedAudio) {
 			name += u".ogg"_q;
 		}
-		path = QDir::temp().filePath(
-			u"delta-tel-%1-%2"_q.arg(file->id).arg(name));
-		QFile out(path);
-		if (!out.open(QIODevice::WriteOnly)
-			|| out.write(bytes) != bytes.size()) {
+		const auto suffix = QFileInfo(name).suffix();
+		auto out = QTemporaryFile(QDir::temp().filePath(
+			u"delta-tel-XXXXXX"_q
+				+ (suffix.isEmpty() ? QString() : u"."_q + suffix)));
+		if (!out.open()
+			|| out.write(bytes) != bytes.size()
+			|| !out.flush()) {
 			path = QString();
+		} else {
+			path = out.fileName();
+			if (!file->transcodedTempPath.isEmpty()) {
+				QFile::remove(file->transcodedTempPath);
+			}
+			// The retained preparation owner removes this private staging file
+			// after Core accepts it, or when the rejected upload is discarded.
+			file->transcodedTempPath = path;
+			out.setAutoRemove(false);
 		}
 	}
 	if (path.isEmpty() || QFileInfo(path).size() <= 0) {
