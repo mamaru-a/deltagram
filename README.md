@@ -80,12 +80,16 @@ Working in local checks:
   including older quoted attachments and uncertain send acknowledgements.
 - Explicit local Retry after a rejected prepared-image save, with duplicate
   actions blocked and matching bytes delivered to the reference client.
+- Multi-file selection/retry/restart, quoted voice recording with virtual audio,
+  and ordered text-plus-forward delivery to official Delta Chat Desktop 2.62.0.
+- Recovery after uncertain forwarding and Core image recoding without duplicate
+  sends; delayed queue discovery does not block foreground recovery.
 
 Incomplete or not yet verified:
 
-- Voice playback UI, service events and complete profile-switch refresh.
+- Physical recording/playback devices, service events and complete profile-switch refresh.
 - Delta Chat calls; Telegram conferences are disabled.
-- Multi-file recovery and broader interruption cases for prepared attachments.
+- Combined file/recording-plus-forwarding and broader attachment interruption cases.
 - Camera/mobile QR flows and broad end-to-end compatibility.
 - Accessibility, RTL, advanced media/search and full webxdc behavior need validation.
 

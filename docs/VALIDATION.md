@@ -48,14 +48,15 @@ or content-based guesses about message identity. A confirmed forward advances
 without sending again. Source account/chat, visible membership and preview
 metadata are checked, and newer destination drafts remain untouched. Batch
 publication reconciliation compares forward identity and state as well as text,
-files and ordering. The backend is not yet connected to the donor forwarding UI.
+files and ordering. The subsequent UI integration and live replay are recorded
+below.
 
 All 182 focused checks pass with no failures or skips, including rejected and
 uncertain forward checkpoints, lost acknowledgements, destruction during a held
 reply, source isolation, changed-source rejection, and ordered text/forward
 advancement. The source audit has zero blocking findings across 13,217 files.
 These checks include the pinned Core storage cases, but forwarding fault cases
-use the RPC fixture. Native compilation and live GUI forwarding remain pending.
+use the RPC fixture; native and live evidence is recorded separately below.
 
 The batch GUI revision `7074268` passed native compilation, smoke tests, portable
 runtime and package verification in
@@ -93,13 +94,47 @@ The old MTProto-shaped forwarding adapter is removed. Queue review describes
 text/attachments/forwards and withholds Send remaining for an uncertain forward
 until explicit review/discard. All 184 focused checks and the Linux offline
 regressions pass; the additional cases cover file and voice prefixes before
-ordered forwards. This does not compile or exercise the new GUI wiring. Native
-and disposable forwarding replay are still required. The earlier native run for
+ordered forwards. Native compilation, focused checks, portable-runtime and
+package verification also passed at `5182d5e` in
+[CI run 40218897021](https://github.com/mamaru-a/deltagram/actions/runs/40218897021).
+The earlier native run for
 `49454ee` passed native compilation, focused tests, portable-runtime and package
 checks in [CI run 40217054282](https://github.com/mamaru-a/deltagram/actions/runs/40217054282).
 It includes recording, discovery, recoded-image recovery and the forwarding
 backend, but does not include the subsequent forwarding UI changes through
-`eb53438`. Those still need native compilation and disposable replay.
+`eb53438`, which are covered by the `5182d5e` native run.
+
+Disposable ordinary-recording replay on the checksum-verified `49454ee` GUI
+captured a generated tone through an isolated virtual microphone, previewed it,
+and retained its encoded bytes after an injected Core blob-import rejection.
+Explicit Retry published a quoted Voice queue entry and stopped at an injected
+send rejection. Normal quit/restart preserved the draft ID, quote and byte hash.
+Explicit Send remaining delivered exactly one voice message to official Delta
+Chat Desktop 2.62.0, with identical bytes and the quote intact. Queue, draft and
+private recording files cleared; the alternate profile draft was unchanged.
+Both clients displayed the 21-second duration, and preview/reference playback
+advanced with non-silent captured output. The encoded file is mono Opus at
+48 kHz. Reference playback required restarting the disposable reference client
+with its virtual PulseAudio output configured; no hardware microphone or
+speaker was tested. Combined recording-plus-forwarding remains unverified.
+
+Disposable combined-forwarding replay on the checksum-verified `5182d5e` GUI
+selected two files and added a text prefix. Rejected text send retained all
+three queue entries and the draft ID across normal quit/restart. Explicit
+Send remaining delivered the text, then Core accepted the first forward while
+the proxy replaced its acknowledgement with an error. After another restart,
+the review identified the uncertain forward and offered no Send button.
+Confirmed Discard removed only that queue entry, preserving the delivered
+message and remaining forward. Sending the tail completed the plan. Both
+clients displayed the ordered text and two forwards, with the second caption,
+matching file hashes and no duplicates. The alternate profile draft survived.
+The audit recorded exactly two Core forwarding calls, one per source.
+
+The tail send also exercised delayed queue discovery. A real queue lookup was
+held while the native review loaded independently and sent the remaining entry.
+Releasing that old one-entry reply after completion did not restore the queue
+hint or block the composer. Clicking the attachment button opened the ordinary
+file picker. Queue and draft were empty; all proxy faults were removed.
 
 The batch coordinator collects prepared files by selection index and retains
 their owners through Core storage. No file is queued before every preparation
@@ -151,10 +186,10 @@ snapshots remain advisory; mutations reload and validate the queue and entry IDs
 
 All 153 focused checks pass with no skips. A held-read regression completes a
 queue removal before releasing discovery, verifies that discovery writes nothing,
-and rejects sending the stale snapshot without another send. Native compilation
-and disposable GUI replay of
-these new UI paths remain pending; backend tests alone do not establish
-new-batch recovery or visual correctness.
+and rejects sending the stale snapshot without another send. Subsequent native
+validation and disposable GUI replay on `5182d5e`, recorded above, confirm that
+foreground queue sending proceeds during a held discovery read and that the
+stale reply cannot restore a completed queue.
 
 ### Queue recovery after Core image recoding
 
@@ -175,10 +210,21 @@ A separate real-Core probe used **Deltagram integrity recovery** and pinned Core
 2.63.0-dev, sending one generated image with EXIF to that disposable account's
 Saved Messages. Draft 12 (state 19) became message 12 (state 26), with changed
 blob and bytes, unchanged chat/caption, and no remaining draft. The selected
-profile stayed unchanged. This proves Core's transformation; it does not yet
-prove native GUI queue recovery. The serial native build of the preceding batch
-GUI revision remains in progress, and this follow-up still needs native/live
-validation.
+profile stayed unchanged. This proves Core's transformation independently of
+the subsequent GUI recovery check.
+
+The checksum-verified `5182d5e` GUI now passes recovery from that transformation.
+A seeded, Core-backed queue contained one generated EXIF image and an older
+quote; its original source file was removed before GUI review. Rejected Send
+checkpointed draft 209 with the original bytes. Explicit Send then produced
+outgoing message 209 with a different blob, filename and hash, while injected
+queue-removal rejection kept the old queue and pin. After normal quit/restart,
+Send remaining reconciled that existing outgoing ID and removed the queue/pin
+without another Core send. The audit stayed at two send calls: one rejected,
+one accepted. Both clients retained one image with matching final bytes,
+caption and quote; the alternate profile draft was unchanged. This tests native
+queue recovery from a seeded ledger, not file-dialog image preparation. Fault
+injection was removed afterward.
 
 ### Recording handoff and storage recovery
 
@@ -203,12 +249,10 @@ test removes the in-memory/private-file owners, checkpoints a rejected send,
 restarts Core, and verifies the same recording bytes/type/name/draft ID. This is
 a storage test, not codec or playback proof.
 
-The disposable GUI container now has an isolated virtual microphone backed only
-by a generated tone. Its loopback check captured 1.08 seconds with nonzero signal;
-no hardware microphone was used. Native compilation and actual GUI recording,
-cross-client playback, duration/quote rendering, interruption and restart replay
-remain pending. Recordings combined with forwarding still use the donor path and
-remain part of the unfinished forwarding work.
+The ordinary recording, quoted cross-client playback and rejected-storage/restart
+replay now pass on `49454ee`, as recorded above. The combined forwarding UI is
+compiled by `5182d5e` and uses the generic queue; recording-plus-forwarding and
+physical audio devices still need live validation.
 
 ### Recent live regressions and fixes
 

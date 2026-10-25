@@ -43,7 +43,7 @@ are not copied here. Deltagram evidence comes from [PROGRESS.md](PROGRESS.md),
 | Delivery and read indicators | 🟡 Partial | A live cross-client Core read receipt passed. The `9397be0` GUI displays a live read receipt; `d05d666` passes event-before-ack reconciliation. Multi-recipient behavior needs validation. |
 | Quotes and replies | 🟡 Partial | A live Core reply retained its quote across clients. Complete GUI create/display/jump behavior remains unverified. |
 | Message editing, deletion and chat archiving | 🟡 Partial | Live Core edits retained message IDs and remote deletion passed. Rejected deletion preserves messages in verified GUIs. `9397be0` passes plain-text GUI edits in both clients; Core-aware edit eligibility passed on `e846f9b`; immediate quote retention after deletion passed on `8323369`. Broader deletion paths remain. |
-| Voice messages | 🟡 Partial | Native waveform, duration, play/pause and seeking are implemented; local attachment playback is verified. New ordinary recording source uses preview, retained encoded bytes and durable queue handoff with Retry/Discard. Storage/restart checks pass; native recording, duration/quote rendering and cross-client playback remain pending. Combined forwarding remains unfinished. |
+| Voice messages | 🟡 Partial | Native waveform, duration, play/pause and seeking are implemented. Ordinary GUI recording on `49454ee` passed preview, rejected storage, explicit retry, restart, quoted delivery and byte-identical playback in official Desktop 2.62.0 using isolated virtual audio. Both clients displayed the 21-second duration. Physical audio devices and combined recording-plus-forwarding remain unverified. |
 | Multiple profiles | 🟡 Partial | Switching clears reused histories, drafts, pending messages and attachment caches. Core draft storage and asynchronous callbacks are scoped to the account. `3c2def3` passed distinct drafts, red/blue images, two-/four-second voice clips, and playback/search reset across overlapping message IDs. |
 | Profile and group photos | 🟡 Partial | Settings image selection/crop/save and account avatar colors checked locally with Core; group checks recorded. Complete camera workflows and live photo distribution need checking. |
 | Onboarding and relay settings | 🟡 Partial | Fresh GUI creation, repeated-submit protection, fail-closed discovery, QR-image join and live exchange passed on `3c2def3`. Configured-account recovery without duplicate provisioning passed on `a8c544f`; backup restore remains unverified. |
@@ -237,8 +237,13 @@ disposable GUI selection/rejected-send/restart replay. With both original files
 removed, explicit recovery delivers them once in order to official Desktop
 2.62.0 with matching bytes and caption, then clears queue/pins/draft while
 preserving the alternate profile. Subsequent recovery, discovery and
-recording changes pass native/portable/package validation on `49454ee`; their
-disposable live replay remains pending. A separate `7074268` storage-rejection
+recording changes pass native/portable/package validation on `49454ee` and
+`5182d5e`. Ordinary recording passes virtual-audio capture/preview, rejected
+storage, restart and quoted cross-client playback on `49454ee`. Seeded-ledger
+image recovery on `5182d5e` handles Core recoding plus rejected queue removal
+across restart without another send. Held discovery on that GUI allows a
+foreground send to finish and ignores the stale queue snapshot afterward.
+A separate `7074268` storage-rejection
 replay preserves the pending batch, blocks normal quit, and recovers its files
 and caption through explicit Retry. Confirmed discard then clears both entries
 without delivery or changes to the alternate profile's draft. Broader
@@ -255,8 +260,14 @@ probe confirms that a multi-source forward can partially commit before returning
 an error. Follow-up source connects composer text, files, recordings and direct
 forwarding controls to this backend, removes the MTProto-shaped forwarding
 adapter, and exposes explicit review/discard for uncertain forwards. The 184
-focused checks pass, but native compilation of this UI wiring and cross-client
-forwarding replay remain open.
+focused checks and native/portable/package validation pass on `5182d5e`.
+Disposable GUI replay delivers a text prefix and two forwards once and in order
+to official Desktop 2.62.0, preserving file bytes, caption and forward markers.
+Rejected initial send survives restart; an accepted forward with a lost
+acknowledgement remains uncertain across restart and cannot be resent from
+review. Explicit discard preserves that delivered message before the tail is
+sent. The alternate profile draft remains intact. Combined file/recording
+prefixes and broader forwarding interruption/profile cases still need replay.
 
 ## Updating this tracker
 
