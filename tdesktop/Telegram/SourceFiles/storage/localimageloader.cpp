@@ -1241,17 +1241,8 @@ void FileLoadTask::process(ProcessArgs &&args) {
 	_result->filename = filename;
 	_result->filemime = filemime;
 	_result->setFileData(filedata);
-	if (_filepath.isEmpty() && !filedata.isEmpty()) {
-		const auto leaf = QFileInfo(filename).fileName();
-		const auto name = leaf.isEmpty() ? u"image.jpg"_q : leaf;
-		_filepath = QDir::temp().filePath(
-			u"delta-tel-clip-%1-%2"_q.arg(_id).arg(name));
-		QFile out(_filepath);
-		if (!out.open(QIODevice::WriteOnly)
-			|| out.write(filedata) != filedata.size()) {
-			_filepath = QString();
-		}
-	}
+	// Byte-backed media is materialized by the uploader into an owned, private
+	// staging file. Writing it here too leaves an unowned copy after disposal.
 	_result->filepath = _filepath;
 
 	_result->thumbId = thumbnail.id;

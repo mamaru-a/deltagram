@@ -32,6 +32,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "storage/storage_account.h"
 #include "apiwrap.h"
 #include "delta/delta_bridge.h"
+#include "delta/prepared_attachment.h"
 
 #include <QtCore/QDir>
 #include <QtCore/QFileInfo>
@@ -613,12 +614,8 @@ void Uploader::deliverDelta(
 		&& QFileInfo::exists(file->transcodedTempPath)) {
 		path = file->transcodedTempPath;
 	}
-	auto bytes = file->content;
-	if (bytes.isEmpty()) {
-		for (const auto &part : file->fileparts) {
-			bytes.append(part);
-		}
-	}
+	const auto bytes = Delta::PreparedAttachmentBytes(
+		file->type == SendMediaType::Photo, file->content, file->fileparts);
 	if (file->type == SendMediaType::Photo && !bytes.isEmpty()) {
 		path.clear();
 	}

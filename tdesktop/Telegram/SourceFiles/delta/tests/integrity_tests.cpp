@@ -9,6 +9,7 @@
 #include "message_capabilities.h"
 #include "history_mutations.h"
 #include "media_identity.h"
+#include "prepared_attachment.h"
 
 #include <QtTest/QtTest>
 
@@ -55,6 +56,20 @@ class IntegrityTests final : public QObject {
 	Q_OBJECT
 
 private slots:
+	void preparedAttachmentPreservesChosenRepresentation() {
+		const auto original = QByteArray("original clipboard image with metadata");
+		const auto parts = std::vector<QByteArray>{ "resized ", "photo without metadata" };
+		QCOMPARE(Delta::PreparedAttachmentBytes(true, original, parts),
+			QByteArray("resized photo without metadata"));
+		QCOMPARE(Delta::PreparedAttachmentBytes(false, original, parts), original);
+		QCOMPARE(Delta::PreparedAttachmentBytes(true, {}, parts),
+			QByteArray("resized photo without metadata"));
+		QCOMPARE(Delta::PreparedAttachmentBytes(false, {}, parts),
+			QByteArray("resized photo without metadata"));
+		QCOMPARE(Delta::PreparedAttachmentBytes(true, original, {}), original);
+		QVERIFY(Delta::PreparedAttachmentBytes(true, {}, {}).isEmpty());
+	}
+
 	void backupCancellation_data() {
 		QTest::addColumn<bool>("early");
 		QTest::newRow("cancel-during-preparation") << true;
