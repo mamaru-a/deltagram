@@ -181,23 +181,18 @@ checks remain open.
 
 `ca039dc` adds Core-backed batch compose storage, and `8a2b78c` adds durable-send
 checkpoint continuation and verified-ID resume without replacing a Core draft.
-The focused suite passes 77 checks, including queue write/removal faults,
-conservative cleanup, account isolation and restart recovery. These are backend
-components. A subsequent queue sender adds checkpointed advancement, recovery
-of known draft/outgoing IDs and stale-entry guards. All 103 focused checks pass,
-including real-Core rejected-send restart with both retained files. Batch GUI
-integration, native validation of the sender and live recovery remain unfinished.
-The subsequent integration review added guards against overwriting newer text
-or quote drafts and starting during an active draft operation; all 106 focused
-checks pass. These remain backend checks, not batch GUI or live delivery proof.
-Saved-queue review and serial Send remaining controls are now wired in source
-through the attachment button. Native compilation and disposable replay remain
-pending, as do new-batch preparation, discard controls and restart discovery.
-Confirmed Discard next is now wired in source and passes backend coverage for
-draft removal, uncertainty, stale actions and preserving newer/outgoing items.
-All 116 focused checks pass, including real-Core discard after restart with the
-second file retained. Native/UI replay, new-batch preparation and restart
-discovery remain open.
+`47f5752` adds checkpointed advancement and recovery of known draft/outgoing IDs;
+`ed427be` preserves newer text/quote drafts and rejects advancement during active
+draft operations. All 116 focused checks pass, including queue storage faults,
+stale actions, account isolation, real-Core rejected-send restart, and discard
+after restart while the second queued file retains its bytes.
+
+Saved-queue review and serial Send remaining controls are wired through the
+attachment button in `99df1ac`. Confirmed Discard next in `8c41b45` removes only
+the reviewed entry and its matching Core draft, preserving newer drafts and
+already-sent messages. These UI changes await native compilation and disposable
+replay. New-batch preparation and restart discovery remain unfinished; backend
+checks do not establish batch GUI behavior or live delivery.
 
 ## Updating this tracker
 
