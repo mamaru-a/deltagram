@@ -343,6 +343,21 @@ Native/portable/package validation for `27656b4` is running remotely:
 [run 40178483592](https://github.com/mamaru-a/deltagram/actions/runs/40178483592).
 Full GUI validation of this follow-up remains pending.
 
+### Failed-send status display — 2026-10-25
+
+The rejected image/archive replays left a local failed message displayed with a
+sending clock. Source inspection confirmed that both local failed flags and
+Core state `24` were mapped to the pending indicator in message bubbles and chat
+rows. Accessibility labels used donor flags and could announce a Core failure
+as sent/seen.
+
+The follow-up separates failed status from pending status, renders the existing
+localized “Failed” label in the bubble footer and chat row, and uses Core's
+pending/failed/read state in accessibility descriptions. It changes presentation
+only; it does not retry an ambiguous send. The source publication audit passes.
+Native compilation, GUI rendering of local/Core failures and assistive-technology
+runtime checks remain pending.
+
 The focused suite covers partial multi-stage deletion failure, but the tested
 group delete dialog does not expose that combined path. Broader operational and
 feature coverage below remains open. Native, package and the additional Ubuntu
