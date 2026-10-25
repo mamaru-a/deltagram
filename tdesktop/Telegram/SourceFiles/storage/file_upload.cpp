@@ -661,7 +661,10 @@ void Uploader::deliverDelta(
 		}
 	}
 	if (path.isEmpty() || QFileInfo(path).size() <= 0) {
-		failed(itemId);
+		// Delta delivery bypasses the upload queue (and prepared entries have
+		// already been removed). Notify directly so a failed staging write
+		// cannot leave the local message permanently marked as sending.
+		notifyFailed(Entry(itemId, file));
 		return;
 	}
 	Delta::RememberPendingFile(itemId.peer.value, itemId.msg.bare,
