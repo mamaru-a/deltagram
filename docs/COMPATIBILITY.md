@@ -56,7 +56,7 @@ are not copied here. Deltagram evidence comes from [PROGRESS.md](PROGRESS.md),
 | Service-event presentation | ❌ Unavailable | Recorded as unfinished in the development log. |
 | Donor export, sharing restrictions and auto-delete controls | ❌ Unavailable | These Telegram-only actions are hidden/guarded; no Core-backed implementation is claimed. |
 | Settings privacy presentation | 🟡 Partial | Hiding the settings email remains unfinished. |
-| Blocked-user settings | ⚠️ Validation pending | Core-backed block/list/unblock controls and account-scoped readback are implemented. Focused tests cover failures, isolation and real-Core restart/draft preservation. Native GUI and two-client replay remain pending. |
+| Blocked-user settings | 🟡 Partial | Core-backed block/list/unblock controls and account-scoped readback are implemented. Focused tests cover failures, isolation and real-Core restart/draft preservation. Native GUI and two-client replay remain pending. |
 
 ## Compatibility checks still needed
 

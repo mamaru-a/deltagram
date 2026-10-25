@@ -52,6 +52,16 @@ it also caught and fixed handling of the nullable chat lookup for hidden chats.
 The source audit checked 13,223 files with no blocking findings. Native/package
 validation and disposable GUI compatibility replay for this change are pending.
 
+### Unsupported passkey controls — 2026-10-26
+
+On the `d428416` disposable GUI, Settings search for “passkey” offers both Add
+Passkey and Passkeys. These controls use Telegram authentication APIs and have
+no Core implementation. Core profiles now omit both registrations and the
+privacy-panel button; legacy passkey links return to Privacy and Security.
+Direct creation-box entry is guarded. Opening privacy settings also no longer
+starts the unused Telegram auto-delete reload. Rendered verification and native
+compilation of this follow-up are pending.
+
 ### Notification reply recovery — 2026-10-26
 
 On `94ad667`, the disposable native notification receiver emitted one inline

@@ -239,6 +239,10 @@ Result ShowPasskeys(const Context &ctx, bool highlightCreate) {
 	if (!ctx.controller) {
 		return Result::NeedsAuth;
 	}
+	if (Delta::Active()) {
+		ctx.controller->showSettings(::Settings::PrivacySecurityId());
+		return Result::Handled;
+	}
 	const auto controller = ctx.controller;
 	const auto session = &controller->session();
 	const auto showBox = [=] {

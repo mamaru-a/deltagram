@@ -574,12 +574,14 @@ void BuildSecuritySection(
 		});
 	}
 
-	builder.add([session, updateTrigger = rpl::duplicate(updateTrigger)](const WidgetContext &ctx) mutable {
-		std::move(updateTrigger) | rpl::on_next([=] {
-			session->api().selfDestruct().reload();
-		}, ctx.container->lifetime());
-		return SectionBuilder::WidgetToAdd{};
-	});
+	if (!Delta::Active()) {
+		builder.add([session, updateTrigger = rpl::duplicate(updateTrigger)](const WidgetContext &ctx) mutable {
+			std::move(updateTrigger) | rpl::on_next([=] {
+				session->api().selfDestruct().reload();
+			}, ctx.container->lifetime());
+			return SectionBuilder::WidgetToAdd{};
+		});
+	}
 
 	auto passcodeHas = rpl::single(rpl::empty) | rpl::then(
 		session->domain().local().localPasscodeChanged()
@@ -609,7 +611,7 @@ void BuildSecuritySection(
 		.keywords = { u"passcode"_q, u"lock"_q, u"pin"_q },
 	});
 
-	if (session->passkeys().possible()) {
+	if (!Delta::Active() && session->passkeys().possible()) {
 		auto passkeysLabel = rpl::combine(
 			tr::lng_profile_loading(),
 			(rpl::single(rpl::empty_value())
