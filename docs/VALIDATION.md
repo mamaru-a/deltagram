@@ -62,6 +62,15 @@ Direct creation-box entry is guarded. Opening privacy settings also no longer
 starts the unused Telegram auto-delete reload. Rendered verification and native
 compilation of this follow-up are pending.
 
+The same baseline GUI exposes “Disconnect all websites”, “If inactive for” and
+“Terminate all other sessions” when searching for “terminate”. Core profiles
+now exclude the donor sessions, connected-websites, folders and global
+Telegram auto-delete sections from search. Their constructors stop before
+loading donor data. Standard settings navigation checks section availability
+(including parent sections), so a saved URL to an unavailable section returns
+to the supported main panel. Core blocked contacts, local passcode and device
+preferences remain registered. Rendered search/link replay is pending.
+
 ### Sender and chat identity lookups — 2026-10-26
 
 Review of the blocking profile action found that high sender-peer IDs could be

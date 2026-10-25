@@ -102,7 +102,7 @@ std::vector<SearchEntry> SearchRegistry::collectAll(
 		not_null<Main::Session*> session) const {
 	auto result = std::vector<SearchEntry>();
 	for (const auto &[sectionId, meta] : _sections) {
-		if (meta->available && !meta->available()) {
+		if (!sectionAvailable(sectionId)) {
 			continue;
 		}
 		if (meta->parentId) {
@@ -114,6 +114,7 @@ std::vector<SearchEntry> SearchRegistry::collectAll(
 		}
 	}
 	for (const auto &entry : _indexers) {
+		if (!sectionAvailable(entry.sectionId)) continue;
 		auto entries = entry.indexer(session);
 		result.insert(result.end(), entries.begin(), entries.end());
 	}
@@ -123,6 +124,17 @@ std::vector<SearchEntry> SearchRegistry::collectAll(
 QString SearchRegistry::sectionTitle(Type sectionId) const {
 	const auto it = _sections.find(sectionId);
 	return (it != _sections.end()) ? (*it->second->title)(tr::now) : QString();
+}
+
+bool SearchRegistry::sectionAvailable(Type sectionId) const {
+	while (sectionId) {
+		const auto i = _sections.find(sectionId);
+		if (i == _sections.end()) return true;
+		const auto meta = i->second;
+		if (meta->available && !meta->available()) return false;
+		sectionId = meta->parentId;
+	}
+	return true;
 }
 
 QString SearchRegistry::sectionPath(Type sectionId, bool parentsOnly) const {

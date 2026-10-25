@@ -558,6 +558,7 @@ const auto kMeta = BuildHelper({
 	.parentId = PrivacySecurityId(),
 	.title = &tr::lng_settings_ttl_title,
 	.icon = &st::menuIconTTL,
+	.available = [] { return !Delta::Active(); },
 }, [](SectionBuilder &builder) {
 	if (Delta::Active()) return;
 	builder.add(nullptr, [] {
