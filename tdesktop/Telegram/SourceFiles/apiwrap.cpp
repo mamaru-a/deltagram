@@ -667,6 +667,11 @@ void ApiWrap::requestMessageData(
 		PeerData *peer,
 		MsgId msgId,
 		Fn<void()> done) {
+	if (Delta::Active()) {
+		Delta::RequestMessageData(peer ? int(peerToUser(peer->id).bare) : 0,
+			int(msgId.bare), std::move(done));
+		return;
+	}
 	auto &requests = (peer && peer->isChannel())
 		? _channelMessageDataRequests[peer->asChannel()][msgId]
 		: _messageDataRequests[msgId];

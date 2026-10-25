@@ -81,8 +81,9 @@ Incomplete or not yet verified:
 
 - Voice playback UI, service events and complete profile-switch refresh.
 - Delta Chat calls; Telegram conferences are disabled.
-- Recovery of rejected clipboard images and multi-file/transformed-media sends
-  across shutdown.
+- Broader prepared-media and multi-file recovery across shutdown. One prepared
+  image restart/retry passes; older quoted-image recovery exposed a fix still
+  awaiting native/live verification.
 - Camera/mobile QR flows and broad end-to-end compatibility.
 - Accessibility, RTL, advanced media/search and full webxdc behavior need validation.
 

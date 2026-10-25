@@ -41,6 +41,31 @@ int main(int argc, char **argv) {
 		const auto request = QJsonDocument::fromJson(QByteArray::fromStdString(line)).object();
 		const auto method = request[u"method"_s].toString();
 		const auto args = request[u"params"_s].toArray();
+		if (mode.startsWith(u"lookup-"_s)) {
+			if (method == u"lookup_calls"_s) { Reply(request, historyCalls); continue; }
+			if (method == u"get_message"_s || method == u"get_message_ids"_s) {
+				historyCalls.append(method);
+				if ((method == u"get_message"_s && mode == u"lookup-read-error"_s)
+					|| (method == u"get_message_ids"_s && mode == u"lookup-list-error"_s)) {
+					std::cout << QJsonDocument(QJsonObject{
+						{u"id"_s, request[u"id"_s]},
+						{u"error"_s, QJsonObject{{u"message"_s, u"Lookup failed"_s}}},
+					}).toJson(QJsonDocument::Compact).constData() << std::endl;
+				} else if (method == u"get_message"_s) {
+					Reply(request, QJsonObject{
+						{u"id"_s, mode == u"lookup-wrong-id"_s ? 81 : args[1].toInt()},
+						{u"chatId"_s, mode == u"lookup-wrong-chat"_s ? 11 : 10},
+						{u"state"_s, mode == u"lookup-draft"_s ? 19 : 16},
+						{u"text"_s, u"quote from account %1"_s.arg(args[0].toInt())},
+					});
+				} else if (mode == u"lookup-hold-list"_s) {
+					held = request;
+				} else {
+					Reply(request, mode == u"lookup-hidden"_s ? QJsonArray() : historyIds);
+				}
+				continue;
+			}
+		}
 		if (mode.startsWith(u"queue-"_s)) {
 			const auto reject = [&] {
 				std::cout << QJsonDocument(QJsonObject{

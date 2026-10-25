@@ -62,6 +62,7 @@ void DiscardDraftAttachment(int userId, const QString &expectedFile, Fn<void(boo
 [[nodiscard]] QString DraftAttachmentName(int userId);
 void SaveDraft(int userId, const QString &text, int quotedMessageId);
 void LoadDraft(int userId, Fn<void(ComposeDraft)> done);
+void RequestMessageData(int userId, int messageId, Fn<void()> done);
 enum class DeliveryState { Pending, Failed, Sent, Read };
 [[nodiscard]] std::optional<DeliveryState> MessageDelivery(int messageId);
 [[nodiscard]] bool CanEditMessage(int messageId);

@@ -1079,6 +1079,22 @@ public:
 			});
 	}
 
+	void requestMessageData(int userId, int messageId, Fn<void()> done) {
+		ReadVisibleMessage(_rpc, _accountScope,
+			_accountId, userId ? chatForPeerUser(userId) : 0,
+			messageId, [=](QJsonObject message) {
+				if (!message.isEmpty() && !_deletedMessages.contains(messageId)) {
+					const auto chatId = message.value(u"chatId"_q).toInt();
+					const auto peerUser = peerUserForChat(chatId);
+					// Existing items must not generate incoming notifications.
+					_session->data().processMessages(
+						QVector<MTPMessage>{ MessageFromJson(peerUser, message) },
+						NewMessageType::Existing);
+				}
+				if (done) done();
+			});
+	}
+
 	void fetchMessage(int msgId, Fn<void(QJsonObject)> done) {
 		const auto guard = _alive;
 		const auto epoch = _dialogsEpoch;
@@ -3403,6 +3419,11 @@ void SaveDraft(int userId, const QString &text, int quotedMessageId) {
 
 void LoadDraft(int userId, Fn<void(ComposeDraft)> done) {
 	if (GlobalBridge) GlobalBridge->loadDraft(userId, std::move(done));
+}
+
+void RequestMessageData(int userId, int messageId, Fn<void()> done) {
+	if (GlobalBridge) GlobalBridge->requestMessageData(userId, messageId, std::move(done));
+	else if (done) done();
 }
 
 bool IsGroup(uint64 userId) {

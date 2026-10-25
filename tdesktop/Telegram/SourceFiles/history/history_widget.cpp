@@ -2991,6 +2991,13 @@ bool HistoryWidget::applyDraft(FieldHistoryAction fieldHistoryAction) {
 	} else {
 		const auto draft = _history->localDraft(MsgId(), PeerId());
 		_processingReplyTo = draft ? draft->reply : FullReplyTo();
+		if (Delta::Active()) {
+			// WHY: autosave and explicit retry must retain the saved quote
+			// while its preview is pending or unavailable.
+			_replyTo = _processingReplyTo;
+			updateControlsVisibility();
+			updateControlsGeometry();
+		}
 		if (_processingReplyTo) {
 			_processingReplyItem = session().data().message(
 				_processingReplyTo.messageId);
@@ -10449,15 +10456,21 @@ void HistoryWidget::replyToMessage(
 }
 
 void HistoryWidget::processReply() {
+	const auto expectedReply = _processingReplyTo;
 	const auto processContinue = [=] {
 		return crl::guard(_list, [=] {
-			if (!_peer || !_processingReplyTo) {
+			if (!_peer || !_processingReplyTo
+				|| _processingReplyTo != expectedReply) {
 				return;
 			} else if (!_processingReplyItem) {
 				_processingReplyItem = _peer->owner().message(
 					_processingReplyTo.messageId);
 				if (!_processingReplyItem) {
 					_processingReplyTo = {};
+					if (Delta::Active()) {
+						controller()->showToast(u"The quoted message could not be loaded. Your saved reply is retained; reopen the chat to retry or remove the reply explicitly."_q);
+						updateField();
+					}
 				} else {
 					processReply();
 				}
@@ -11270,7 +11283,7 @@ void HistoryWidget::updateReplyEditTexts(bool force) {
 	} else if (force) {
 		if (_editMsgId) {
 			cancelEdit();
-		} else {
+		} else if (!Delta::Active()) {
 			cancelReply();
 		}
 	}
@@ -11497,7 +11510,9 @@ void HistoryWidget::drawField(Painter &p, const QRect &rect) {
 					+ (st::historyReplyHeight - st::msgDateFont->height) / 2
 					+ st::msgDateFont->ascent,
 				st::msgDateFont->elided(
-					tr::lng_profile_loading(tr::now),
+					(Delta::Active() && _replyTo && !_processingReplyTo)
+						? u"Quoted message unavailable"_q
+						: tr::lng_profile_loading(tr::now),
 					width()
 						- replyLeft
 						- _fieldBarCancel->width()

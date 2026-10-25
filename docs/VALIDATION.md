@@ -513,6 +513,35 @@ send checkpoint continuation are not connected yet, and no native/live batch
 recovery proof is claimed. The prepared-single-attachment native run remains
 separate at `7f95cca`.
 
+### Restored quote lookup regression — 2026-10-25
+
+A second prepared-image recovery case on `7f95cca` failed quote retention.
+After a committed `misc_set_draft` with an injected error reply, Core retained
+attachment draft 141, the caption and quote ID 27 across normal quit/restart.
+The restarted GUI restored the caption without the reply bar. One explicit
+recovery Send produced message 144 with the correct image/caption but no quote.
+Private evidence: `attachment-prepared-save-lost-quote-7f95.json`,
+`attachment-prepared-quote-restart-7f95.json`,
+`prepared-quote-recovery-dialog-7f95.png`, and
+`attachment-prepared-quote-retried-7f95.json`. This case is a failure, not quote
+compatibility proof.
+
+The source fix routes individual message lookup through Core instead of the
+unsupported donor `messages.getMessages` request. It verifies the message ID,
+chat and visible-history membership, rejects drafts/hidden messages, and scopes
+both reads to the active account. The existing presentation adapter adds the
+result as an existing item, without generating incoming-message notifications.
+Restoring a draft retains its quote ID while the preview is pending or fails;
+a failed preview stays explicitly unavailable until retried or removed by the
+user. Stale reply callbacks cannot replace a different selected reply.
+
+All 85 focused checks pass, with no failures or skips, including lookup failures,
+wrong IDs/chats, hidden messages, draft exclusion, cancellation at both reads,
+and real-Core lookup before and after deletion. The source audit has zero
+blocking findings across 13,213 files. Native compilation and exact-binary GUI
+replay of this quote fix remain pending. The separate `252bfa0` native/package
+run is still in progress; no second heavy build was started.
+
 ### Queued-send checkpoint — 2026-10-25
 
 `DraftStore` can now wait for an asynchronous durable checkpoint after confirming

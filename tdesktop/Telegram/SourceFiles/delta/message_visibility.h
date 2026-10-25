@@ -23,4 +23,37 @@ inline void CheckMessageVisibility(
 		}));
 }
 
+// A zero chatId permits lookup by account-wide message ID.
+inline void ReadVisibleMessage(
+		std::shared_ptr<DeltaRpc> rpc,
+		const AccountScope &scope,
+		int accountId,
+		int chatId,
+		int messageId,
+		std::function<void(QJsonObject)> done) {
+	const auto current = scope.guard();
+	rpc->call(QStringLiteral("get_message"),
+		{ accountId, messageId }, scope.bind([=](QJsonObject reply) {
+			const auto message = reply.value(QStringLiteral("result")).toObject();
+			const auto actualChat = message.value(QStringLiteral("chatId")).toInt();
+			if (reply.contains(QStringLiteral("error"))
+				|| message.value(QStringLiteral("id")).toInt() != messageId
+				|| messageId <= 0 || actualChat <= 0
+				|| (chatId && actualChat != chatId)
+				|| message.value(QStringLiteral("state")).toInt() == 19) {
+				done({});
+				return;
+			}
+			rpc->call(QStringLiteral("get_message_ids"),
+				{ accountId, actualChat, false, false },
+				[=](QJsonObject listed) {
+					if (!current()) return;
+					const auto ids = listed.value(QStringLiteral("result"));
+					done(!listed.contains(QStringLiteral("error"))
+						&& ids.isArray() && ids.toArray().contains(messageId)
+						? message : QJsonObject());
+				});
+		}));
+}
+
 } // namespace Delta

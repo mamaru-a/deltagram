@@ -57,6 +57,51 @@ class IntegrityTests final : public QObject {
 	Q_OBJECT
 
 private slots:
+	void individualMessageLookup_data() {
+		QTest::addColumn<QString>("mode");
+		for (const auto mode : {
+			u"visible"_s, u"wrong-id"_s, u"wrong-chat"_s, u"draft"_s,
+			u"hidden"_s, u"read-error"_s, u"list-error"_s,
+		}) {
+			QTest::newRow(qPrintable(mode)) << u"lookup-"_s + mode;
+		}
+	}
+
+	void individualMessageLookup() {
+		QFETCH(QString, mode);
+		auto rpc = std::make_shared<DeltaRpc>();
+		rpc->start(RPC_FIXTURE_PATH, mode);
+		Delta::AccountScope scope;
+		auto completed = false;
+		Delta::ReadVisibleMessage(rpc, scope, 7, 10, 80, [&](QJsonObject message) {
+			QCOMPARE(!message.isEmpty(), mode == u"lookup-visible"_s);
+			if (!message.isEmpty()) {
+				QCOMPARE(message[u"id"_s].toInt(), 80);
+				QCOMPARE(message[u"text"_s].toString(), u"quote from account 7"_s);
+			}
+			completed = true;
+		});
+		QTRY_VERIFY(completed);
+		rpc->stop();
+	}
+
+	void individualMessageLookupCancelsAcrossAccounts() {
+		for (const auto holdList : { false, true }) {
+			auto rpc = std::make_shared<DeltaRpc>();
+			rpc->start(RPC_FIXTURE_PATH, u"lookup-hold-list"_s);
+			Delta::AccountScope scope;
+			Delta::ReadVisibleMessage(rpc, scope, 7, 0, 80, [](QJsonObject) {
+				QFAIL("An individual message escaped its account");
+			});
+			if (holdList) {
+				QTRY_COMPARE(CoreCall(*rpc, u"lookup_calls"_s, {})[u"result"_s].toArray().size(), 2);
+			}
+			scope.invalidate();
+			QVERIFY(CoreCall(*rpc, u"release"_s, {}).contains(u"result"_s));
+			rpc->stop();
+		}
+	}
+
 	void attachmentCheckpoint_data() {
 		QTest::addColumn<QString>("decision");
 		QTest::newRow("accepted-once") << u"accept"_s;
@@ -1065,6 +1110,14 @@ private slots:
 		const auto selected = CoreCall(*rpc, u"add_device_message"_s,
 			{account, u"selected-delete"_s, QJsonObject{{u"text"_s, u"Selected deletion fixture"_s}}})[u"result"_s].toInt();
 		QVERIFY(selected > 0);
+		auto lookedUp = 0;
+		Delta::ReadVisibleMessage(rpc, scope, account, chat, selected,
+			[&](QJsonObject result) {
+				QCOMPARE(result[u"id"_s].toInt(), selected);
+				QCOMPARE(result[u"text"_s].toString(), u"Selected deletion fixture"_s);
+				++lookedUp;
+			});
+		QTRY_COMPARE(lookedUp, 1);
 		auto deleted = false;
 		Delta::DeleteCoreMessages(rpc, scope, account, QJsonArray{selected}, false,
 			[&](QString error) {
@@ -1072,6 +1125,12 @@ private slots:
 				deleted = true;
 			});
 		QTRY_VERIFY(deleted);
+		Delta::ReadVisibleMessage(rpc, scope, account, chat, selected,
+			[&](QJsonObject result) {
+				QVERIFY(result.isEmpty());
+				++lookedUp;
+			});
+		QTRY_COMPARE(lookedUp, 2);
 		const auto remaining = CoreCall(*rpc, u"get_message_ids"_s,
 			{account, chat, false, false})[u"result"_s].toArray();
 		QVERIFY(!remaining.contains(selected));

@@ -67,7 +67,7 @@ They are **unverified**, rather than assumed to work because the donor UI has th
 | Media browser | ❓ Unverified | Combined media list, previous/next, delete and return to message. |
 | Chat management | ❓ Unverified | Clear history rejection/success and date-range deletion have targeted GUI checks; bulk read state and last-read positioning still need coverage. |
 | Member profiles | ❓ Unverified | Opening a profile from a group member list. |
-| Attachments | 🟡 Partial | Ordinary single-file recovery, prepared/resized/rotated image delivery, uncompressed bytes, private staging cleanup and generated archives have revision-specific checks below. Multiple-file/video paths and prepared-media restart recovery remain open. |
+| Attachments | 🟡 Partial | Ordinary single-file recovery, prepared/resized/rotated image delivery, uncompressed bytes, private staging cleanup and generated archives have revision-specific checks below. A prepared-image restart/retry passes without a quote; older quoted-image recovery exposed a pending fix. Multiple-file/video paths and broader prepared-media recovery remain open. |
 | Notifications | ❓ Unverified | Background delivery and unread indicators for inactive profiles. |
 | Accessibility and localization | ❓ Unverified | Screen readers, keyboard navigation and RTL layouts. |
 | Appearance | 🟡 Partial | General wallpaper: local gallery and custom images in Settings → Chat Settings. Custom-image persistence checked across chats, profiles and restart; per-chat wallpaper is unavailable and removed from the chat menu. Full day/night combinations remain unverified. |
@@ -151,7 +151,25 @@ Its verified GUI shows Failed and supports explicit Delete for both the archive
 race and an unwritable image-staging path, without sending either. After staging
 is restored, a newly selected image arrives intact in official Desktop 2.62.0
 through the same GUI session. Failed-image preview/recovery is not established.
-Prepared-media restart recovery remains open.
+Those failure-state checks alone did not establish prepared-media restart recovery.
+
+`7f95cca` passes native/portable/package validation and 56 focused checks. Its
+verified GUI retains a rejected prepared image and caption across quit/restart,
+then delivers one explicit retry with byte-identical prepared JPEG content in
+official Desktop 2.62.0. Temporary staging is cleaned and other profiles remain
+isolated. The replay also exposed a jump to old history after recovery; the
+`252bfa0` fix selects the actual chat end and is awaiting native/live validation.
+A separate lost-save-ack/restart case retained the quote in Core but dropped it
+on explicit retry because its older message was not loaded in the GUI. The
+Core-backed lookup and quote-preservation fix passes focused checks (85 total),
+but native/live replay remains pending. Broader prepared-archive, uncompressed
+and interruption checks remain open.
+
+`ca039dc` adds Core-backed batch compose storage, and `8a2b78c` adds durable-send
+checkpoint continuation and verified-ID resume without replacing a Core draft.
+The focused suite passes 77 checks, including queue write/removal faults,
+conservative cleanup, account isolation and restart recovery. These are backend
+components; batch controller/GUI integration and live recovery remain unfinished.
 
 ## Updating this tracker
 
