@@ -445,7 +445,7 @@ void BuildSectionButtons(SectionBuilder &builder) {
 		.keywords = { u"themes"_q, u"appearance"_q, u"stickers"_q },
 	});
 
-	{ // Folders
+	if (!Delta::Active()) { // Folders
 		const auto preload = [=] {
 			session->data().chatsFilters().requestSuggested();
 		};

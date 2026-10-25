@@ -144,6 +144,10 @@ Result ShowPeerColorBox(
 	if (!ctx.controller) {
 		return Result::NeedsAuth;
 	}
+	if (Delta::Active()) {
+		ctx.controller->showSettings(::Settings::InformationId());
+		return Result::Handled;
+	}
 	if (!highlightId.isEmpty()) {
 		ctx.controller->setHighlightControlId(highlightId);
 	}
@@ -221,6 +225,10 @@ Result ShowMyProfile(const Context &ctx) {
 	if (!ctx.controller) {
 		return Result::NeedsAuth;
 	}
+	if (Delta::Active()) {
+		ctx.controller->showSettings(::Settings::InformationId());
+		return Result::Handled;
+	}
 	ctx.controller->showSection(
 		Info::Stories::MakeMyProfile(ctx.controller->session().user()));
 	return Result::Handled;
@@ -277,6 +285,10 @@ Result ShowAutoDeleteSetCustom(const Context &ctx) {
 	if (!ctx.controller) {
 		return Result::NeedsAuth;
 	}
+	if (Delta::Active()) {
+		ctx.controller->showSettings(::Settings::PrivacySecurityId());
+		return Result::Handled;
+	}
 	ctx.controller->setHighlightControlId(u"auto-delete/set-custom"_q);
 	ctx.controller->showSettings(::Settings::GlobalTTLId());
 	return Result::Handled;
@@ -285,6 +297,10 @@ Result ShowAutoDeleteSetCustom(const Context &ctx) {
 Result ShowLoginEmail(const Context &ctx) {
 	if (!ctx.controller) {
 		return Result::NeedsAuth;
+	}
+	if (Delta::Active()) {
+		ctx.controller->showSettings(::Settings::PrivacySecurityId());
+		return Result::Handled;
 	}
 	const auto controller = ctx.controller;
 	controller->session().api().cloudPassword().reload();
@@ -352,6 +368,10 @@ Result ShowPrivacyBox(
 		const QString &highlightControl = QString()) {
 	if (!ctx.controller) {
 		return Result::NeedsAuth;
+	}
+	if (Delta::Active()) {
+		ctx.controller->showSettings(::Settings::PrivacySecurityId());
+		return Result::Handled;
 	}
 	const auto controller = ctx.controller;
 	const auto session = &controller->session();
@@ -1687,6 +1707,10 @@ void RegisterSettingsHandlers(Router &router) {
 			if (!ctx.controller) {
 				return Result::NeedsAuth;
 			}
+			if (Delta::Active()) {
+				ctx.controller->showSettings(::Settings::MainId());
+				return Result::Handled;
+			}
 			Ui::ChooseStarGiftRecipient(ctx.controller);
 			return Result::Handled;
 		}},
@@ -1697,6 +1721,10 @@ void RegisterSettingsHandlers(Router &router) {
 		.action = CodeBlock{ [](const Context &ctx) {
 			if (!ctx.controller) {
 				return Result::NeedsAuth;
+			}
+			if (Delta::Active()) {
+				ctx.controller->showSettings(::Settings::MainId());
+				return Result::Handled;
 			}
 			Ui::ShowStarGiftBox(ctx.controller, ctx.controller->session().user());
 			return Result::Handled;
@@ -1718,6 +1746,10 @@ void RegisterSettingsHandlers(Router &router) {
 		.action = CodeBlock{ [](const Context &ctx) {
 			if (!ctx.controller) {
 				return Result::NeedsAuth;
+			}
+			if (Delta::Active()) {
+				ctx.controller->showSettings(::Settings::CallsId());
+				return Result::Handled;
 			}
 			Calls::ShowCallsBox(ctx.controller);
 			return Result::Handled;

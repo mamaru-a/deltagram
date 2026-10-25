@@ -4097,6 +4097,10 @@ void SessionController::showStarGiftAuction(uint64 giftId) {
 }
 
 void SessionController::showCloudPassword(const QString &highlight) {
+	if (Delta::Active()) {
+		showSettings(Settings::PrivacySecurityId());
+		return;
+	}
 	if (!highlight.isEmpty()) {
 		setHighlightControlId(highlight);
 	}

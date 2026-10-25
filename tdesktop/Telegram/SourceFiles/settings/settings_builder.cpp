@@ -8,10 +8,19 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "settings/settings_builder.h"
 
 #include "apiwrap.h"
+#include "delta/delta_bridge.h"
 #include "lang/lang_keys.h"
 #include "api/api_user_privacy.h"
 #include "boxes/edit_privacy_box.h"
 #include "main/main_session.h"
+#include "settings/cloud_password/settings_cloud_password_email.h"
+#include "settings/cloud_password/settings_cloud_password_email_confirm.h"
+#include "settings/cloud_password/settings_cloud_password_hint.h"
+#include "settings/cloud_password/settings_cloud_password_input.h"
+#include "settings/cloud_password/settings_cloud_password_login_email.h"
+#include "settings/cloud_password/settings_cloud_password_login_email_confirm.h"
+#include "settings/cloud_password/settings_cloud_password_manage.h"
+#include "settings/cloud_password/settings_cloud_password_start.h"
 #include "settings/settings_common.h"
 #include "settings/sections/settings_privacy_security.h"
 #include "ui/vertical_list.h"
@@ -34,6 +43,18 @@ namespace {
 		[] {},
 		lifetime);
 	return result;
+}
+
+[[nodiscard]] bool CloudPasswordOrLoginEmailSection(Type sectionId) {
+	return sectionId == ::Settings::CloudPasswordStartId()
+		|| sectionId == ::Settings::CloudPasswordInputId()
+		|| sectionId == ::Settings::CloudPasswordSuggestionInputId()
+		|| sectionId == ::Settings::CloudPasswordHintId()
+		|| sectionId == ::Settings::CloudPasswordEmailId()
+		|| sectionId == ::Settings::CloudPasswordEmailConfirmId()
+		|| sectionId == ::Settings::CloudPasswordManageId()
+		|| sectionId == ::Settings::CloudLoginEmailId()
+		|| sectionId == ::Settings::CloudLoginEmailConfirmId();
 }
 
 } // namespace
@@ -127,6 +148,9 @@ QString SearchRegistry::sectionTitle(Type sectionId) const {
 }
 
 bool SearchRegistry::sectionAvailable(Type sectionId) const {
+	if (Delta::Active() && CloudPasswordOrLoginEmailSection(sectionId)) {
+		return false;
+	}
 	while (sectionId) {
 		const auto i = _sections.find(sectionId);
 		if (i == _sections.end()) return true;
