@@ -235,8 +235,11 @@ cancels active media preparation on profile reset. Cross-profile disclosure from
 that earlier path has not been demonstrated in a live test.
 
 All 41 focused tests still pass, including expanded guard invalidation and
-scope-destruction assertions. Native/portable/package CI is running at
-[run 40173619262](https://github.com/mamaru-a/deltagram/actions/runs/40173619262).
+scope-destruction assertions. The first native run caught a missing `ApiWrap`
+definition at the reset call; `8e37b6c` adds the required include. `3d21bc1`
+also clears retained media owners when the UI session ends. The first run is
+terminal, and replacement native/portable/package CI is running for `8e37b6c`:
+[run 40174035329](https://github.com/mamaru-a/deltagram/actions/runs/40174035329).
 The generated-file and profile-change GUI replays of this revision are pending.
 These fixes do not establish batch/media send durability across shutdown.
 
