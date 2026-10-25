@@ -464,10 +464,10 @@ the alternate draft is unchanged. Private evidence: `attachment-prepared-rejecte
 This replay also exposes a navigation defect: after retry, the Qt chat jumps to
 old history instead of the new attachment. `fastShowAtEnd` selects the unread
 position on this path. Private evidence: `prepared-retried-position-7f95.png`.
-The follow-up fix selects the actual end for Delta sends; its native/live replay
-is pending.
-Quote retention, uncompressed retry, uncertain replies and the new preparation
-guards still need exact-binary GUI coverage. The unquoted archive case below
+The follow-up `252bfa0` fix selects the actual end for Delta sends. Native
+validation and the uncompressed-image recovery replay below pass.
+Quote retention and broader interruption cases still need exact-binary GUI
+coverage. The unquoted archive case below
 provides a separate recovery check.
 
 A generated-archive recovery case also passes on `7f95cca`: rejected send leaves
@@ -530,6 +530,52 @@ send checkpoint continuation are not connected yet, and no native/live batch
 recovery proof is claimed. The prepared-single-attachment native run remains
 separate at `7f95cca`.
 
+### Uncompressed recovery and preparation guards — 2026-10-25
+
+The checksum-verified `252bfa0` GUI passes uncompressed clipboard-image recovery.
+A rejected send leaves Core draft 154 with its caption and original 1800×1400
+JPEG bytes (5,080,933 bytes, SHA-256
+`c8c0927ee89854b54b541c12f1cec1f5c50b6b9bed873ea2dd55812dd422fd63`).
+The same draft survives normal quit/restart. One explicit recovery Send creates
+Core message 155 and reference message 165 with identical bytes, clears the
+draft, and leaves no preparation file. Other profiles have no matching messages;
+the alternate draft is unchanged. The Qt chat remains at the new attachment,
+verifying the navigation fix. Both GUIs display the recovered image/caption.
+Core records the recognized JPEG as `Image` even for the uncompressed choice,
+as established by the earlier Core inspection; an initial helper expectation of
+`File` was corrected without changing application code. Reference download was
+still pending on the first observation; a later read confirmed the bytes without
+resending. Private evidence: `attachment-uncompressed-rejected-252.json`,
+`attachment-uncompressed-restart-252.json`, `uncompressed-review-252.png`,
+`prepared-message-uncompressed-retried-252.json`,
+`media-uncompressed-delivered-252.json`, and `uncompressed-position-252.png`.
+
+A separate attachment-specific `misc_set_draft` rejection leaves no outgoing
+message and retains a text-only Core draft plus the prepared 1280×995 JPEG in
+private mode-0600 staging. The GUI shows Failed and a locked composer. Normal
+Quit and a profile switch are refused with explicit saving/removal notices.
+Deleting that failed local attachment removes its staging file, keeps the
+caption, and unlocks the composer. Normal Quit then succeeds and the caption survives restart. Private evidence:
+`attachment-pre-save-rejected-252.json`, `prepared-pre-save-rejected-252.json`,
+`pre-save-quit-guard-252.png`, `pre-save-switch-guard-252.png`,
+`prepared-pre-save-deleted-252.json`, and `pre-save-deleted-252.png`.
+This verifies the normal-exit guard, not durability after a forced process kill
+before Core accepts the attachment. A failed pre-save attachment currently
+requires removal and reselection; direct local Retry remains unfinished.
+
+The same `252bfa0` GUI also passes a lost prepared-send acknowledgement.
+The proxy replaces Core's successful `misc_send_draft` reply with an error;
+the client reconciles Core message 160, clears the draft and shows the sent
+image. Normal quit/restart retains that one message and an empty composer.
+The method audit records exactly one send request including restart. Official
+Desktop 2.62.0 receives one matching image (168) with the prepared JPEG hash
+`fb6f1dbd5258f4579cd08469d636bd9952cdd655a3b45d6b7213dad59c1a6bf3`.
+Other profiles and the alternate draft remain unchanged; staging is empty.
+Private evidence: `attachment-prepared-lost-send-252.json`,
+`prepared-lost-send-252.png`, `attachment-prepared-lost-send-restart-252.json`,
+`media-prepared-lost-send-restart-252.json`, and
+`prepared-lost-send-restart-count-252.json`. Fault injection was cleared.
+
 ### Restored quote lookup regression — 2026-10-25
 
 A second prepared-image recovery case on `7f95cca` failed quote retention.
@@ -555,14 +601,51 @@ user. Stale reply callbacks cannot replace a different selected reply.
 All 85 focused checks pass, with no failures or skips, including lookup failures,
 wrong IDs/chats, hidden messages, draft exclusion, cancellation at both reads,
 and real-Core lookup before and after deletion. The source audit has zero
-blocking findings across 13,213 files. Native compilation and exact-binary GUI
-replay of this quote fix remain pending in
-[run 40195411077](https://github.com/mamaru-a/deltagram/actions/runs/40195411077).
+blocking findings across 13,213 files. Native/portable/package validation
+passed in [run 40195411077](https://github.com/mamaru-a/deltagram/actions/runs/40195411077),
+including all 85 focused checks for `7f25d36`.
 It started only after the separate `252bfa0` native/portable/package
 [run 40193903762](https://github.com/mamaru-a/deltagram/actions/runs/40193903762)
 completed successfully, including all 77 focused checks for that revision.
 The `252bfa0` GUI/Core artifacts were checksum-verified; its navigation fix
-still needs GUI replay.
+passes the uncompressed-image recovery replay above.
+
+The checksum-verified `7f25d36` GUI restores and sends an older quoted attachment
+correctly. The `252bfa0` GUI first created Core draft 164 with the prepared JPEG,
+caption and quote ID 27 after a committed save whose acknowledgement was lost.
+It did not send. Normal quit followed by launch of `7f25d36` restored the same
+Core draft and a visible reply bar naming the original message. One explicit
+recovery Send produced Core message 165 and reference message 171 with the same
+prepared bytes and the original quote. Official Desktop 2.62.0 visibly renders
+that quote above the image. The draft clears, other profiles have no matching
+messages and the alternate draft remains unchanged. Private evidence:
+`attachment-quote-fix-before-restart-252.json`,
+`attachment-quote-fixed-restored-7f25.json`, `quote-fixed-restored-7f25.png`,
+`quote-fixed-review-7f25.png`, `attachment-quote-fixed-retried-7f25.json`,
+`media-quote-fixed-delivered-7f25.json`, and `quote-fixed-reference-7f25.png`.
+
+A Core-seeded attachment draft on the same disposable account also verifies the
+lookup-failure path. With only message 27's lookup rejected, `7f25d36` displays
+“Quoted message unavailable.” Editing the caption keeps quote ID 27 and the
+attachment bytes in Core. Explicitly removing the reply clears only the quote;
+one recovery Send then delivers the unquoted image/caption (Core 170,
+reference 174) with identical bytes. Private evidence:
+`seed-quote-unavailable-7f25.json`, `quote-unavailable-loaded-7f25.png`,
+`attachment-quote-unavailable-edited-7f25.json`,
+`attachment-quote-explicitly-removed-7f25.json`,
+`attachment-quote-removed-sent-7f25.json`, and
+`media-quote-removed-delivered-7f25.json`.
+
+A second Core-seeded draft delays only the original message lookup by twelve
+seconds. The fixed GUI displays a loading reply bar; removing it before the
+reply arrives clears the persisted quote. After the delayed callback settles,
+the reply bar stays absent, Core still has no quote, and the file/caption remain
+unchanged. Nothing is sent. The fixture attachment and caption were then removed
+through the GUI, and fault injection was cleared. Private evidence:
+`seed-quote-delayed-7f25.json`, `quote-delayed-loading-7f25.png`,
+`attachment-quote-delayed-cancelled-7f25.json`,
+`attachment-quote-delayed-settled-7f25.json`, and
+`quote-delayed-settled-7f25.png`.
 
 ### Queued-send checkpoint — 2026-10-25
 

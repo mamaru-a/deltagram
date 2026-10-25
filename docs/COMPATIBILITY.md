@@ -67,7 +67,7 @@ They are **unverified**, rather than assumed to work because the donor UI has th
 | Media browser | ❓ Unverified | Combined media list, previous/next, delete and return to message. |
 | Chat management | ❓ Unverified | Clear history rejection/success and date-range deletion have targeted GUI checks; bulk read state and last-read positioning still need coverage. |
 | Member profiles | ❓ Unverified | Opening a profile from a group member list. |
-| Attachments | 🟡 Partial | Ordinary single-file recovery, prepared/resized/rotated image delivery, uncompressed bytes, private staging cleanup and generated archives have revision-specific checks below. A prepared-image restart/retry passes without a quote; older quoted-image recovery exposed a pending fix. Multiple-file/video paths and broader prepared-media recovery remain open. |
+| Attachments | 🟡 Partial | Ordinary single-file recovery, prepared/resized/rotated image delivery, uncompressed bytes, private staging cleanup and generated archives have revision-specific checks below. Prepared-image restart/retry passes with an older quote after the Core lookup fix. Multiple-file/video paths and broader prepared-media recovery remain open. |
 | Notifications | ❓ Unverified | Background delivery and unread indicators for inactive profiles. |
 | Accessibility and localization | ❓ Unverified | Screen readers, keyboard navigation and RTL layouts. |
 | Appearance | 🟡 Partial | General wallpaper: local gallery and custom images in Settings → Chat Settings. Custom-image persistence checked across chats, profiles and restart; per-chat wallpaper is unavailable and removed from the chat menu. Full day/night combinations remain unverified. |
@@ -158,14 +158,25 @@ verified GUI retains a rejected prepared image and caption across quit/restart,
 then delivers one explicit retry with byte-identical prepared JPEG content in
 official Desktop 2.62.0. Temporary staging is cleaned and other profiles remain
 isolated. The replay also exposed a jump to old history after recovery; the
-`252bfa0` fix selects the actual chat end and passes native/package validation;
-GUI replay is pending.
+`252bfa0` fix selects the actual chat end and passes native/package validation
+and uncompressed-image restart/retry replay. Original JPEG bytes reach the
+reference client unchanged, with the new message visible at the chat end.
 A separate lost-save-ack/restart case retained the quote in Core but dropped it
 on explicit retry because its older message was not loaded in the GUI. The
-Core-backed lookup and quote-preservation fix passes focused checks (85 total),
-but native/live replay remains pending. A generated ZIP also passes rejected-send
+Core-backed lookup and quote-preservation fix `7f25d36` passes all 85 focused
+checks, native/portable/package validation and live restart/retry: the reply bar
+restores, the outgoing message retains its quote, and official Desktop 2.62.0
+shows the original quote with matching image bytes. A rejected quote lookup
+keeps the reply through caption edits; explicitly removing it sends without
+the quote while preserving the attachment. A delayed lookup cannot restore a
+reply removed while it was loading. A generated ZIP also passes rejected-send
 restart/retry on `7f95cca`, with identical archive bytes and contents in both
-clients. Uncompressed and broader interruption checks remain open.
+clients. `252bfa0` also verifies failed pre-save attachment retention, blocked
+normal quit/profile switching, and explicit Delete cleanup/unlock with caption
+retention. A prepared send with a lost acknowledgement reconciles once and
+survives restart with no duplicate; both clients retain the prepared image bytes.
+Direct retry before Core ownership and broader interruption checks
+remain open.
 
 `ca039dc` adds Core-backed batch compose storage, and `8a2b78c` adds durable-send
 checkpoint continuation and verified-ID resume without replacing a Core draft.

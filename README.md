@@ -76,14 +76,15 @@ Working in local checks:
 - Message information and reaction UI, with distinct pending/failed/read indicators.
 - Disposable live QR-image SecureJoin and second-device transfer to official
   Delta Chat Desktop 2.62.0, including restored history and image bytes.
+- Prepared-image, uncompressed-image and ZIP recovery across normal restart,
+  including older quoted attachments and uncertain send acknowledgements.
 
 Incomplete or not yet verified:
 
 - Voice playback UI, service events and complete profile-switch refresh.
 - Delta Chat calls; Telegram conferences are disabled.
-- Broader prepared-media and multi-file recovery across shutdown. One prepared
-  image restart/retry passes; older quoted-image recovery exposed a fix still
-  awaiting native/live verification.
+- Multi-file recovery, direct retry before Core owns a prepared attachment,
+  and broader interruption cases.
 - Camera/mobile QR flows and broad end-to-end compatibility.
 - Accessibility, RTL, advanced media/search and full webxdc behavior need validation.
 
