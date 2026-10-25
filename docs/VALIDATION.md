@@ -62,8 +62,8 @@ Source review found that the contact-selection callback can destroy its own
 picker while executing. The existing ordinary contact-opening path already
 copies and defers its callback; selection now does the same, with picker and
 profile lifetime guards. A traced repeat retained the data but did not refresh
-the list after completion. A second traced replay with allocator poisoning reproduced a double-free while
-destroying the settings refresh callback retained by `ConfirmContactBlocking`.
+the list after completion. A second traced replay with allocator poisoning
+reproduced a double-free while destroying the settings refresh callback retained by `ConfirmContactBlocking`.
 Matching checksum-verified symbols resolved the callback destruction through
 `Bridge::setContactBlocked` and `DeltaRpc::handleLine`. The callback fix still
 requires native replay; blocking is not considered release-ready from the
@@ -76,8 +76,7 @@ Passkey and Passkeys. These controls use Telegram authentication APIs and have
 no Core implementation. Core profiles now omit both registrations and the
 privacy-panel button; legacy passkey links return to Privacy and Security.
 Direct creation-box entry is guarded. Opening privacy settings also no longer
-starts the unused Telegram auto-delete reload. Rendered verification and native
-compilation of this follow-up are pending.
+starts the unused Telegram auto-delete reload.
 
 The same baseline GUI exposes “Disconnect all websites”, “If inactive for” and
 “Terminate all other sessions” when searching for “terminate”. Core profiles
@@ -86,7 +85,19 @@ Telegram auto-delete sections from search. Their constructors stop before
 loading donor data. Standard settings navigation checks section availability
 (including parent sections), so a saved URL to an unavailable section returns
 to the supported main panel. Core blocked contacts, local passcode and device
-preferences remain registered. Rendered search/link replay is pending.
+preferences remain registered.
+
+[Validation at `ea5bec5`](https://github.com/mamaru-a/deltagram/actions/runs/40241348390)
+passed native compilation, all 259 checks, portable runtime checks and package
+verification. On its checksum-verified GUI, “passkey” and “terminate” searches
+show No Results. A legacy passkey-creation link opens Privacy and Security with
+Local passcode and Blocked users still present. Legacy website-disconnection,
+session-termination, folder-creation and global auto-delete links open the
+supported Settings panel; all four rendered captures are byte-identical. The
+single-instance URL checks retained one project GUI/Core owner. After the
+instrumented crash replay and normal restart on this artifact, Core confirms
+the original unblocked contact, chat-list entry, message IDs and both drafts.
+The contact-picker fix is a later change and remains separately unverified.
 
 ### Sender and chat identity lookups — 2026-10-26
 
