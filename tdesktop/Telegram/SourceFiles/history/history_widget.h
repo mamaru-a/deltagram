@@ -889,6 +889,8 @@ private:
 	PeerId _deltaQueuePeer;
 	int _deltaQueueGeneration = -1;
 	int _deltaQueueCount = 0;
+	uint64 _deltaQueueRevision = 0;
+	uint64 _deltaQueueRequestId = 0;
 	bool _deltaQueueLoading = false;
 	QString _deltaNotifiedQueue;
 	mutable Data::ForumTopic *_creatingBotTopic = nullptr;

@@ -850,9 +850,13 @@ public:
 	void loadComposeQueue(int userId, Fn<void(ComposeQueue, QString)> done) {
 		const auto guard = _alive;
 		const auto current = _accountScope.guard();
-		_queues->load(_accountId, chatForPeerUser(userId),
+		const auto revision = ComposerRevision.current();
+		_queues->inspect(_accountId, chatForPeerUser(userId),
 			[=](ComposeQueue queue, QString error) {
-				if (!guard.expired() && current() && done) done(std::move(queue), std::move(error));
+				if (guard.expired() || !current() || !done) return;
+				if (revision != ComposerRevision.current()) {
+					done({}, u"The compose state changed. Review attachments again."_q);
+				} else done(std::move(queue), std::move(error));
 			});
 	}
 

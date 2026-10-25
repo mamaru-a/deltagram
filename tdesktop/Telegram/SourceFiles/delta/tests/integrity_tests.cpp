@@ -59,6 +59,55 @@ class IntegrityTests final : public QObject {
 	Q_OBJECT
 
 private slots:
+	void queueInspectionDoesNotBlockMutation() {
+		QTemporaryDir temporary;
+		QFile file(temporary.filePath(u"source.txt"_s));
+		QVERIFY(file.open(QIODevice::WriteOnly));
+		QVERIFY(file.write("queue inspection fixture") > 0);
+		file.close();
+		auto rpc = std::make_shared<DeltaRpc>();
+		rpc->start(RPC_FIXTURE_PATH, u"queue-normal"_s);
+		auto queues = std::make_shared<Delta::ComposeQueueStore>(rpc);
+		auto saved = Delta::ComposeQueue();
+		auto staged = false;
+		queues->stage(2, 10, {{u"Caption"_s, 0, file.fileName(), u"source.txt"_s, u"File"_s}},
+			[&](Delta::ComposeQueue queue, QString error) {
+				QVERIFY(error.isEmpty()); saved = std::move(queue); staged = true;
+			});
+		QTRY_VERIFY(staged);
+		CoreCall(*rpc, u"queue_fault"_s, {u"queue-hold-inspection"_s});
+		auto inspected = false;
+		queues->inspect(2, 10, [&](Delta::ComposeQueue queue, QString error) {
+			QVERIFY(error.isEmpty());
+			QCOMPARE(queue.id, saved.id);
+			QCOMPARE(queue.entries.size(), size_t(1));
+			inspected = true;
+		});
+		QTRY_VERIFY(CoreCall(*rpc, u"is_held"_s, {})[u"result"_s].toBool());
+		QVERIFY(!inspected);
+		QVERIFY(!queues->busy(2, 10));
+		auto removed = false;
+		queues->removeFirst(2, 10, saved.id, saved.entries.front().id,
+			[&](Delta::ComposeQueue queue, QString error) {
+				QVERIFY(error.isEmpty()); QVERIFY(queue.entries.empty()); removed = true;
+			});
+		QTRY_VERIFY(removed);
+		QVERIFY(!inspected);
+		const auto writes = CoreCall(*rpc, u"writes"_s, {})[u"result"_s].toInt();
+		CoreCall(*rpc, u"release"_s, {});
+		QTRY_VERIFY(inspected);
+		QCOMPARE(CoreCall(*rpc, u"writes"_s, {})[u"result"_s].toInt(), writes);
+		auto drafts = std::make_shared<Delta::DraftStore>(rpc, [](QString) {});
+		Delta::ComposeQueueSender sender(rpc, queues, drafts);
+		auto rejected = false;
+		sender.sendNext(2, 10, saved.id, saved.entries.front().id,
+			[&](int id, Delta::ComposeQueue queue, QString error) {
+				QCOMPARE(id, 0); QVERIFY(!error.isEmpty()); QVERIFY(queue.entries.empty()); rejected = true;
+			});
+		QTRY_VERIFY(rejected);
+		QCOMPARE(CoreCall(*rpc, u"sends"_s, {})[u"result"_s].toInt(), 0);
+	}
+
 	void settledDraftReloadWaitsForFreshRead() {
 		auto rpc = std::make_shared<DeltaRpc>();
 		rpc->start(RPC_FIXTURE_PATH, u"hold-second-draft"_s);

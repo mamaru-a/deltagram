@@ -27,6 +27,8 @@ public:
 	ComposeQueueStore(const ComposeQueueStore&) = delete;
 	ComposeQueueStore &operator=(const ComposeQueueStore&) = delete;
 	void load(int account, int chat, Done done);
+	// Read-only UI snapshot; mutations must reload and validate the reviewed IDs.
+	void inspect(int account, int chat, Done done);
 	// Keep the source owners until success. On an error, load again before any
 	// retry: the returned queue may already be durable after a lost readback.
 	// An unrelated existing queue is never returned as this stage's candidate.

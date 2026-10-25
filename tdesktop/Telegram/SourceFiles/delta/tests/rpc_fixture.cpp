@@ -21,6 +21,7 @@ int main(int argc, char **argv) {
 	QCoreApplication app(argc, argv);
 	auto drafts = QMap<QString, QJsonObject>();
 	auto held = std::optional<QJsonObject>();
+	auto heldResult = std::optional<QJsonValue>();
 	auto writes = 0;
 	auto sends = 0;
 	auto removals = 0;
@@ -128,7 +129,11 @@ int main(int argc, char **argv) {
 				const auto key = QString::number(args[0].toInt()) + ':' + args[1].toString();
 				const auto pin = args[1].toString().contains(u".blob."_s);
 				if (method == u"get_config"_s) {
-					if (queueFault == u"queue-unknown-publish"_s && queuePublished && !pin) reject();
+					if (queueFault == u"queue-hold-inspection"_s && !pin) {
+						held = request;
+						heldResult = queueConfig.value(key, QJsonValue(QJsonValue::Null));
+						queueFault = u"queue-normal"_s;
+					} else if (queueFault == u"queue-unknown-publish"_s && queuePublished && !pin) reject();
 					else Reply(request, queueConfig.value(key, QJsonValue(QJsonValue::Null)));
 				} else {
 					++writes;
@@ -206,10 +211,11 @@ int main(int argc, char **argv) {
 		if (method == u"release"_s) {
 			if (held) {
 				const auto params = (*held)[u"params"_s].toArray();
-				Reply(*held, (*held)[u"method"_s] == u"get_draft"_s
+				Reply(*held, heldResult ? *heldResult : (*held)[u"method"_s] == u"get_draft"_s
 					? QJsonValue(drafts[QString::number(params[0].toInt()) + ':' + QString::number(params[1].toInt())])
 					: QJsonValue(u"released"_s));
 				held.reset();
+				heldResult.reset();
 			}
 			Reply(request, true);
 			continue;

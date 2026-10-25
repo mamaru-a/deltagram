@@ -76,7 +76,16 @@ and the source audit has zero blocking findings across 13,217 files.
 
 Opening a chat now discovers saved queues and offers a visible notice plus
 attachment-button/composer hints. Discovery is account/view guarded and skips
-active compose operations. Native compilation and disposable GUI replay of
+active compose operations. A follow-up removes its mutation reservation: a slow
+background read no longer blocks Send, Discard or another queue review. The UI
+rejects replies superseded by compose changes or a newer visit to the chat, and
+refreshes after a compose change that occurred during discovery. Reviewed
+snapshots remain advisory; mutations reload and validate the queue and entry IDs.
+
+All 153 focused checks pass with no skips. A held-read regression completes a
+queue removal before releasing discovery, verifies that discovery writes nothing,
+and rejects sending the stale snapshot without another send. Native compilation
+and disposable GUI replay of
 these new UI paths remain pending; backend tests alone do not establish
 new-batch recovery or visual correctness.
 

@@ -4070,17 +4070,25 @@ void HistoryWidget::refreshDeltaComposeQueue() {
 		_deltaQueuePeer = peer;
 		_deltaQueueCount = 0;
 		_deltaQueueLoading = false;
+		++_deltaQueueRequestId;
 		_deltaNotifiedQueue.clear();
 	}
+	const auto revision = ++_deltaQueueRevision;
 	if (_deltaQueueLoading || deltaComposerLocked()) return;
 	_deltaQueueLoading = true;
+	const auto requestId = ++_deltaQueueRequestId;
 	const auto history = _history;
 	const auto current = Delta::CaptureAccountGuard();
 	Delta::LoadComposeQueue(int(peerToUser(peer).bare), crl::guard(this,
 		[=](Delta::ComposeQueue queue, QString error) {
 			if (!current || !current() || _history != history
-				|| _deltaQueueGeneration != generation || _deltaQueuePeer != peer) return;
+				|| _deltaQueueGeneration != generation || _deltaQueuePeer != peer
+				|| _deltaQueueRequestId != requestId) return;
 			_deltaQueueLoading = false;
+			if (revision != _deltaQueueRevision) {
+				if (!deltaComposerLocked()) refreshDeltaComposeQueue();
+				return;
+			}
 			if (!error.isEmpty()) return;
 			_deltaQueueCount = int(queue.entries.size());
 			updateControlsVisibility();

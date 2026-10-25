@@ -229,7 +229,9 @@ retains pending selection metadata. A follow-up fixes recovery when Core recodes
 an image after its draft checkpoint: the same confirmed outgoing message can
 advance the queue despite its changed blob, while unsent draft identity stays
 strict. A disposable Saved Messages probe confirms Core's recoding, and the
-152 focused checks include no-resend recovery and mismatched-message rejection.
+153 focused checks include no-resend recovery, mismatched-message rejection and
+queue mutation during a held discovery read. Discovery uses a read-only snapshot
+so it cannot reserve the mutation lock, and rejects superseded UI replies.
 The new GUI
 paths still require native compilation and disposable live replay. Broader
 interruption/profile cases need live coverage. The review

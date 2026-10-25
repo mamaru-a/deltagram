@@ -206,6 +206,16 @@ void ComposeQueueStore::load(int account, int chat, Done done) {
 	});
 }
 
+void ComposeQueueStore::inspect(int account, int chat, Done done) {
+	if (account <= 0 || chat <= 0) {
+		if (done) done({}, u"This compose queue is unavailable."_s);
+		return;
+	}
+	read({ account, chat }, [=](ComposeQueue queue, QString, QString error) {
+		if (done) done(std::move(queue), std::move(error));
+	});
+}
+
 void ComposeQueueStore::cleanup(int account, std::function<void(QString)> done) {
 	if (account <= 0 || _cleaning.contains(account)
 		|| std::any_of(_busy.begin(), _busy.end(), [=](Key key) { return key.first == account; })) {
