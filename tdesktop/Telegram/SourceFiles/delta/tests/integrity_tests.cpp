@@ -14,6 +14,7 @@
 #include "media_identity.h"
 #include "prepared_attachment.h"
 #include "profile_activity.h"
+#include "chat_mute.h"
 
 #include <QtTest/QtTest>
 
@@ -109,6 +110,90 @@ class IntegrityTests final : public QObject {
 	Q_OBJECT
 
 private slots:
+	void chatMuteRejectsInvalidAndStaleRequests() {
+		auto scope = Delta::AccountScope();
+		auto calls = 0;
+		auto completed = 0;
+		auto pending = DeltaRpc::Callback();
+		const auto request = [&](QString method, QJsonArray params, DeltaRpc::Callback done) {
+			QCOMPARE(method, u"set_chat_mute_duration"_s);
+			QCOMPARE(params, (QJsonArray{2, 10, QJsonObject{{u"kind"_s, u"Forever"_s}}}));
+			++calls;
+			pending = std::move(done);
+		};
+		const auto failure = [&](QString error) { QVERIFY(!error.isEmpty()); ++completed; };
+		Delta::SetCoreChatMute(request, scope, 0, 10, -1, failure);
+		Delta::SetCoreChatMute(request, scope, 2, 0, -1, failure);
+		Delta::SetCoreChatMute(request, scope, 2, 10, -2, failure);
+		QCOMPARE(calls, 0);
+		QCOMPARE(completed, 3);
+		Delta::SetCoreChatMute(request, scope, 2, 10, -1, failure);
+		QCOMPARE(calls, 1);
+		scope.invalidate();
+		pending({{u"result"_s, QJsonValue(QJsonValue::Null)}});
+		QCOMPARE(completed, 3);
+	}
+
+	void chatMuteRejectsMalformedAcknowledgements_data() {
+		QTest::addColumn<QJsonObject>("reply");
+		QTest::newRow("missing") << QJsonObject();
+		QTest::newRow("false") << QJsonObject{{u"result"_s, false}};
+		QTest::newRow("object") << QJsonObject{{u"result"_s, QJsonObject()}};
+		QTest::newRow("error") << QJsonObject{{u"error"_s, u"rejected"_s}};
+		QTest::newRow("error-and-null") << QJsonObject{{u"error"_s, QJsonValue(QJsonValue::Null)}, {u"result"_s, QJsonValue(QJsonValue::Null)}};
+	}
+
+	void chatMuteRejectsMalformedAcknowledgements() {
+		QFETCH(QJsonObject, reply);
+		auto scope = Delta::AccountScope();
+		auto calls = 0;
+		auto completed = false;
+		Delta::SetCoreChatMute([&](QString, QJsonArray, DeltaRpc::Callback done) {
+			++calls;
+			done(reply);
+		}, scope, 2, 10, 0, [&](QString error) { QVERIFY(!error.isEmpty()); completed = true; });
+		QVERIFY(completed);
+		QCOMPARE(calls, 1);
+	}
+
+	void realCoreMuteIsolationAcrossRestart() {
+		const auto program = qEnvironmentVariable("DELTA_TEST_CORE_RPC");
+		if (program.isEmpty()) QSKIP("Set DELTA_TEST_CORE_RPC to test the real Core server.");
+		auto directory = QTemporaryDir();
+		QVERIFY(directory.isValid());
+		auto rpc = std::make_shared<DeltaRpc>();
+		rpc->start(program, directory.path());
+		const auto first = CoreCall(*rpc, u"add_account"_s, {})[u"result"_s].toInt();
+		const auto second = CoreCall(*rpc, u"add_account"_s, {})[u"result"_s].toInt();
+		QVERIFY(first > 0 && second > 0 && first != second);
+		const auto chatA = CoreCall(*rpc, u"create_chat_by_contact_id"_s, {first, 1})[u"result"_s].toInt();
+		const auto chatB = CoreCall(*rpc, u"create_chat_by_contact_id"_s, {second, 1})[u"result"_s].toInt();
+		QVERIFY(chatA > 0 && chatB > 0);
+		QCOMPARE(chatA, chatB);
+		auto scope = Delta::AccountScope();
+		const auto set = [&](int account, int chat, int seconds) {
+			auto completed = false;
+			auto error = QString();
+			Delta::SetCoreChatMute([=](QString method, QJsonArray params, DeltaRpc::Callback done) {
+				rpc->call(method, params, std::move(done));
+			}, scope, account, chat, seconds, [&](QString failure) { error = failure; completed = true; });
+			QTRY_VERIFY_WITH_TIMEOUT(completed, 5000);
+			QVERIFY2(error.isEmpty(), qPrintable(error));
+		};
+		set(first, chatA, -1);
+		QCOMPARE(CoreCall(*rpc, u"is_chat_muted"_s, {first, chatA})[u"result"_s], QJsonValue(true));
+		QCOMPARE(CoreCall(*rpc, u"is_chat_muted"_s, {second, chatB})[u"result"_s], QJsonValue(false));
+		set(second, chatB, 3600);
+		rpc->stop();
+		rpc->start(program, directory.path());
+		QCOMPARE(CoreCall(*rpc, u"is_chat_muted"_s, {first, chatA})[u"result"_s], QJsonValue(true));
+		QCOMPARE(CoreCall(*rpc, u"is_chat_muted"_s, {second, chatB})[u"result"_s], QJsonValue(true));
+		set(first, chatA, 0);
+		QCOMPARE(CoreCall(*rpc, u"is_chat_muted"_s, {first, chatA})[u"result"_s], QJsonValue(false));
+		QCOMPARE(CoreCall(*rpc, u"is_chat_muted"_s, {second, chatB})[u"result"_s], QJsonValue(true));
+		rpc->stop();
+	}
+
 	void profileActivityBackgroundStartup() {
 		auto fixture = ActivityFixture();
 		fixture.activity->start();

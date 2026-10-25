@@ -248,8 +248,10 @@ void PeerMenuAddMuteSubmenuAction(
 	const auto notifySettings = &thread->owner().notifySettings();
 	notifySettings->request(thread);
 	const auto weak = base::make_weak(thread);
+	const auto current = Delta::CaptureAccountGuard();
 	const auto with = [=](Fn<void(not_null<Data::Thread*>)> callback) {
 		return [=] {
+			if (current && !current()) return;
 			if (const auto strong = weak.get()) {
 				callback(strong);
 			}

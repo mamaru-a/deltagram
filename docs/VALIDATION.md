@@ -51,9 +51,23 @@ callbacks, and failed/malformed reads preserve existing counts. No tracking
 request selects a profile or marks a message read.
 
 All 195 focused checks pass with no skips, including 11 new activity cases.
-The source audit has zero blocking findings across 13,219 files. These are
-backend checks and source integration evidence: native compilation, fixed GUI
-replay, muted-chat behavior and desktop notification popups remain pending.
+Native compilation, portable runtime and package verification passed at
+`71b644c` in [CI run 40222960018](https://github.com/mamaru-a/deltagram/actions/runs/40222960018).
+Its GUI/Core artifacts were checksum verified before disposable replay.
+
+Cold start with the alternate profile selected connected all four configured
+profiles. The inactive onboarding profile received a message sent while the
+app was closed, without selecting that profile. Its menu badge showed two
+unread messages and updated to three when official Desktop 2.62.0 sent another
+message while the menu remained open. Selecting onboarding and opening the
+conversation displayed all three messages, changed their Core states to seen,
+and cleared its fresh-message list. The alternate profile's saved draft remained
+unchanged. These checks verify the profile menu and local read clearing; the
+optional sidebar and desktop-shell badge still need rendered verification.
+
+The same replay exposed a clipped collapsed-selector badge and a separate mute
+defect described below. The badge follow-up aligns its complete bounds and the
+toggle arrow with the profile-name line; its native visual replay is pending.
 
 ### Notification action scope — native replay pending
 
@@ -74,6 +88,30 @@ The source audit passes with zero blocking findings. This follow-up is not
 covered by the earlier 195 backend checks or the `71b644c` native build. Native
 compilation and disposable notification-action replay remain required; inactive
 profile popup delivery is still a separate open feature/check.
+
+### Core chat mute persistence — native replay pending
+
+On `71b644c`, Core reported the reference conversation as unmuted while its
+context menu offered Unmute. After selecting Unmute and then Mute forever,
+the menu again offered Unmute, but a Core read still reported `isMuted=false`.
+The donor menu had changed local notification settings without saving to Core.
+
+The follow-up applies explicit Core mute state to the notification model and
+routes per-chat unmute, forever and timed changes through
+`set_chat_mute_duration`. It leaves the visible state unchanged until Core
+refreshes it, serializes changes for each chat, rejects malformed mutation
+acknowledgements, and never retries automatically. Late callbacks and old
+mute-menu actions are scoped to the profile. Unsupported per-chat ringtone and
+sound-only menu options are hidden. Notification-settings reads no longer
+request donor server defaults while the Core backend is active.
+
+All 202 focused checks pass with zero failures/skips. New real-Core checks use
+overlapping chat IDs in two isolated accounts, verify timed/forever settings
+across a server restart, and confirm unmuting one account leaves the other
+muted. Invalid arguments, malformed acknowledgements and stale callbacks are
+also covered. The source audit has zero blocking findings across 13,220 files.
+Native compilation, rejected-change GUI replay, muted incoming delivery and
+notification-action replay are still required for these latest changes.
 
 ### Batch preparation storage checks
 

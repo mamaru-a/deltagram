@@ -4,6 +4,7 @@ This file is part of Delta Tel, a Telegram Desktop based Delta Chat client.
 #include "delta/delta_bridge.h"
 #include "delta/compose_queue_sender.h"
 #include "delta/profile_activity.h"
+#include "delta/chat_mute.h"
 
 #include "apiwrap.h"
 #include "delta/account_scope.h"
@@ -30,6 +31,7 @@ This file is part of Delta Tel, a Telegram Desktop based Delta Chat client.
 #include "data/data_peer_id.h"
 #include "data/data_session.h"
 #include "data/data_user.h"
+#include "data/notify/data_notify_settings.h"
 #include "dialogs/dialogs_main_list.h"
 #include "dialogs/dialogs_row.h"
 #include "history/history.h"
@@ -1921,6 +1923,7 @@ public:
 		_session->data().histories().resetBackendRequests();
 		++_selfAvatarRevision;
 		_deletedMessages.clear();
+		_pendingMuteChats.clear();
 		_names.clear();
 		_avatars.clear();
 		_selfChat = 0;
@@ -2347,6 +2350,22 @@ public:
 				loadDialogs();
 				done(chatId, QString());
 			});
+		});
+	}
+
+	void setChatMute(int userId, int seconds) {
+		const auto chat = chatForPeerUser(userId);
+		if (_pendingMuteChats.contains(chat)) {
+			reportError(u"Wait for the current notification change to finish."_q);
+			return;
+		}
+		_pendingMuteChats.insert(chat);
+		SetCoreChatMute([rpc = _rpc](QString method, QJsonArray params, DeltaRpc::Callback done) {
+			rpc->call(method, params, std::move(done));
+		}, _accountScope, _accountId, chat, seconds, [=](QString error) {
+			_pendingMuteChats.remove(chat);
+			if (!error.isEmpty()) reportError(error);
+			_reload.start();
 		});
 	}
 
@@ -3209,6 +3228,7 @@ private:
 		int firstUnread = 0;
 		bool pinned = false;
 		bool muted = false;
+		bool muteKnown = false;
 		bool selfTalk = false;
 		QString avatar;
 		int contactId = 0;
@@ -3238,6 +3258,7 @@ private:
 			entry.fresh = item.value(u"freshMessageCounter"_q).toInt();
 			entry.pinned = item.value(u"isPinned"_q).toBool();
 			entry.muted = item.value(u"isMuted"_q).toBool();
+			entry.muteKnown = item.value(u"isMuted"_q).isBool();
 			entry.selfTalk = item.value(u"isSelfTalk"_q).toBool();
 			entry.avatar = item.value(u"avatarPath"_q).toString();
 			entry.contactId = item.value(u"dmChatContact"_q).toInt();
@@ -3438,6 +3459,7 @@ private:
 			if (entry.previewFailed) continue;
 			const auto history = owner.history(
 				peerFromUser(UserId(peerUserForChat(entry.chatId))));
+			if (entry.muteKnown) owner.notifySettings().applyBackendMute(history->peer, entry.muted);
 			if (!entry.draft.isEmpty()) {
 				const auto quoted = entry.draft.value(u"quote"_q).toObject()
 					.value(u"messageId"_q).toInt();
@@ -3484,6 +3506,7 @@ public:
 	int _dialogsEpoch = 0;
 	AccountScope _accountScope;
 	QSet<int> _deletedMessages;
+	QSet<int> _pendingMuteChats;
 	bool _switching = false;
 	const std::shared_ptr<bool> _aliveOwner = std::make_shared<bool>(true);
 	const std::weak_ptr<bool> _alive = _aliveOwner;
@@ -3534,6 +3557,10 @@ qint64 MessageMediaId(int messageId) {
 
 bool Active() {
 	return GlobalBridge != nullptr;
+}
+
+void SetChatMute(int userId, int durationSeconds) {
+	if (GlobalBridge) GlobalBridge->setChatMute(userId, durationSeconds);
 }
 
 std::shared_ptr<PreparedSend> BeginPreparedSend(int userId) {

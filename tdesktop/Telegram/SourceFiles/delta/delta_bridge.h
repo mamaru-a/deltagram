@@ -61,6 +61,7 @@ void StartSession(
 [[nodiscard]] int AccountGeneration();
 [[nodiscard]] std::function<bool()> CaptureAccountGuard();
 [[nodiscard]] rpl::producer<int> AccountViewResets();
+void SetChatMute(int userId, int durationSeconds);
 [[nodiscard]] rpl::producer<int> ComposerChanges();
 [[nodiscard]] bool ComposerWritable(int userId);
 [[nodiscard]] bool PreparingSendPreventsQuit();
