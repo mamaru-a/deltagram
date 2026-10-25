@@ -1432,6 +1432,8 @@ PRIVATE
     delta/delta_rpc.h
     delta/backup_transfer.cpp
     delta/backup_transfer.h
+    delta/compose_batch.cpp
+    delta/compose_batch.h
     delta/compose_queue.cpp
     delta/compose_queue.h
     delta/compose_queue_sender.cpp

@@ -187,8 +187,7 @@ accepted bubble disappears from its open history until restart. A follow-up
 history refresh fix passes native/package checks and disposable replay on
 `b5c4e9e`: the quoted image remains visible immediately after one Retry, both
 clients retain the older quote and matching bytes, and the draft/staging clear.
-Broader interruption
-checks and recent-search suggestion isolation across profiles remain open.
+Broader interruption and delayed-callback checks remain open.
 
 A follow-up source change clears recent/ranked peers and open-chat navigation
 on profile switch and prevents importing unscoped donor suggestion records.
@@ -217,7 +216,13 @@ advancement and both confirmed discards; the remaining file retains its bytes.
 `6078103` additionally preserves a matching draft/queue after rejected removal,
 and reconciles a committed removal with an error acknowledgement through readback,
 clearing only the first entry and matching draft while retaining the second file.
-New-batch preparation and restart discovery remain unfinished. Broader
+The new batch coordinator preserves preparation order and source owners, waits
+for the entire selection, and reconciles uncertain publication without sending.
+Real-Core testing exposed blob renaming when a temporary path and display name
+have different extensions; staging now privately copies under the intended name
+before Core import. The coordinator and this storage fix have focused coverage,
+including restart after original-file removal and private-copy cleanup. New-batch
+GUI wiring and restart discovery remain unfinished. Broader
 interruption/profile cases need live coverage. The review
 dialog's clipped Cancel button and one-item count wording pass native visual
 replay on `b5c4e9e`.

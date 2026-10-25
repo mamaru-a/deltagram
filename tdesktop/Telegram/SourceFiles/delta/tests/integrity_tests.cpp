@@ -2,6 +2,7 @@
 #include "backup_transfer.h"
 #include "draft_store.h"
 #include "compose_queue.h"
+#include "compose_batch.h"
 #include "compose_queue_sender.h"
 #include "account_scope.h"
 #include "account_inventory.h"
@@ -58,6 +59,269 @@ class IntegrityTests final : public QObject {
 	Q_OBJECT
 
 private slots:
+	void batchPreparationOrderingAndLifetime() {
+		auto rpc = std::make_shared<DeltaRpc>();
+		rpc->start(RPC_FIXTURE_PATH, u"queue-hold-checkpoint"_s);
+		auto queues = std::make_shared<Delta::ComposeQueueStore>(rpc);
+		auto files = std::vector<std::shared_ptr<QTemporaryFile>>();
+		auto paths = QStringList();
+		for (auto i = 0; i != 3; ++i) {
+			auto file = std::make_shared<QTemporaryFile>();
+			QVERIFY(file->open());
+			QVERIFY(file->write("prepared attachment") > 0);
+			QVERIFY(file->flush());
+			paths.push_back(file->fileName());
+			files.push_back(std::move(file));
+		}
+		auto completed = false;
+		auto saved = Delta::ComposeQueue();
+		auto batch = std::shared_ptr<Delta::ComposeBatch>();
+		auto observed = std::weak_ptr<Delta::ComposeBatch>();
+		batch = Delta::ComposeBatch::Create(queues, 2, 10, 3, [&] {
+			if (const auto value = observed.lock(); value->state() == Delta::ComposeBatch::State::Saved) {
+				saved = value->queue();
+				completed = true;
+			}
+		});
+		observed = batch;
+		const auto prepare = [&](size_t index) {
+			return batch->prepared(index, {
+				u"Caption %1"_s.arg(index), int(41 + index), paths[index],
+				u"Attachment %1"_s.arg(index), index == 1 ? u"Image"_s : u"File"_s,
+			}, files[index]);
+		};
+		QVERIFY(prepare(2));
+		QVERIFY(prepare(0));
+		QVERIFY(!prepare(2));
+		QVERIFY(!batch->prepared(3, {}, files[0]));
+		QVERIFY(!batch->retrySave());
+		QCOMPARE(CoreCall(*rpc, u"writes"_s, {})[u"result"_s].toInt(), 0);
+		QVERIFY(prepare(1));
+		QCOMPARE(batch->state(), Delta::ComposeBatch::State::Saving);
+		QVERIFY(!batch->discard());
+		QVERIFY(!batch->retrySave());
+		QVERIFY(!batch->failed(0, u"Late failure"_s));
+		files.clear();
+		batch.reset();
+		QTRY_VERIFY(CoreCall(*rpc, u"is_held"_s, {})[u"result"_s].toBool());
+		QVERIFY(!observed.expired());
+		for (const auto &path : paths) QVERIFY(QFileInfo::exists(path));
+		CoreCall(*rpc, u"release"_s, {});
+		QTRY_VERIFY(completed);
+		QTRY_VERIFY(observed.expired());
+		for (const auto &path : paths) QVERIFY(!QFileInfo::exists(path));
+		QCOMPARE(saved.entries.size(), size_t(3));
+		for (auto i = 0; i != 3; ++i) {
+			const auto &draft = saved.entries[i].draft;
+			QCOMPARE(draft.text, u"Caption %1"_s.arg(i));
+			QCOMPARE(draft.quotedMessageId, 41 + i);
+			QCOMPARE(draft.filename, u"Attachment %1"_s.arg(i));
+			QCOMPARE(draft.viewType, i == 1 ? u"Image"_s : u"File"_s);
+			QCOMPARE(draft.file, u"/fixture/blobs/2/Attachment %1"_s.arg(i));
+		}
+		QCOMPARE(CoreCall(*rpc, u"writes"_s, {})[u"result"_s].toInt(), 4);
+		QCOMPARE(CoreCall(*rpc, u"sends"_s, {})[u"result"_s].toInt(), 0);
+	}
+
+	void batchStorageRecovery_data() {
+		QTest::addColumn<QString>("fault");
+		for (const auto fault : { "queue-reject-copy", "queue-reject-pin",
+			"queue-reject-publish", "queue-unknown-publish" }) {
+			QTest::newRow(fault) << QString::fromLatin1(fault);
+		}
+	}
+
+	void batchStorageRecovery() {
+		QFETCH(QString, fault);
+		auto rpc = std::make_shared<DeltaRpc>();
+		rpc->start(RPC_FIXTURE_PATH, fault);
+		auto queues = std::make_shared<Delta::ComposeQueueStore>(rpc);
+		auto file = std::make_shared<QTemporaryFile>();
+		QVERIFY(file->open());
+		QVERIFY(file->write("retained prepared bytes") > 0);
+		QVERIFY(file->flush());
+		const auto path = file->fileName();
+		auto batch = Delta::ComposeBatch::Create(queues, 2, 10, 1, {});
+		QVERIFY(batch->prepared(0, {u"Keep caption"_s, 41, path, u"image.jpg"_s, u"Image"_s}, file));
+		file.reset();
+		QTRY_COMPARE(batch->state(), Delta::ComposeBatch::State::Failed);
+		QVERIFY(!batch->error().isEmpty());
+		QVERIFY(QFileInfo::exists(path));
+		const auto uncertain = fault == u"queue-unknown-publish"_s;
+		if (uncertain) {
+			QVERIFY(!batch->discard());
+			QVERIFY(batch->retrySave());
+			QTRY_COMPARE(batch->state(), Delta::ComposeBatch::State::Failed);
+			QVERIFY(QFileInfo::exists(path));
+		}
+		const auto writes = CoreCall(*rpc, u"writes"_s, {})[u"result"_s].toInt();
+		CoreCall(*rpc, u"queue_fault"_s, {u"queue-normal"_s});
+		QVERIFY(batch->retrySave());
+		QTRY_COMPARE(batch->state(), Delta::ComposeBatch::State::Saved);
+		QCOMPARE(batch->reconciled(), uncertain);
+		QVERIFY(!QFileInfo::exists(path));
+		QCOMPARE(batch->queue().entries.front().draft.text, u"Keep caption"_s);
+		QCOMPARE(batch->queue().entries.front().draft.quotedMessageId, 41);
+		const auto copies = CoreCall(*rpc, u"queue_copies"_s, {})[u"result"_s].toArray();
+		QVERIFY(!copies.isEmpty());
+		const auto publicAccess = QFileDevice::ReadGroup | QFileDevice::WriteGroup | QFileDevice::ExeGroup
+			| QFileDevice::ReadOther | QFileDevice::WriteOther | QFileDevice::ExeOther;
+		for (const auto &value : copies) {
+			const auto copy = value.toObject();
+			QCOMPARE(copy[u"size"_s].toInt(), int(QByteArray("retained prepared bytes").size()));
+			QCOMPARE(copy[u"permissions"_s].toInt() & int(publicAccess), 0);
+			QCOMPARE(copy[u"directoryPermissions"_s].toInt() & int(publicAccess), 0);
+			const auto copiedPath = copy[u"path"_s].toString();
+			QCOMPARE(QFileInfo(copiedPath).fileName(), u"image.jpg"_s);
+			QVERIFY(!QFileInfo::exists(copiedPath));
+			QVERIFY(!QFileInfo::exists(QFileInfo(copiedPath).absolutePath()));
+		}
+		QCOMPARE(CoreCall(*rpc, u"writes"_s, {})[u"result"_s].toInt(), writes + (uncertain ? 0 : 2));
+		QCOMPARE(CoreCall(*rpc, u"sends"_s, {})[u"result"_s].toInt(), 0);
+		QVERIFY(!batch->retrySave());
+		QVERIFY(!batch->discard());
+	}
+
+	void batchPreparationFailureAndDiscard() {
+		auto rpc = std::make_shared<DeltaRpc>();
+		rpc->start(RPC_FIXTURE_PATH, u"queue-normal"_s);
+		auto queues = std::make_shared<Delta::ComposeQueueStore>(rpc);
+		QVERIFY(!Delta::ComposeBatch::Create(queues, 0, 10, 2, {}));
+		QVERIFY(!Delta::ComposeBatch::Create(queues, 2, 0, 2, {}));
+		QVERIFY(!Delta::ComposeBatch::Create(queues, 2, 10, 0, {}));
+		QVERIFY(!Delta::ComposeBatch::Create(nullptr, 2, 10, 2, {}));
+		auto file = std::make_shared<QTemporaryFile>();
+		QVERIFY(file->open());
+		QVERIFY(file->write("kept until discard") > 0);
+		QVERIFY(file->flush());
+		const auto path = file->fileName();
+		auto batch = Delta::ComposeBatch::Create(queues, 2, 10, 3, {});
+		QVERIFY(batch->failed(1, u"Conversion failed"_s));
+		QVERIFY(batch->prepared(2, {u"Caption"_s, 41, path, u"file.bin"_s, u"File"_s}, file));
+		file.reset();
+		QCOMPARE(batch->state(), Delta::ComposeBatch::State::Failed);
+		QVERIFY(!batch->failed(1, u"Duplicate completion"_s));
+		QVERIFY(!batch->retrySave());
+		QVERIFY(QFileInfo::exists(path));
+		QCOMPARE(CoreCall(*rpc, u"writes"_s, {})[u"result"_s].toInt(), 0);
+		QVERIFY(batch->discard());
+		QVERIFY(!QFileInfo::exists(path));
+		QCOMPARE(batch->state(), Delta::ComposeBatch::State::Discarded);
+		QVERIFY(!batch->prepared(0, {}, {}));
+		QVERIFY(!batch->failed(0, u"Late completion"_s));
+		QVERIFY(!batch->discard());
+		QCOMPARE(CoreCall(*rpc, u"writes"_s, {})[u"result"_s].toInt(), 0);
+		QCOMPARE(CoreCall(*rpc, u"sends"_s, {})[u"result"_s].toInt(), 0);
+	}
+
+	void batchUncertainPublicationChanged_data() {
+		QTest::addColumn<QString>("change");
+		for (const auto change : { "id", "text", "quote", "blob", "filename", "viewType", "messageId", "empty" }) {
+			QTest::newRow(change) << QString::fromLatin1(change);
+		}
+	}
+
+	void batchUncertainPublicationChanged() {
+		QFETCH(QString, change);
+		auto rpc = std::make_shared<DeltaRpc>();
+		rpc->start(RPC_FIXTURE_PATH, u"queue-unknown-publish"_s);
+		auto queues = std::make_shared<Delta::ComposeQueueStore>(rpc);
+		auto file = std::make_shared<QTemporaryFile>();
+		QVERIFY(file->open());
+		QVERIFY(file->write("uncertain prepared bytes") > 0);
+		QVERIFY(file->flush());
+		const auto path = file->fileName();
+		auto batch = Delta::ComposeBatch::Create(queues, 2, 10, 1, {});
+		QVERIFY(batch->prepared(0, {u"Caption"_s, 41, path, u"file.bin"_s, u"File"_s}, file));
+		file.reset();
+		QTRY_COMPARE(batch->state(), Delta::ComposeBatch::State::Failed);
+		CoreCall(*rpc, u"queue_fault"_s, {u"queue-normal"_s});
+		const auto key = u"ui.deltagram.compose.queue.10"_s;
+		const auto before = CoreCall(*rpc, u"get_config"_s, {2, key}).value(u"result"_s);
+		auto object = QJsonDocument::fromJson(before.toString().toUtf8()).object();
+		if (change == u"id"_s) object[change] = QString(32, u'a');
+		else {
+			auto entry = object[u"entries"_s].toArray()[0].toObject();
+			entry[change] = (change == u"quote"_s || change == u"messageId"_s)
+				? QJsonValue(300) : QJsonValue(u"changed"_s);
+			object[u"entries"_s] = QJsonArray{entry};
+		}
+		CoreCall(*rpc, u"set_config"_s, {2, key, change == u"empty"_s
+			? QJsonValue(QJsonValue::Null)
+			: QJsonValue(QString::fromUtf8(QJsonDocument(object).toJson(QJsonDocument::Compact)))});
+		const auto writes = CoreCall(*rpc, u"writes"_s, {})[u"result"_s].toInt();
+		QVERIFY(batch->retrySave());
+		QTRY_COMPARE(batch->state(), Delta::ComposeBatch::State::Failed);
+		QVERIFY(!batch->discard());
+		QVERIFY(QFileInfo::exists(path));
+		QCOMPARE(CoreCall(*rpc, u"writes"_s, {})[u"result"_s].toInt(), writes);
+		QCOMPARE(CoreCall(*rpc, u"sends"_s, {})[u"result"_s].toInt(), 0);
+	}
+
+	void batchConflictingQueueNotAdopted() {
+		auto rpc = std::make_shared<DeltaRpc>();
+		rpc->start(RPC_FIXTURE_PATH, u"queue-normal"_s);
+		auto queues = std::make_shared<Delta::ComposeQueueStore>(rpc);
+		auto file = std::make_shared<QTemporaryFile>();
+		QVERIFY(file->open());
+		QVERIFY(file->write("two separate selections") > 0);
+		QVERIFY(file->flush());
+		const auto path = file->fileName();
+		auto first = Delta::ComposeBatch::Create(queues, 2, 10, 1, {});
+		QVERIFY(first->prepared(0, {u"First selection"_s, 41, path, u"file.bin"_s, u"File"_s}, file));
+		QTRY_COMPARE(first->state(), Delta::ComposeBatch::State::Saved);
+		auto second = Delta::ComposeBatch::Create(queues, 2, 10, 1, {});
+		QVERIFY(second->prepared(0, {u"Second selection"_s, 0, path, u"file.bin"_s, u"File"_s}, file));
+		file.reset();
+		QTRY_COMPARE(second->state(), Delta::ComposeBatch::State::Failed);
+		QVERIFY(second->queue().id.isEmpty());
+		QVERIFY(QFileInfo::exists(path));
+		QVERIFY(second->retrySave());
+		QTRY_COMPARE(second->state(), Delta::ComposeBatch::State::Failed);
+		QVERIFY(QFileInfo::exists(path));
+		QVERIFY(second->discard());
+		QVERIFY(!QFileInfo::exists(path));
+		auto completed = false;
+		queues->load(2, 10, [&](Delta::ComposeQueue queue, QString error) {
+			QVERIFY(error.isEmpty());
+			QCOMPARE(queue.id, first->queue().id);
+			QCOMPARE(queue.entries.front().draft.text, u"First selection"_s);
+			completed = true;
+		});
+		QTRY_VERIFY(completed);
+		QCOMPARE(CoreCall(*rpc, u"writes"_s, {})[u"result"_s].toInt(), 2);
+		QCOMPARE(CoreCall(*rpc, u"sends"_s, {})[u"result"_s].toInt(), 0);
+	}
+
+	void batchInvalidPreparation_data() {
+		QTest::addColumn<QString>("invalid");
+		for (const auto invalid : { "owner", "quote", "path", "empty" }) {
+			QTest::newRow(invalid) << QString::fromLatin1(invalid);
+		}
+	}
+
+	void batchInvalidPreparation() {
+		QFETCH(QString, invalid);
+		auto rpc = std::make_shared<DeltaRpc>();
+		rpc->start(RPC_FIXTURE_PATH, u"queue-normal"_s);
+		auto queues = std::make_shared<Delta::ComposeQueueStore>(rpc);
+		auto file = std::make_shared<QTemporaryFile>();
+		QVERIFY(file->open());
+		if (invalid != u"empty"_s) {
+			QVERIFY(file->write("prepared bytes") > 0);
+			QVERIFY(file->flush());
+		}
+		auto batch = Delta::ComposeBatch::Create(queues, 2, 10, 1, {});
+		QVERIFY(batch->prepared(0, {u"Caption"_s, invalid == u"quote"_s ? -1 : 0,
+			invalid == u"path"_s ? QString() : file->fileName(), u"file.bin"_s, u"File"_s},
+			invalid == u"owner"_s ? nullptr : file));
+		QCOMPARE(batch->state(), Delta::ComposeBatch::State::Failed);
+		QVERIFY(!batch->retrySave());
+		QVERIFY(batch->discard());
+		QCOMPARE(CoreCall(*rpc, u"writes"_s, {})[u"result"_s].toInt(), 0);
+		QCOMPARE(CoreCall(*rpc, u"sends"_s, {})[u"result"_s].toInt(), 0);
+	}
+
 	void queueDiscard_data() {
 		QTest::addColumn<QString>("phase");
 		QTest::addColumn<QString>("fault");
@@ -694,7 +958,7 @@ private slots:
 		completed = false;
 		queues.stage(2, 10, sources, [&](Delta::ComposeQueue queue, QString error) {
 			QVERIFY(!error.isEmpty());
-			QCOMPARE(queue.id, saved.id);
+			QVERIFY(queue.id.isEmpty());
 			completed = true;
 		});
 		QTRY_VERIFY(completed);
@@ -815,19 +1079,31 @@ private slots:
 		QVERIFY(stored.contains(u"3:"_s + pin));
 	}
 
-	void realCoreComposeQueueRestart() {
+	void realCorePreparedBatchRestart_data() {
+		QTest::addColumn<QString>("mode");
+		for (const auto mode : { "different-bytes", "same-bytes", "different-extensions" }) {
+			QTest::newRow(mode) << QString::fromLatin1(mode);
+		}
+	}
+
+	void realCorePreparedBatchRestart() {
+		QFETCH(QString, mode);
 		const auto program = qEnvironmentVariable("DELTA_TEST_CORE_RPC");
 		if (program.isEmpty()) QSKIP("Set DELTA_TEST_CORE_RPC to test the real Core server.");
 		QTemporaryDir temporary;
 		QVERIFY(temporary.isValid());
 		auto sources = std::vector<Delta::ComposeDraft>();
+		auto owners = std::vector<std::shared_ptr<QTemporaryFile>>();
 		for (auto i = 0; i != 2; ++i) {
-			const auto name = u"source-%1.bin"_s.arg(i);
-			QFile file(temporary.filePath(name));
-			QVERIFY(file.open(QIODevice::WriteOnly));
-			QVERIFY(file.write(QByteArray("durable batch ") + QByteArray::number(i)) > 0);
-			file.close();
-			sources.push_back({ u"caption %1"_s.arg(i), 0, file.fileName(), name, u"File"_s });
+			const auto name = u"source-%1"_s.arg(i)
+				+ ((i == 1 && mode == u"different-extensions"_s) ? u".txt"_s : u".bin"_s);
+			auto file = std::make_shared<QTemporaryFile>(temporary.filePath(name + u"-XXXXXX"_s));
+			QVERIFY(file->open());
+			QVERIFY(file->write(QByteArray("durable batch ")
+				+ QByteArray::number(mode == u"different-bytes"_s ? i : 0)) > 0);
+			QVERIFY(file->flush());
+			sources.push_back({ u"caption %1"_s.arg(i), 0, file->fileName(), name, u"File"_s });
+			owners.push_back(std::move(file));
 		}
 		auto rpc = std::make_shared<DeltaRpc>();
 		const auto accounts = temporary.filePath(u"accounts"_s);
@@ -835,24 +1111,25 @@ private slots:
 		const auto account = CoreCall(*rpc, u"add_account"_s, {})[u"result"_s].toInt();
 		const auto chat = CoreCall(*rpc, u"create_chat_by_contact_id"_s, {account, 1})[u"result"_s].toInt();
 		QVERIFY(account > 0 && chat > 0);
-		Delta::ComposeQueueStore queues(rpc);
-		auto saved = Delta::ComposeQueue();
+		auto queues = std::make_shared<Delta::ComposeQueueStore>(rpc);
+		auto batch = Delta::ComposeBatch::Create(queues, account, chat, 2, {});
+		QVERIFY(batch->prepared(1, sources[1], owners[1]));
+		QVERIFY(batch->prepared(0, sources[0], owners[0]));
+		owners.clear();
+		QTRY_COMPARE(batch->state(), Delta::ComposeBatch::State::Saved);
+		const auto saved = batch->queue();
 		auto completed = false;
-		queues.stage(account, chat, sources, [&](Delta::ComposeQueue queue, QString error) {
-			QVERIFY2(error.isEmpty(), qPrintable(error));
-			saved = std::move(queue);
-			completed = true;
-		});
-		QTRY_VERIFY(completed);
 		QCOMPARE(saved.entries.size(), size_t(2));
-		for (const auto &source : sources) QVERIFY(QFile::remove(source.file));
+		for (const auto &source : sources) QVERIFY(!QFileInfo::exists(source.file));
 		const auto &first = saved.entries.front().draft;
 		QVERIFY(!CoreCall(*rpc, u"misc_set_draft"_s, {account, chat, first.text, first.file,
 			first.filename, QJsonValue(), first.viewType}).contains(u"error"_s));
-		const auto id = CoreCall(*rpc, u"get_draft"_s, {account, chat})[u"result"_s].toObject()[u"id"_s].toInt();
+		const auto draft = CoreCall(*rpc, u"get_draft"_s, {account, chat})[u"result"_s].toObject();
+		QCOMPARE(draft[u"file"_s].toString(), first.file);
+		const auto id = draft[u"id"_s].toInt();
 		QVERIFY(id > 0);
 		completed = false;
-		queues.checkpoint(account, chat, saved.id, saved.entries.front().id, id,
+		queues->checkpoint(account, chat, saved.id, saved.entries.front().id, id,
 			[&](Delta::ComposeQueue, QString error) { QVERIFY(error.isEmpty()); completed = true; });
 		QTRY_VERIFY(completed);
 		rpc->stop();
@@ -870,7 +1147,8 @@ private slots:
 				QCOMPARE(entry.draft.filename, sources[i].filename);
 				QFile file(entry.draft.file);
 				QVERIFY(file.open(QIODevice::ReadOnly));
-				QCOMPARE(file.readAll(), QByteArray("durable batch ") + QByteArray::number(i));
+				QCOMPARE(file.readAll(), QByteArray("durable batch ")
+					+ QByteArray::number(mode == u"different-bytes"_s ? i : 0));
 			}
 			completed = true;
 		});

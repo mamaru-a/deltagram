@@ -29,6 +29,7 @@ public:
 	void load(int account, int chat, Done done);
 	// Keep the source owners until success. On an error, load again before any
 	// retry: the returned queue may already be durable after a lost readback.
+	// An unrelated existing queue is never returned as this stage's candidate.
 	void stage(int account, int chat, std::vector<ComposeDraft> drafts, Done done);
 	// Reconcile orphan pins after an interrupted stage/removal. Call while this
 	// account is idle. Malformed/unreadable queues abort cleanup without deletion.

@@ -32,6 +32,7 @@ int main(int argc, char **argv) {
 	auto backupProviders = QMap<int, QJsonObject>();
 	auto backupReads = QMap<int, QList<QJsonObject>>();
 	auto queueConfig = QMap<QString, QJsonValue>();
+	auto queueCopies = QJsonArray();
 	auto queuePublished = false;
 	const auto mode = qEnvironmentVariable("DC_ACCOUNTS_PATH");
 	auto queueFault = mode;
@@ -102,12 +103,24 @@ int main(int argc, char **argv) {
 				Reply(request, values);
 				continue;
 			}
+			if (method == u"queue_copies"_s) {
+				Reply(request, queueCopies);
+				continue;
+			}
 			if (method == u"get_blob_dir"_s) {
 				Reply(request, u"/fixture/blobs/%1"_s.arg(args[0].toInt()));
 				continue;
 			}
 			if (method == u"copy_to_blob_dir"_s) {
-				Reply(request, u"/fixture/blobs/%1/%2"_s.arg(args[0].toInt()).arg(QFileInfo(args[1].toString()).fileName()));
+				const auto info = QFileInfo(args[1].toString());
+				queueCopies.append(QJsonObject{
+					{u"path"_s, info.absoluteFilePath()},
+					{u"size"_s, info.size()},
+					{u"permissions"_s, int(info.permissions())},
+					{u"directoryPermissions"_s, int(QFileInfo(info.absolutePath()).permissions())},
+				});
+				if (queueFault == u"queue-reject-copy"_s) reject();
+				else Reply(request, u"/fixture/blobs/%1/%2"_s.arg(args[0].toInt()).arg(QFileInfo(args[1].toString()).fileName()));
 				continue;
 			}
 			if (method == u"get_config"_s || method == u"set_config"_s) {

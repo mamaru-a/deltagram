@@ -1,8 +1,12 @@
 #include "compose_queue.h"
 
 #include <QDir>
+#include <QCoreApplication>
+#include <QFile>
 #include <QFileInfo>
 #include <QJsonDocument>
+#include <QTemporaryDir>
+#include <QThreadPool>
 #include <QUuid>
 
 #include <algorithm>
@@ -40,6 +44,24 @@ bool ValidNumber(const QJsonValue &value) {
 	return value.isDouble() && value.toDouble() >= 0
 		&& value.toDouble() <= std::numeric_limits<int>::max()
 		&& value.toDouble() == value.toInt();
+}
+
+void CopyNamedAttachment(const ComposeDraft &source,
+		std::function<void(std::shared_ptr<QTemporaryDir>, QString)> done) {
+	static auto pool = QThreadPool();
+	pool.setMaxThreadCount(1);
+	pool.start([=] {
+		auto directory = std::make_shared<QTemporaryDir>();
+		const auto name = QFileInfo(source.filename.isEmpty() ? source.file : source.filename).fileName();
+		auto path = directory->isValid() && ValidBlob(name) ? directory->filePath(name) : QString();
+		if (path.isEmpty() || !QFile::copy(source.file, path)
+			|| !QFile::setPermissions(path, QFileDevice::ReadOwner | QFileDevice::WriteOwner)) {
+			path.clear();
+		}
+		QMetaObject::invokeMethod(QCoreApplication::instance(), [=] {
+			done(directory, path);
+		});
+	});
 }
 
 QString Error(const QJsonObject &reply) {
@@ -265,7 +287,7 @@ void ComposeQueueStore::stage(int account, int chat, std::vector<ComposeDraft> d
 	state->done = std::move(done);
 	read(key, [=, this](ComposeQueue queue, QString blobdir, QString error) {
 		if (!error.isEmpty() || !queue.id.isEmpty()) {
-			finish(key, std::move(queue), error.isEmpty()
+			finish(key, {}, error.isEmpty()
 				? u"This chat already has a compose queue. Review it before adding another batch."_s
 				: error, std::move(state->done));
 			return;
@@ -290,23 +312,33 @@ void ComposeQueueStore::stageNext(std::shared_ptr<Staging> state) {
 		return;
 	}
 	const auto source = state->sources[state->queue.entries.size()];
-	call(u"copy_to_blob_dir"_s, { key.first, source.file }, [=, this](QJsonObject reply) {
-		const auto error = Error(reply);
-		const auto path = reply[u"result"_s].toString();
-		const auto info = QFileInfo(path);
-		if (!error.isEmpty() || !QDir::isAbsolutePath(path)
-			|| info.absolutePath() != QDir(state->blobdir).absolutePath() || !ValidBlob(info.fileName())) {
-			abandonStage(state, error.isEmpty() ? u"Core did not confirm the copied attachment."_s : error);
+	const auto guard = std::weak_ptr<bool>(_alive);
+	// WHY: Core renames blobs to the supplied filename's extension on draft save.
+	// Copy under that name first so queue pins keep addressing the same bytes.
+	CopyNamedAttachment(source, [=, this](std::shared_ptr<QTemporaryDir> directory, QString path) {
+		if (guard.expired()) return;
+		if (path.isEmpty()) {
+			abandonStage(state, u"Could not prepare private attachment storage. Nothing was queued."_s);
 			return;
 		}
-		const auto id = NewId();
-		state->pins.push_back(id);
-		write(key.first, PinKey(id), u"$BLOBDIR/"_s + info.fileName(), [=, this](QString error, bool) {
-			if (!error.isEmpty()) { abandonStage(state, std::move(error)); return; }
-			auto draft = source;
-			draft.file = path;
-			state->queue.entries.push_back({ id, std::move(draft), 0 });
-			stageNext(state);
+		call(u"copy_to_blob_dir"_s, { key.first, path }, [=, this, copy = std::move(directory)](QJsonObject reply) {
+			const auto error = Error(reply);
+			const auto path = reply[u"result"_s].toString();
+			const auto info = QFileInfo(path);
+			if (!error.isEmpty() || !QDir::isAbsolutePath(path)
+				|| info.absolutePath() != QDir(state->blobdir).absolutePath() || !ValidBlob(info.fileName())) {
+				abandonStage(state, error.isEmpty() ? u"Core did not confirm the copied attachment."_s : error);
+				return;
+			}
+			const auto id = NewId();
+			state->pins.push_back(id);
+			write(key.first, PinKey(id), u"$BLOBDIR/"_s + info.fileName(), [=, this](QString error, bool) {
+				if (!error.isEmpty()) { abandonStage(state, std::move(error)); return; }
+				auto draft = source;
+				draft.file = path;
+				state->queue.entries.push_back({ id, std::move(draft), 0 });
+				stageNext(state);
+			});
 		});
 	});
 }

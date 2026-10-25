@@ -32,6 +32,33 @@ official Delta Chat Desktop 2.62.0. No passwords or account addresses are includ
 in this report. The supported build target is Linux x86-64; GUI checks use
 Ubuntu 24.04 under Xvfb.
 
+### Batch preparation storage checks
+
+The batch coordinator collects prepared files by selection index and retains
+their owners through Core storage. No file is queued before every preparation
+finishes, and the coordinator never sends. Rejected storage can be explicitly
+retried; an uncertain publication is read back and must match the entire saved
+queue before ownership is released. An unrelated existing queue is not adopted
+as the new selection. Preparation failures and explicit discard reject late
+worker completions.
+
+A real-Core regression exposed a filename mismatch: saving a draft can rename
+a blob when its temporary path and intended filename have different extensions,
+leaving the queue and pin pointing at the old path. Queue staging now makes a
+private copy under the intended name before asking Core to import it. Copies
+run on one background worker, retain private file/directory permissions, and
+are removed after Core finishes reading. Core still owns durable bytes.
+
+Focused coverage includes out-of-order preparation, retained owners during a
+held publication, rejected copy/pin/publication, uncertain publication, changed
+queue contents, conflicting selections, invalid preparations, and private-copy
+cleanup. Real-Core restart cases remove both original temporary files and check
+caption/order/bytes with distinct content, duplicate content, and duplicate
+content under different extensions. All 137 focused checks pass with no skips,
+using the pinned Core server; the source audit has zero blocking findings across
+13,217 files. Native compilation and GUI wiring of this coordinator remain
+pending; these checks do not establish new-batch GUI recovery.
+
 ### Recent live regressions and fixes
 
 An additional shutdown regression was reproduced on `8323369`: a text draft

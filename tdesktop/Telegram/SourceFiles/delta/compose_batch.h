@@ -1,0 +1,47 @@
+#pragma once
+
+#include "compose_queue.h"
+
+namespace Delta {
+
+class ComposeBatch final : public std::enable_shared_from_this<ComposeBatch> {
+public:
+	enum class State { Preparing, Saving, Failed, Saved, Discarded };
+	using Changed = std::function<void()>;
+	static std::shared_ptr<ComposeBatch> Create(
+		std::shared_ptr<ComposeQueueStore> queues,
+		int account, int chat, size_t count, Changed changed);
+	bool prepared(size_t index, ComposeDraft draft, std::shared_ptr<void> owner);
+	bool failed(size_t index, QString error);
+	bool retrySave();
+	bool discard();
+	[[nodiscard]] State state() const { return _state; }
+	[[nodiscard]] const QString &error() const { return _error; }
+	[[nodiscard]] const ComposeQueue &queue() const { return _queue; }
+	[[nodiscard]] bool reconciled() const { return _reconciled; }
+
+private:
+	struct Slot {
+		std::optional<ComposeDraft> draft;
+		std::shared_ptr<void> owner;
+		QString error;
+	};
+	ComposeBatch(std::shared_ptr<ComposeQueueStore> queues,
+		int account, int chat, size_t count, Changed changed);
+	bool accepting(size_t index) const;
+	bool ready() const;
+	void save();
+	void update(State state, QString error = {});
+	void releaseOwners();
+	std::shared_ptr<ComposeQueueStore> _queues;
+	const int _account;
+	const int _chat;
+	std::vector<Slot> _slots;
+	Changed _changed;
+	State _state = State::Preparing;
+	QString _error;
+	ComposeQueue _queue;
+	bool _reconciled = false;
+};
+
+} // namespace Delta
