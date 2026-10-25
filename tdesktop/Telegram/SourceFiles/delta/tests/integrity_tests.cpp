@@ -562,7 +562,10 @@ private slots:
 
 	void queueSenderRecovery_data() {
 		QTest::addColumn<QString>("phase");
-		for (const auto phase : { "fresh", "draft", "outgoing", "uncheckpointed", "changed", "missing", "new-text", "new-quote" }) {
+		for (const auto phase : { "fresh", "draft", "outgoing", "outgoing-normalized",
+			"outgoing-normalized-failed", "outgoing-normalized-delivered", "outgoing-normalized-read",
+			"outgoing-text", "outgoing-quote", "outgoing-file", "outgoing-chat", "outgoing-id",
+			"outgoing-state", "uncheckpointed", "changed", "missing", "new-text", "new-quote" }) {
 			QTest::newRow(phase) << QString::fromLatin1(phase);
 		}
 	}
@@ -606,7 +609,22 @@ private slots:
 				});
 				QTRY_VERIFY(loaded);
 			}
-			if (phase == u"outgoing"_s) CoreCall(*rpc, u"misc_send_draft"_s, {2, 10});
+			if (phase.startsWith(u"outgoing"_s)) {
+				CoreCall(*rpc, u"handoff_fault"_s, {u"handoff-recode-send"_s});
+				CoreCall(*rpc, u"misc_send_draft"_s, {2, 10});
+				auto changes = QJsonObject();
+				if (phase == u"outgoing"_s) changes[u"file"_s] = draft.file;
+				if (phase == u"outgoing-text"_s) changes[u"text"_s] = u"Changed caption"_s;
+				if (phase == u"outgoing-quote"_s) changes[u"quote"_s] = QJsonObject{{u"messageId"_s, 42}};
+				if (phase == u"outgoing-file"_s) changes[u"file"_s] = QJsonValue();
+				if (phase == u"outgoing-chat"_s) changes[u"chatId"_s] = 11;
+				if (phase == u"outgoing-id"_s) changes[u"id"_s] = knownId + 1;
+				if (phase == u"outgoing-state"_s) changes[u"state"_s] = 16;
+				if (phase == u"outgoing-normalized-failed"_s) changes[u"state"_s] = 24;
+				if (phase == u"outgoing-normalized-delivered"_s) changes[u"state"_s] = 26;
+				if (phase == u"outgoing-normalized-read"_s) changes[u"state"_s] = 28;
+				CoreCall(*rpc, u"amend_sent_message"_s, {knownId, changes});
+			}
 			if (phase == u"missing"_s) CoreCall(*rpc, u"handoff_fault"_s, {u"handoff-missing-message"_s});
 			if (phase == u"changed"_s) {
 				CoreCall(*rpc, u"misc_set_draft"_s, {2, 10, u"Other draft"_s, u"/core/other.bin"_s, u"other.bin"_s, 0, u"File"_s});
@@ -615,7 +633,8 @@ private slots:
 		const auto before = CoreCall(*rpc, u"inspect_draft"_s, {2, 10})[u"result"_s].toObject();
 		Delta::ComposeQueueSender sender(rpc, queues, drafts);
 		const auto success = phase != u"changed"_s && phase != u"missing"_s
-			&& phase != u"new-text"_s && phase != u"new-quote"_s;
+			&& phase != u"new-text"_s && phase != u"new-quote"_s
+			&& (!phase.startsWith(u"outgoing-"_s) || phase.startsWith(u"outgoing-normalized"_s));
 		auto completed = false;
 		auto after = Delta::ComposeQueue();
 		sender.sendNext(2, 10, saved.id, saved.entries.front().id, [&](int id, Delta::ComposeQueue queue, QString error) {
@@ -633,7 +652,8 @@ private slots:
 		QTRY_VERIFY(completed);
 		QVERIFY(!sender.busy(2, 10));
 		QCOMPARE(after.entries.size(), success ? size_t(1) : size_t(2));
-		QCOMPARE(CoreCall(*rpc, u"sends"_s, {})[u"result"_s].toInt(), success ? 1 : 0);
+		QCOMPARE(CoreCall(*rpc, u"sends"_s, {})[u"result"_s].toInt(),
+			(success || phase.startsWith(u"outgoing"_s)) ? 1 : 0);
 		if (success) QCOMPARE(after.entries.front().draft.text, u"Second caption"_s);
 		else QCOMPARE(CoreCall(*rpc, u"inspect_draft"_s, {2, 10})[u"result"_s].toObject(), before);
 		if (success) {
@@ -652,7 +672,7 @@ private slots:
 	void queueSenderFailures_data() {
 		QTest::addColumn<QString>("fault");
 		for (const auto fault : {
-			"handoff-reject-save", "handoff-reject-send", "handoff-reject-removal",
+			"handoff-reject-save", "handoff-reject-send", "handoff-reject-removal", "handoff-recode-reject-removal",
 			"handoff-uncertain-removal", "queue-reject-publish", "queue-unknown-publish",
 		}) QTest::newRow(fault) << QString::fromLatin1(fault);
 	}

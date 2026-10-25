@@ -80,6 +80,30 @@ active compose operations. Native compilation and disposable GUI replay of
 these new UI paths remain pending; backend tests alone do not establish
 new-batch recovery or visual correctness.
 
+### Queue recovery after Core image recoding
+
+Core can recode an image during send, changing its blob after the queue's draft
+checkpoint. Recovery previously compared that old blob path before recognizing
+the same outgoing message, leaving an already-sent entry stuck when queue removal
+had failed. Recovery now requires the checkpointed ID, chat, caption, quote, an
+outgoing state and a nonempty attachment; Core's final blob/name/type may differ.
+Unsent drafts still require their exact attachment identity.
+
+The new regression fails before the fix. All 152 focused checks pass afterward,
+including pending/failed/delivered/read outgoing states, rejected queue removal,
+and changed ID/chat/caption/quote, missing file and invalid-state rejection. The
+recovery cases assert no additional send. The source audit has zero blocking
+findings across 13,217 files.
+
+A separate real-Core probe used **Deltagram integrity recovery** and pinned Core
+2.63.0-dev, sending one generated image with EXIF to that disposable account's
+Saved Messages. Draft 12 (state 19) became message 12 (state 26), with changed
+blob and bytes, unchanged chat/caption, and no remaining draft. The selected
+profile stayed unchanged. This proves Core's transformation; it does not yet
+prove native GUI queue recovery. The serial native build of the preceding batch
+GUI revision remains in progress, and this follow-up still needs native/live
+validation.
+
 ### Recent live regressions and fixes
 
 An additional shutdown regression was reproduced on `8323369`: a text draft

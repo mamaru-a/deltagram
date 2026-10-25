@@ -225,7 +225,12 @@ validation on `8268add`, including restart after original-file removal and
 private-copy cleanup. Follow-up source wires new batch selections, preparation
 failure review, explicit retry/discard, and saved-queue discovery on chat open.
 It waits for prior composer writes, checks for existing attachment drafts, and
-retains pending selection metadata. All 141 focused checks pass; the new GUI
+retains pending selection metadata. A follow-up fixes recovery when Core recodes
+an image after its draft checkpoint: the same confirmed outgoing message can
+advance the queue despite its changed blob, while unsent draft identity stays
+strict. A disposable Saved Messages probe confirms Core's recoding, and the
+152 focused checks include no-resend recovery and mismatched-message rejection.
+The new GUI
 paths still require native compilation and disposable live replay. Broader
 interruption/profile cases need live coverage. The review
 dialog's clipped Cancel button and one-item count wording pass native visual

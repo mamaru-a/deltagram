@@ -5,10 +5,13 @@ using namespace Qt::StringLiterals;
 namespace Delta {
 namespace {
 
-bool SameDraft(const QJsonObject &message, const ComposeDraft &draft) {
-	return message[u"file"_s].toString() == draft.file
-		&& message[u"text"_s].toString() == draft.text
+bool SameContent(const QJsonObject &message, const ComposeDraft &draft) {
+	return message[u"text"_s].toString() == draft.text
 		&& message[u"quote"_s].toObject()[u"messageId"_s].toInt() == draft.quotedMessageId;
+}
+
+bool SameDraft(const QJsonObject &message, const ComposeDraft &draft) {
+	return message[u"file"_s].toString() == draft.file && SameContent(message, draft);
 }
 
 QString ReadError() {
@@ -132,15 +135,17 @@ void ComposeQueueSender::inspect(std::shared_ptr<Sending> state) {
 			const auto status = message[u"state"_s].toInt();
 			if (id <= 0 || (known && id != entry.messageId)
 				|| message[u"chatId"_s].toInt() != state->chat
-				|| !SameDraft(message, entry.draft)) {
+				|| !SameContent(message, entry.draft)) {
 				finish(state, 0, ReadError());
 				return;
 			}
 			if (known && (status == 20 || status == 24 || status == 26 || status == 28)) {
-				advance(state, id);
+				// Core may recode an image after the draft checkpoint, changing its blob.
+				if (message[u"file"_s].toString().isEmpty()) finish(state, 0, ReadError());
+				else advance(state, id);
 				return;
 			}
-			if (status != 19 || (known
+			if (status != 19 || !SameDraft(message, entry.draft) || (known
 				&& (message[u"fileName"_s].toString() != entry.draft.filename
 					|| message[u"viewType"_s].toString() != entry.draft.viewType))) {
 				finish(state, 0, ReadError());

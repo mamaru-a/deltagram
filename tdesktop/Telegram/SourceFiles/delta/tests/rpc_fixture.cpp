@@ -216,6 +216,13 @@ int main(int argc, char **argv) {
 		}
 		if (method == u"writes"_s) { Reply(request, writes); continue; }
 		if (method == u"sends"_s) { Reply(request, sends); continue; }
+		if (method == u"amend_sent_message"_s) {
+			auto &message = sentMessages[args[0].toInt()];
+			const auto changes = args[1].toObject();
+			for (auto i = changes.begin(); i != changes.end(); ++i) message[i.key()] = i.value();
+			Reply(request, true);
+			continue;
+		}
 		if (method == u"removals"_s) { Reply(request, removals); continue; }
 		if ((mode.startsWith(u"handoff-"_s) || mode.startsWith(u"queue-"_s)) && method == u"get_message"_s) {
 			auto message = sentMessages.value(args[1].toInt());
@@ -228,7 +235,8 @@ int main(int argc, char **argv) {
 		}
 		if (method == u"misc_send_draft"_s) {
 			++sends;
-			if (handoffFault == u"handoff-reject-removal"_s) queueFault = u"queue-reject-publish"_s;
+			if (handoffFault == u"handoff-reject-removal"_s
+				|| handoffFault == u"handoff-recode-reject-removal"_s) queueFault = u"queue-reject-publish"_s;
 			if (handoffFault == u"handoff-uncertain-removal"_s) {
 				queueFault = u"queue-unknown-publish"_s;
 				queuePublished = false;
@@ -238,6 +246,11 @@ int main(int argc, char **argv) {
 			if (handoffFault != u"handoff-reject-send"_s) {
 				auto message = drafts[key];
 				message[u"state"_s] = 20;
+				if (handoffFault.startsWith(u"handoff-recode-"_s)) {
+					message[u"file"_s] = u"/core/recoded.jpg"_s;
+					message[u"fileName"_s] = u"image.jpg"_s;
+					message[u"viewType"_s] = u"Image"_s;
+				}
 				sentMessages[id] = message;
 				drafts[key] = {};
 			}
