@@ -46,6 +46,9 @@ BuildHelper::BuildHelper(
 		not_null<Window::SessionController*> controller,
 		Fn<void(Type)> showOther,
 		rpl::producer<> showFinished) {
+	if (_meta.available && !_meta.available()) {
+		return;
+	}
 	auto &lifetime = container->lifetime();
 	const auto highlights = lifetime.make_state<HighlightRegistry>();
 	const auto isPaused = Window::PausedIn(
@@ -99,6 +102,9 @@ std::vector<SearchEntry> SearchRegistry::collectAll(
 		not_null<Main::Session*> session) const {
 	auto result = std::vector<SearchEntry>();
 	for (const auto &[sectionId, meta] : _sections) {
+		if (meta->available && !meta->available()) {
+			continue;
+		}
 		if (meta->parentId) {
 			result.push_back({
 				.title = (*meta->title)(tr::now),
@@ -137,6 +143,9 @@ QString SearchRegistry::sectionPath(Type sectionId, bool parentsOnly) const {
 
 std::vector<SearchEntry> BuildHelper::index(
 		not_null<Main::Session*> session) const {
+	if (_meta.available && !_meta.available()) {
+		return {};
+	}
 	auto entries = std::vector<SearchEntry>();
 	auto builder = SectionBuilder(SearchContext{
 		.sectionId = _meta.id,

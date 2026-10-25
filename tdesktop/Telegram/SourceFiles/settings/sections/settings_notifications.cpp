@@ -20,6 +20,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_session.h"
 #include "data/notify/data_notify_settings.h"
 #include "data/notify/data_peer_notify_volume.h"
+#include "delta/delta_bridge.h"
 #include "lang/lang_keys.h"
 #include "main/main_account.h"
 #include "main/main_domain.h"
@@ -1563,12 +1564,16 @@ void BuildSystemIntegrationAndAdvancedSection(SectionBuilder &builder) {
 void BuildNotificationsSectionContent(SectionBuilder &builder) {
 	builder.addSkip(st::settingsPrivacySkip);
 
-	BuildMultiAccountSection(builder);
+	if (!Delta::Active()) {
+		BuildMultiAccountSection(builder);
+	}
 	BuildGlobalNotificationsSection(builder);
 	BuildNotifyViewSection(builder);
-	BuildNotifyTypeSection(builder);
-	BuildEventNotificationsSection(builder);
-	BuildBadgeCounterSection(builder);
+	if (!Delta::Active()) {
+		BuildNotifyTypeSection(builder);
+		BuildEventNotificationsSection(builder);
+		BuildBadgeCounterSection(builder);
+	}
 	BuildSystemIntegrationAndAdvancedSection(builder);
 }
 

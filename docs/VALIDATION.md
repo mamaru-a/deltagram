@@ -80,6 +80,8 @@ verification. It includes removal of unsupported call settings. Its checksum-ver
 loaded an unattempted reply whose initial storage acknowledgement had been
 lost, displayed the complete status on its own row, and sent it once on
 explicit review while preserving both drafts.
+Official Desktop 2.62.0 rendered one copy of that reply, and the subsequent
+Core read confirmed its read state with no remaining recovery entry.
 
 Removing the artificial list delay exposed another notification defect on
 `a6d878d`: a normal incoming notification was closed after about 15 ms while
@@ -101,6 +103,20 @@ authorization reload on opening Devices are removed. Ordinary microphone,
 speaker, camera and system-audio settings remain. Native and package validation
 passed on `a6d878d`. The rendered Devices panel retains ordinary output/input
 and system sound preferences, without call acceptance or separate call devices.
+The Notifications panel also omits call acceptance.
+
+### Unsupported notification preferences — 2026-10-26
+
+The native settings panel offered Telegram default notification types,
+reaction preferences, contact-signup and pinned-message events. Those paths
+still use donor APIs; they do not control Core notification delivery. The
+badge toggles also misrepresented the app badge, which counts Core's fresh
+messages from unmuted chats across profiles regardless of those donor values.
+Core accounts now omit these sections and the donor multi-account toggle.
+Global desktop/sound/attention controls, preview privacy and native integration
+remain available. The type and reaction subsections are unavailable in settings
+search and cannot initialize their donor controls through direct navigation.
+Native compilation and rendered/search verification of this cleanup are pending.
 
 ### Inactive-profile delivery and unread tracking
 
