@@ -32,6 +32,29 @@ official Delta Chat Desktop 2.62.0. No passwords or account addresses are includ
 in this report. The supported build target is Linux x86-64; GUI checks use
 Ubuntu 24.04 under Xvfb.
 
+### Inactive-profile delivery and unread tracking
+
+Cold-start replay on `5182d5e` selected **Deltagram integrity alternate** while
+official Desktop 2.62.0 sent one message to **Deltagram integrity onboarding**.
+The inactive profile stayed disconnected and had no local copy. Starting that
+profile's IO through the private test control immediately received the waiting
+message without changing the selected profile. Its fresh-message list contained
+the new message, but the native profile menu displayed no unread indicator.
+
+The follow-up starts Core IO for all profiles and tracks each configured
+profile's fresh messages before the selected-account event filter. Counts use
+Core's notification list, which excludes muted chats and contact requests.
+Profile rows, the optional profile sidebar, the collapsed profile selector and
+the app badge use account-scoped counts. Reads coalesce per profile; events
+during a read invalidate its snapshot, removed/reused accounts reject old
+callbacks, and failed/malformed reads preserve existing counts. No tracking
+request selects a profile or marks a message read.
+
+All 195 focused checks pass with no skips, including 11 new activity cases.
+The source audit has zero blocking findings across 13,219 files. These are
+backend checks and source integration evidence: native compilation, fixed GUI
+replay, muted-chat behavior and desktop notification popups remain pending.
+
 ### Batch preparation storage checks
 
 The follow-up generic queue backend supports a text prefix, prepared files and

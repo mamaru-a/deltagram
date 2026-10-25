@@ -68,7 +68,7 @@ They are **unverified**, rather than assumed to work because the donor UI has th
 | Chat management | ❓ Unverified | Clear history rejection/success and date-range deletion have targeted GUI checks; bulk read state and last-read positioning still need coverage. |
 | Member profiles | ❓ Unverified | Opening a profile from a group member list. |
 | Attachments | 🟡 Partial | Ordinary single-file recovery, prepared/resized/rotated image delivery, uncompressed bytes, private staging cleanup and generated archives have revision-specific checks below. Prepared-image restart/retry passes with an older quote after the Core lookup fix. Multiple-file/video paths and broader prepared-media recovery remain open. |
-| Notifications | ❓ Unverified | Background delivery and unread indicators for inactive profiles. |
+| Notifications | 🟡 Partial | Cold-start replay exposed inactive profiles with no running mail IO and no unread indicator. New source starts all profiles and tracks Core notification-eligible unread counts for profile/app badges; 195 focused checks pass. Native/fixed GUI validation, muted-chat behavior and desktop notification popups remain pending. |
 | Accessibility and localization | ❓ Unverified | Screen readers, keyboard navigation and RTL layouts. |
 | Appearance | 🟡 Partial | General wallpaper: local gallery and custom images in Settings → Chat Settings. Custom-image persistence checked across chats, profiles and restart; per-chat wallpaper is unavailable and removed from the chat menu. Full day/night combinations remain unverified. |
 | External integration | ❓ Unverified | Camera capture and sharing into/out of the application. |

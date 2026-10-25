@@ -1198,15 +1198,15 @@ bool Application::preventsQuit(QuitReason reason) {
 }
 
 int Application::unreadBadge() const {
-	return _domain->unreadBadge();
+	return Delta::Active() ? Delta::TotalProfileUnreadCount() : _domain->unreadBadge();
 }
 
 bool Application::unreadBadgeMuted() const {
-	return _domain->unreadBadgeMuted();
+	return !Delta::Active() && _domain->unreadBadgeMuted();
 }
 
 rpl::producer<> Application::unreadBadgeChanges() const {
-	return _domain->unreadBadgeChanges();
+	return rpl::merge(_domain->unreadBadgeChanges(), Delta::ProfileActivityChanges());
 }
 
 bool Application::offerLegacyLangPackSwitch() const {

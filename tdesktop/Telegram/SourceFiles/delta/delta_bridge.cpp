@@ -3,6 +3,7 @@ This file is part of Delta Tel, a Telegram Desktop based Delta Chat client.
 */
 #include "delta/delta_bridge.h"
 #include "delta/compose_queue_sender.h"
+#include "delta/profile_activity.h"
 
 #include "apiwrap.h"
 #include "delta/account_scope.h"
@@ -121,6 +122,7 @@ QHash<uint64, ContactRow> SenderContacts;
 rpl::variable<int> ChannelRevision = 0;
 rpl::variable<int> AccountViewRevision = 0;
 rpl::variable<int> ComposerRevision = 0;
+rpl::variable<int> ProfileActivityRevision = 0;
 
 void RememberSubtitle(int userId, qint64 lastSeen, const QString &line) {
 	auto &slot = PeerSubtitles[userId];
@@ -773,6 +775,11 @@ public:
 		});
 		_queues = std::make_shared<ComposeQueueStore>(_rpc);
 		_queueSender = std::make_unique<ComposeQueueSender>(_rpc, _queues, _drafts);
+		_profileActivity = std::make_unique<ProfileActivity>(
+			[rpc = _rpc](QString method, QJsonArray params, DeltaRpc::Callback done) {
+				rpc->call(method, params, std::move(done));
+			}, [] { ProfileActivityRevision = ProfileActivityRevision.current() + 1; },
+			[=](QString error) { reportError(error); });
 		_reload.setSingleShot(true);
 		_reload.setInterval(150);
 		QObject::connect(&_reload, &QTimer::timeout, [=] {
@@ -785,6 +792,7 @@ public:
 		if (GlobalBridge == this) {
 			PendingUploads.clear();
 			GlobalBridge = nullptr;
+			ProfileActivityRevision = ProfileActivityRevision.current() + 1;
 			GlobalSelfAvatarColor = QColor();
 			CoreMessages.clear();
 			CoreReadReceipts.clear();
@@ -1170,6 +1178,7 @@ public:
 
 	void start() {
 		const auto guard = _alive;
+		_profileActivity->start();
 		_rpc->setEventHandler([=](QJsonObject event) {
 			if (!guard.expired() && HasError(event)) {
 				_connectivity = 1000;
@@ -1985,6 +1994,7 @@ public:
 			}
 			resetAccountView();
 			_accountId = accountId;
+			ProfileActivityRevision = ProfileActivityRevision.current() + 1;
 			GlobalSelfAddress.clear();
 			_connectivity = 0;
 			refreshConnectivity();
@@ -3040,6 +3050,7 @@ private:
 	}
 
 	void handleEvent(const QJsonObject &envelope) {
+		_profileActivity->handleEvent(envelope);
 		const auto event = envelope.value(u"event"_q).toObject();
 		const auto kind = event.value(u"kind"_q).toString();
 		const auto context = envelope.value(u"contextId"_q);
@@ -3462,6 +3473,7 @@ public:
 	std::map<std::pair<int, int>, PendingComposeBatch> _batches;
 	std::map<std::pair<int, int>, std::weak_ptr<PreparedSend>> _preparations;
 	std::unique_ptr<BackupTransfers> _backups;
+	std::unique_ptr<ProfileActivity> _profileActivity;
 	int _accountId = 0;
 	QString _selfName;
 	QString _selfAvatar;
@@ -4403,6 +4415,25 @@ void ListProfiles(Fn<void(QJsonArray)> done) {
 		return;
 	}
 	GlobalBridge->listProfiles(std::move(done));
+}
+
+rpl::producer<int> ProfileUnreadCountValue(int accountId) {
+	return ProfileActivityRevision.value() | rpl::map([=] {
+		return GlobalBridge ? GlobalBridge->_profileActivity->unread(accountId) : 0;
+	}) | rpl::distinct_until_changed();
+}
+
+int TotalProfileUnreadCount() {
+	return GlobalBridge ? GlobalBridge->_profileActivity->totalUnread() : 0;
+}
+
+int InactiveProfileUnreadCount() {
+	return GlobalBridge ? GlobalBridge->_profileActivity->totalUnread()
+		- GlobalBridge->_profileActivity->unread(GlobalBridge->_accountId) : 0;
+}
+
+rpl::producer<> ProfileActivityChanges() {
+	return ProfileActivityRevision.changes() | rpl::to_empty;
 }
 
 void SwitchProfile(int accountId, Fn<void(QString)> done) {

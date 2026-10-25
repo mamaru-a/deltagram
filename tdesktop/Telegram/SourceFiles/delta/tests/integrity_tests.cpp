@@ -13,6 +13,7 @@
 #include "history_mutations.h"
 #include "media_identity.h"
 #include "prepared_attachment.h"
+#include "profile_activity.h"
 
 #include <QtTest/QtTest>
 
@@ -61,12 +62,174 @@ QJsonObject ForwardFixtureSource(int id = 41, int chat = 11) {
 	};
 }
 
+struct ActivityFixture {
+	struct Pending {
+		QString method;
+		QJsonArray params;
+		DeltaRpc::Callback done;
+	};
+	std::vector<Pending> pending;
+	QStringList methods;
+	int changes = 0;
+	QStringList errors;
+	std::unique_ptr<Delta::ProfileActivity> activity;
+
+	ActivityFixture() {
+		activity = std::make_unique<Delta::ProfileActivity>(
+			[=, this](QString method, QJsonArray params, DeltaRpc::Callback done) {
+				methods.push_back(method);
+				pending.push_back({std::move(method), std::move(params), std::move(done)});
+			}, [=, this] { ++changes; }, [=, this](QString error) { errors.push_back(error); });
+	}
+	bool reply(QString method, QJsonValue value, int account = 0, bool error = false) {
+		const auto i = std::find_if(pending.begin(), pending.end(), [&](const Pending &request) {
+			return request.method == method && (!account || request.params[0].toInt() == account);
+		});
+		if (i == pending.end()) return false;
+		auto done = std::move(i->done);
+		pending.erase(i);
+		done({{error ? u"error"_s : u"result"_s, value}});
+		return true;
+	}
+	bool inventory(QJsonArray ids) {
+		if (!reply(u"get_all_account_ids"_s, ids)) return false;
+		for (const auto &id : ids) {
+			if (!reply(u"is_configured"_s, true, id.toInt())) return false;
+		}
+		return true;
+	}
+	void event(int account, QString kind) {
+		activity->handleEvent({{u"contextId"_s, account}, {u"event"_s, QJsonObject{{u"kind"_s, kind}}}});
+	}
+};
+
 } // namespace
 
 class IntegrityTests final : public QObject {
 	Q_OBJECT
 
 private slots:
+	void profileActivityBackgroundStartup() {
+		auto fixture = ActivityFixture();
+		fixture.activity->start();
+		QVERIFY(fixture.reply(u"start_io_for_all_accounts"_s, QJsonValue(QJsonValue::Null)));
+		QVERIFY(fixture.reply(u"get_all_account_ids"_s, QJsonArray{1, 2, 3}));
+		QVERIFY(fixture.reply(u"is_configured"_s, false, 3));
+		QVERIFY(fixture.reply(u"is_configured"_s, true, 2));
+		QVERIFY(fixture.reply(u"is_configured"_s, true, 1));
+		QVERIFY(fixture.reply(u"get_fresh_msgs"_s, QJsonArray{41, 42}, 1));
+		QVERIFY(fixture.reply(u"get_fresh_msgs"_s, QJsonArray{41}, 2));
+		QCOMPARE(fixture.activity->unread(1), 2);
+		QCOMPARE(fixture.activity->unread(2), 1);
+		QCOMPARE(fixture.activity->unread(3), 0);
+		QCOMPARE(fixture.activity->totalUnread(), 3);
+		QVERIFY(fixture.pending.empty());
+		fixture.event(2, u"IncomingMsg"_s);
+		QVERIFY(fixture.reply(u"get_fresh_msgs"_s, QJsonArray{41, 44}, 2));
+		QCOMPARE(fixture.activity->totalUnread(), 4);
+		QCOMPARE(fixture.activity->unread(1), 2);
+		QVERIFY(!fixture.methods.contains(u"select_account"_s));
+		QVERIFY(!fixture.methods.contains(u"markseen_msgs"_s));
+		QVERIFY(fixture.errors.empty());
+	}
+
+	void profileActivityStaleRead() {
+		auto fixture = ActivityFixture();
+		fixture.activity->refreshProfiles();
+		QVERIFY(fixture.inventory({1, 2}));
+		QVERIFY(fixture.reply(u"get_fresh_msgs"_s, QJsonArray{41}, 1));
+		QVERIFY(fixture.reply(u"get_fresh_msgs"_s, QJsonArray{41, 42}, 2));
+		fixture.event(2, u"IncomingMsg"_s);
+		fixture.event(2, u"MsgsNoticed"_s);
+		const auto changes = fixture.changes;
+		QVERIFY(fixture.reply(u"get_fresh_msgs"_s, QJsonArray{41, 42, 43}, 2));
+		QCOMPARE(fixture.changes, changes);
+		QCOMPARE(fixture.activity->unread(2), 2);
+		QVERIFY(fixture.reply(u"get_fresh_msgs"_s, QJsonArray{}, 2));
+		QCOMPARE(fixture.activity->totalUnread(), 1);
+		QVERIFY(fixture.pending.empty());
+	}
+
+	void profileActivityRemovedAndReusedAccount() {
+		auto fixture = ActivityFixture();
+		fixture.activity->refreshProfiles();
+		QVERIFY(fixture.inventory({1, 2}));
+		QVERIFY(fixture.reply(u"get_fresh_msgs"_s, QJsonArray{41}, 1));
+		QVERIFY(fixture.reply(u"get_fresh_msgs"_s, QJsonArray{}, 2));
+		fixture.event(1, u"IncomingMsg"_s);
+		fixture.activity->refreshProfiles();
+		QVERIFY(fixture.inventory({2}));
+		QCOMPARE(fixture.activity->totalUnread(), 0);
+		QVERIFY(fixture.reply(u"get_fresh_msgs"_s, QJsonArray{}, 2));
+		fixture.activity->refreshProfiles();
+		QVERIFY(fixture.inventory({1, 2}));
+		QVERIFY(fixture.reply(u"get_fresh_msgs"_s, QJsonArray{41, 42, 43}, 1));
+		QCOMPARE(fixture.activity->unread(1), 0);
+		QVERIFY(fixture.reply(u"get_fresh_msgs"_s, QJsonArray{90}, 1));
+		QCOMPARE(fixture.activity->unread(1), 1);
+	}
+
+	void profileActivityReadFailure_data() {
+		QTest::addColumn<QJsonValue>("value");
+		QTest::addColumn<bool>("error");
+		QTest::newRow("error") << QJsonValue(u"rejected"_s) << true;
+		QTest::newRow("null") << QJsonValue(QJsonValue::Null) << false;
+		QTest::newRow("duplicate") << QJsonValue(QJsonArray{41, 41}) << false;
+		QTest::newRow("string") << QJsonValue(QJsonArray{u"41"_s}) << false;
+		QTest::newRow("fraction") << QJsonValue(QJsonArray{1.5}) << false;
+		QTest::newRow("negative") << QJsonValue(QJsonArray{-1}) << false;
+	}
+
+	void profileActivityReadFailure() {
+		QFETCH(QJsonValue, value);
+		QFETCH(bool, error);
+		auto fixture = ActivityFixture();
+		fixture.activity->refreshProfiles();
+		QVERIFY(fixture.inventory({1}));
+		QVERIFY(fixture.reply(u"get_fresh_msgs"_s, QJsonArray{41, 42}, 1));
+		fixture.event(1, u"MsgsNoticed"_s);
+		QVERIFY(fixture.reply(u"get_fresh_msgs"_s, value, 1, error));
+		QCOMPARE(fixture.activity->unread(1), 2);
+		QCOMPARE(fixture.errors.size(), 1);
+		fixture.event(1, u"ChatModified"_s);
+		QVERIFY(fixture.reply(u"get_fresh_msgs"_s, QJsonArray{}, 1));
+		QCOMPARE(fixture.activity->unread(1), 0);
+	}
+
+	void profileActivityInventoryAndLifetime() {
+		auto fixture = ActivityFixture();
+		fixture.activity->refreshProfiles();
+		QVERIFY(fixture.inventory({1}));
+		QVERIFY(fixture.reply(u"get_fresh_msgs"_s, QJsonArray{41}, 1));
+		fixture.activity->refreshProfiles();
+		fixture.activity->refreshProfiles();
+		QVERIFY(fixture.inventory({2}));
+		QCOMPARE(fixture.activity->unread(1), 1);
+		QVERIFY(fixture.reply(u"get_all_account_ids"_s, QJsonArray{1, 1}));
+		QCOMPARE(fixture.activity->unread(1), 1);
+		QCOMPARE(fixture.errors.size(), 1);
+		fixture.event(1, u"IncomingMsg"_s);
+		fixture.activity.reset();
+		const auto changes = fixture.changes;
+		QVERIFY(fixture.reply(u"get_fresh_msgs"_s, QJsonArray{41, 42}, 1));
+		QCOMPARE(fixture.changes, changes);
+	}
+
+	void profileActivityStartFailureAndAccountsEvent() {
+		auto fixture = ActivityFixture();
+		fixture.activity->start();
+		QVERIFY(fixture.reply(u"start_io_for_all_accounts"_s, false));
+		QCOMPARE(fixture.errors.size(), 1);
+		QVERIFY(fixture.inventory({}));
+		fixture.event(0, u"AccountsChanged"_s);
+		QVERIFY(fixture.reply(u"start_io_for_all_accounts"_s, QJsonValue(QJsonValue::Null)));
+		QVERIFY(fixture.inventory({2}));
+		QVERIFY(fixture.reply(u"get_fresh_msgs"_s, QJsonArray{41}, 2));
+		QCOMPARE(fixture.activity->totalUnread(), 1);
+		fixture.activity->handleEvent({{u"event"_s, QJsonObject{{u"kind"_s, u"IncomingMsg"_s}}}});
+		QVERIFY(fixture.pending.empty());
+	}
+
 	void combinedBatchPublication_data() {
 		QTest::addColumn<QString>("phase");
 		for (const auto phase : { "fresh", "rejected", "uncertain", "changed-source", "changed-state", "invalid-source" }) {

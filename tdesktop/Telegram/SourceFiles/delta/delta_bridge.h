@@ -186,6 +186,10 @@ void SendChannelInvite(int channelUserId, int recipientUserId, Fn<void(QString e
 void LoadChannelInvite(int userId, Fn<void(QString text, QString svg, QString error)> done);
 
 void ListProfiles(Fn<void(QJsonArray accounts)> done);
+[[nodiscard]] rpl::producer<int> ProfileUnreadCountValue(int accountId);
+[[nodiscard]] int TotalProfileUnreadCount();
+[[nodiscard]] int InactiveProfileUnreadCount();
+[[nodiscard]] rpl::producer<> ProfileActivityChanges();
 void RemoveProfile(int accountId, Fn<void(QString error)> done);
 void MoveProfileToTop(int accountId, Fn<void(QString error)> done);
 void SwitchProfile(int accountId, Fn<void(QString error)> done);

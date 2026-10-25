@@ -1435,6 +1435,8 @@ PRIVATE
     delta/compose_batch.cpp
     delta/compose_batch.h
     delta/compose_queue.cpp
+    delta/profile_activity.cpp
+    delta/profile_activity.h
     delta/compose_queue.h
     delta/compose_queue_sender.cpp
     delta/compose_queue_sender.h
