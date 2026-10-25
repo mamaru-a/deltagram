@@ -326,8 +326,22 @@ first completes. Only failed readiness reads are retried; provider starts and
 stops are never automatically retried. Six new focused cases cover early/ready
 cancellation, owner destruction, account isolation, late replies, readiness
 read timeout and Core failure. The full focused suite passes 49 checks including
-setup/cleanup, zero failures/skips. Native compilation and GUI replay of this
-follow-up are pending.
+setup/cleanup, zero failures/skips.
+
+The compiled `27656b4` helper also passed four direct checks against the running
+disposable Core: early cancellation with a five-second provider dispatch delay,
+cancellation after QR readiness, destruction of the owner during preparation,
+and recovery from an injected readiness-read error. Each started exactly one
+provider and stopped it once on the original account. Delayed cases stopped
+after readiness (about six seconds after starting), with no QR UI callback.
+Core returned to connectivity `4000` and the alternate draft stayed unchanged.
+This used a private RPC shim to the existing Core owner, not a second process
+opening the same account database. Evidence: `backup-backend-evidence.json`.
+These are backend runtime checks, not the final GUI replay.
+
+Native/portable/package validation for `27656b4` is running remotely:
+[run 40178483592](https://github.com/mamaru-a/deltagram/actions/runs/40178483592).
+Full GUI validation of this follow-up remains pending.
 
 The focused suite covers partial multi-stage deletion failure, but the tested
 group delete dialog does not expose that combined path. Broader operational and
