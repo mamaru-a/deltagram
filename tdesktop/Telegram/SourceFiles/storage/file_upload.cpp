@@ -754,6 +754,9 @@ void Uploader::failed(FullMsgId itemId) {
 void Uploader::notifyFailed(const Entry &entry) {
 	const auto type = entry.file->type;
 	if (type == SendMediaType::Photo) {
+		if (Delta::Active()) {
+			session().data().photo(entry.file->id)->uploadingData = nullptr;
+		}
 		_photoFailed.fire_copy(entry.itemId);
 	} else if (type == SendMediaType::File
 		|| type == SendMediaType::ThemeFile
@@ -764,6 +767,7 @@ void Uploader::notifyFailed(const Entry &entry) {
 			document->uploadingData->preparing = false;
 			document->status = FileUploadFailed;
 		}
+		if (Delta::Active()) document->uploadingData = nullptr;
 		_documentFailed.fire_copy(entry.itemId);
 	} else if (type == SendMediaType::SecondaryFile) {
 		_secondaryFileFailed.fire_copy(entry.itemId);
