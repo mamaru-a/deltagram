@@ -243,6 +243,19 @@ terminal, and replacement native/portable/package CI is running for `8e37b6c`:
 The generated-file and profile-change GUI replays of this revision are pending.
 These fixes do not establish batch/media send durability across shutdown.
 
+A separate byte-backed media check on `be7b043` found image staging files left
+behind after Core accepted the sends. The file-selected and clipboard-image
+messages exist in Core with their captions and file bytes; temporary copies
+remained with mode `0644`. This proves missing staging cleanup, not access by
+another user. Private evidence: `staging-clipboard-baseline.json`,
+`attachment-staging-baseline.json` and
+`attachment-staging-clipboard-baseline.json` under `data/integrity-live/`.
+`1f3add9` replaces the reusable filename with `QTemporaryFile`, checks flushing,
+and transfers deletion responsibility to the retained preparation owner. Failed
+writes are removed automatically. The source publication audit passes; native
+compilation and the cleanup/permissions GUI replay of this follow-up are pending.
+It will be built after the running `8e37b6c` validation finishes.
+
 The focused suite covers partial multi-stage deletion failure, but the tested
 group delete dialog does not expose that combined path. Broader operational and
 feature coverage below remains open. Native, package and the additional Ubuntu
