@@ -32,6 +32,33 @@ official Delta Chat Desktop 2.62.0. No passwords or account addresses are includ
 in this report. The supported build target is Linux x86-64; GUI checks use
 Ubuntu 24.04 under Xvfb.
 
+### Notification reply recovery — 2026-10-26
+
+On `94ad667`, the disposable native notification receiver emitted one inline
+reply while the proxy rejected `send_msg` and delayed its error. A normal quit
+and restart lost the reply text: there was no outgoing message or recovery
+entry. The existing conversation draft and the alternate profile's draft
+survived. This was a native notification action test on the private session
+bus, not a physical desktop-shell popup test.
+
+Notification replies now use an independent Core `ui.*` record. The client
+confirms storage before attempting the send and records the attempt before
+calling Core. A missing or malformed acknowledgement leaves the text for
+review; reopening it never retries an uncertain send. Confirmed messages can
+be removed from recovery without deleting their conversation message. The
+main menu's Saved replies view exposes recovery, copy, explicit send for
+unattempted replies and dismissal. Replies do not use or replace the composer
+draft. Unsaved replies prevent normal quit; callbacks and recovery actions
+remain scoped to their original profile.
+
+The serial local Qt target passed **226 checks**, with no failures or skips,
+including real Core storage/restart and composer preservation. Fault tests
+cover rejected storage, unreadable confirmation, lost acknowledgements,
+interruption, duplicate actions, stale review, profile isolation, malformed
+entries and failed cleanup. The source audit checked 13,222 files with no
+blocking findings. Native compilation and disposable GUI replay of this fix
+are pending; these results do not establish production readiness.
+
 ### Inactive-profile delivery and unread tracking
 
 Cold-start replay on `5182d5e` selected **Deltagram integrity alternate** while

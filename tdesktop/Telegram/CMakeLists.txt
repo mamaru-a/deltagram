@@ -1443,6 +1443,8 @@ PRIVATE
     delta/compose_queue_sender.h
     delta/draft_store.cpp
     delta/draft_store.h
+    delta/reply_store.cpp
+    delta/reply_store.h
     delta/history_mutations.cpp
     delta/history_mutations.h
     delta/account_scope.h

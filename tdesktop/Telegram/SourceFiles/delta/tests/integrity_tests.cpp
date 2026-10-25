@@ -15,6 +15,7 @@
 #include "prepared_attachment.h"
 #include "profile_activity.h"
 #include "chat_mute.h"
+#include "reply_store.h"
 
 #include <QtTest/QtTest>
 
@@ -104,12 +105,257 @@ struct ActivityFixture {
 	}
 };
 
+struct ReplyFixture {
+	using Key = std::pair<int, QString>;
+	std::map<Key, QJsonValue> config;
+	std::map<int, QJsonObject> messages;
+	QStringList methods;
+	QString fault;
+	int sends = 0;
+	int writes = 0;
+	DeltaRpc::Callback held;
+	std::unique_ptr<Delta::ReplyStore> store;
+
+	ReplyFixture() { restart(); }
+	void restart() {
+		store = std::make_unique<Delta::ReplyStore>([=, this](QString method, QJsonArray args, DeltaRpc::Callback done) {
+			methods.push_back(method);
+			const auto reject = [&] { done({{u"error"_s, u"fixture fault"_s}}); };
+			const auto result = [&](QJsonValue value) { done({{u"result"_s, value}}); };
+			if (method == u"set_config"_s) {
+				++writes;
+				const auto state = QJsonDocument::fromJson(args[2].toString().toUtf8()).object()[u"state"_s].toInt();
+				if (fault == u"reject-save"_s || (fault == u"reject-attempt"_s && state == 1)
+					|| (fault == u"reject-clear"_s && args[2].isNull())) { reject(); return; }
+				const auto key = Key(args[0].toInt(), args[1].toString());
+				if (args[2].isNull()) config.erase(key);
+				else config[key] = args[2];
+				if (fault == u"hold-save"_s) { held = std::move(done); return; }
+				if (fault == u"lost-save-ack"_s) { reject(); return; }
+				result(QJsonValue(QJsonValue::Null));
+			} else if (method == u"get_config"_s) {
+				if (fault == u"reject-read"_s) { reject(); return; }
+				const auto key = Key(args[0].toInt(), args[1].toString());
+				result(config.contains(key) ? config.at(key) : QJsonValue(QJsonValue::Null));
+			} else if (method == u"get_all_ui_config_keys"_s) {
+				auto keys = QJsonArray();
+				for (const auto &[key, value] : config) if (key.first == args[0].toInt()) keys.append(key.second);
+				result(keys);
+			} else if (method == u"send_msg"_s) {
+				++sends;
+				if (fault == u"hold-send"_s) { held = std::move(done); return; }
+				if (fault == u"reject-send"_s) { reject(); return; }
+				const auto id = 100 + sends;
+				messages[id] = {{u"id"_s, id}, {u"chatId"_s, args[1]}, {u"text"_s, args[2].toObject()[u"text"_s]}, {u"state"_s, 20}};
+				if (fault == u"lost-send-ack"_s) reject();
+				else if (fault == u"malformed-send-ack"_s) result(u"101"_s);
+				else result(id);
+			} else if (method == u"get_message"_s) {
+				if (fault == u"reject-message"_s) reject();
+				else result(messages.at(args[1].toInt()));
+			} else QFAIL("Unexpected RPC: notification replies must not touch drafts.");
+		}, nullptr);
+	}
+	std::vector<Delta::SavedReply> list(int account = 1) {
+		auto result = std::vector<Delta::SavedReply>();
+		store->load(account, [&](auto replies, QString) { result = std::move(replies); });
+		return result;
+	}
+};
+
 } // namespace
 
 class IntegrityTests final : public QObject {
 	Q_OBJECT
 
 private slots:
+	void notificationReplySendsWithoutTouchingComposer() {
+		auto fixture = ReplyFixture();
+		auto completed = false;
+		fixture.store->submit(1, 12, u"reply text"_s, [&](int id, QString error) {
+			QVERIFY(id > 0); QVERIFY(error.isEmpty()); completed = true;
+		});
+		QVERIFY(completed);
+		QCOMPARE(fixture.sends, 1);
+		QVERIFY(fixture.config.empty());
+		QVERIFY(!fixture.store->hasUnsaved());
+	}
+
+	void notificationReplyUncertainSendNeverRetries_data() {
+		QTest::addColumn<QString>("fault");
+		for (const auto &fault : {"reject-send", "lost-send-ack", "malformed-send-ack", "reject-message"}) {
+			QTest::newRow(fault) << QString::fromLatin1(fault);
+		}
+	}
+
+	void notificationReplyUncertainSendNeverRetries() {
+		QFETCH(QString, fault);
+		auto fixture = ReplyFixture();
+		fixture.fault = fault;
+		fixture.store->submit(1, 12, u"reply text"_s, [](int id, QString error) {
+			QCOMPARE(id, 0); QVERIFY(!error.isEmpty());
+		});
+		QCOMPARE(fixture.sends, 1);
+		fixture.restart();
+		fixture.fault.clear();
+		const auto replies = fixture.list();
+		QCOMPARE(replies.size(), size_t(1));
+		QCOMPARE(replies[0].text, u"reply text"_s);
+		QCOMPARE(replies[0].state, Delta::ReplyState::Attempted);
+		QVERIFY(replies[0].durable);
+		fixture.store->send(1, replies[0], [](int id, QString error) { QCOMPARE(id, 0); QVERIFY(!error.isEmpty()); });
+		QCOMPARE(fixture.sends, 1);
+		fixture.store->discard(1, replies[0], [](int, QString error) { QVERIFY(error.isEmpty()); });
+		QVERIFY(fixture.config.empty());
+		QCOMPARE(fixture.messages.size(), fault == u"reject-send"_s ? size_t(0) : size_t(1));
+	}
+
+	void notificationReplyStorageFailureKeepsText_data() {
+		QTest::addColumn<QString>("fault");
+		QTest::addColumn<bool>("unsaved");
+		QTest::newRow("rejected") << u"reject-save"_s << true;
+		QTest::newRow("lost-ack") << u"lost-save-ack"_s << false;
+		QTest::newRow("unreadable") << u"reject-read"_s << true;
+		QTest::newRow("attempt-write-rejected") << u"reject-attempt"_s << false;
+	}
+
+	void notificationReplyStorageFailureKeepsText() {
+		QFETCH(QString, fault);
+		QFETCH(bool, unsaved);
+		auto fixture = ReplyFixture();
+		fixture.fault = fault;
+		fixture.store->submit(1, 12, u"reply text"_s, [](int id, QString error) { QCOMPARE(id, 0); QVERIFY(!error.isEmpty()); });
+		QCOMPARE(fixture.sends, 0);
+		QCOMPARE(fixture.store->hasUnsaved(), unsaved);
+		QCOMPARE(fixture.store->hasUnsaved(1), unsaved);
+		QVERIFY(!fixture.store->hasUnsaved(2));
+		const auto replies = fixture.list();
+		QCOMPARE(replies.size(), size_t(1));
+		QCOMPARE(replies[0].text, u"reply text"_s);
+		fixture.fault.clear();
+		fixture.store->send(1, replies[0], [](int id, QString error) { QVERIFY(id > 0); QVERIFY(error.isEmpty()); });
+		QCOMPARE(fixture.sends, 1);
+		QVERIFY(!fixture.store->hasUnsaved());
+	}
+
+	void notificationReplyRestartWhileSendPending() {
+		auto fixture = ReplyFixture();
+		fixture.fault = u"hold-send"_s;
+		auto callbacks = 0;
+		fixture.store->submit(1, 12, u"interrupted reply"_s, [&](int, QString) { ++callbacks; });
+		QVERIFY(!fixture.store->hasUnsaved());
+		fixture.restart();
+		fixture.held({{u"result"_s, 101}});
+		QCOMPARE(callbacks, 0);
+		const auto replies = fixture.list();
+		QCOMPARE(replies.size(), size_t(1));
+		QCOMPARE(replies[0].state, Delta::ReplyState::Attempted);
+		QCOMPARE(replies[0].text, u"interrupted reply"_s);
+		QCOMPARE(fixture.sends, 1);
+	}
+
+	void notificationReplyPendingWriteBlocksQuitAndConcurrentSend() {
+		auto fixture = ReplyFixture();
+		fixture.fault = u"hold-save"_s;
+		fixture.store->submit(1, 12, u"reply text"_s, nullptr);
+		QVERIFY(fixture.store->hasUnsaved());
+		const auto replies = fixture.list();
+		QCOMPARE(replies.size(), size_t(1));
+		fixture.store->send(1, replies[0], [](int id, QString error) { QCOMPARE(id, 0); QVERIFY(!error.isEmpty()); });
+		fixture.store->discard(1, replies[0], [](int id, QString error) { QCOMPARE(id, 0); QVERIFY(!error.isEmpty()); });
+		QCOMPARE(fixture.sends, 0);
+		fixture.fault.clear();
+		fixture.held({{u"result"_s, QJsonValue(QJsonValue::Null)}});
+		QCOMPARE(fixture.sends, 1);
+	}
+
+	void notificationReplyAccountsAndStaleReviewStayIsolated() {
+		auto fixture = ReplyFixture();
+		fixture.fault = u"lost-save-ack"_s;
+		fixture.store->submit(1, 12, u"first reply"_s, nullptr);
+		fixture.store->submit(2, 12, u"other profile"_s, nullptr);
+		const auto first = fixture.list(1);
+		const auto second = fixture.list(2);
+		QCOMPARE(first.size(), size_t(1)); QCOMPARE(second.size(), size_t(1));
+		QCOMPARE(second[0].text, u"other profile"_s);
+		fixture.fault.clear();
+		fixture.store->send(2, first[0], [](int id, QString error) { QCOMPARE(id, 0); QVERIFY(!error.isEmpty()); });
+		auto changed = first[0]; changed.text = u"stale edit"_s;
+		fixture.store->send(1, changed, [](int id, QString error) { QCOMPARE(id, 0); QVERIFY(!error.isEmpty()); });
+		fixture.store->discard(1, changed, [](int, QString error) { QVERIFY(!error.isEmpty()); });
+		QCOMPARE(fixture.sends, 0);
+		QCOMPARE(fixture.config.size(), size_t(2));
+	}
+
+	void notificationReplyMalformedEntryKeepsOtherRecoveryVisible() {
+		auto fixture = ReplyFixture();
+		fixture.fault = u"lost-save-ack"_s;
+		fixture.store->submit(1, 12, u"valid reply"_s, nullptr);
+		fixture.config[{1, u"ui.deltagram.notification-reply."_s + QString(32, u'a')}] = u"broken"_s;
+		fixture.config[{1, u"ui.deltagram.notification-reply.invalid"_s}] = u"broken"_s;
+		fixture.store->load(1, [](auto replies, QString error) {
+			QVERIFY(!error.isEmpty()); QCOMPARE(replies.size(), size_t(1));
+			QCOMPARE(replies[0].text, u"valid reply"_s);
+		});
+		QCOMPARE(fixture.sends, 0);
+	}
+
+	void notificationReplyConfirmedSendDoesNotRetryFailedCleanup() {
+		auto fixture = ReplyFixture();
+		fixture.fault = u"reject-clear"_s;
+		fixture.store->submit(1, 12, u"sent reply"_s, [](int, QString error) { QVERIFY(!error.isEmpty()); });
+		fixture.restart();
+		const auto replies = fixture.list();
+		QCOMPARE(replies.size(), size_t(1));
+		QCOMPARE(replies[0].state, Delta::ReplyState::Sent);
+		fixture.store->send(1, replies[0], [](int id, QString error) { QCOMPARE(id, 0); QVERIFY(!error.isEmpty()); });
+		QCOMPARE(fixture.sends, 1);
+		fixture.fault.clear();
+		fixture.store->discard(1, replies[0], [](int, QString error) { QVERIFY(error.isEmpty()); });
+		QCOMPARE(fixture.messages.size(), size_t(1));
+	}
+
+	void realCoreNotificationReplySurvivesRestartWithComposer() {
+		const auto program = qEnvironmentVariable("DELTA_TEST_CORE_RPC");
+		if (program.isEmpty()) QSKIP("Set DELTA_TEST_CORE_RPC to test the real Core server.");
+		auto directory = QTemporaryDir();
+		QVERIFY(directory.isValid());
+		auto rpc = std::make_shared<DeltaRpc>();
+		rpc->start(program, directory.path());
+		const auto account = CoreCall(*rpc, u"add_account"_s, {})[u"result"_s].toInt();
+		const auto chat = CoreCall(*rpc, u"create_chat_by_contact_id"_s, {account, 1})[u"result"_s].toInt();
+		QVERIFY(account > 0 && chat > 0);
+		QVERIFY(!CoreCall(*rpc, u"misc_set_draft"_s,
+			{account, chat, u"existing composer"_s, QJsonValue(), QJsonValue(), QJsonValue(), QJsonValue()}).contains(u"error"_s));
+		auto sends = 0;
+		const auto call = [&](QString method, QJsonArray params, DeltaRpc::Callback done) {
+			if (method == u"send_msg"_s) { ++sends; done({{u"error"_s, u"interrupted"_s}}); }
+			else rpc->call(method, params, std::move(done));
+		};
+		auto store = std::make_unique<Delta::ReplyStore>(call, nullptr);
+		auto completed = false;
+		store->submit(account, chat, u"recover notification reply"_s, [&](int id, QString error) {
+			QCOMPARE(id, 0); QVERIFY(!error.isEmpty()); completed = true;
+		});
+		QTRY_VERIFY(completed);
+		QCOMPARE(sends, 1);
+		store.reset();
+		rpc->stop();
+		rpc->start(program, directory.path());
+		store = std::make_unique<Delta::ReplyStore>(call, nullptr);
+		completed = false;
+		store->load(account, [&](auto replies, QString error) {
+			QVERIFY(error.isEmpty()); QCOMPARE(replies.size(), size_t(1));
+			QCOMPARE(replies[0].state, Delta::ReplyState::Attempted);
+			QCOMPARE(replies[0].text, u"recover notification reply"_s);
+			completed = true;
+		});
+		QTRY_VERIFY(completed);
+		QCOMPARE(CoreCall(*rpc, u"get_draft"_s, {account, chat})[u"result"_s].toObject()[u"text"_s].toString(), u"existing composer"_s);
+		QCOMPARE(sends, 1);
+		rpc->stop();
+	}
+
 	void chatMuteReadsRequireExplicitBoolean_data() {
 		QTest::addColumn<QJsonObject>("reply");
 		QTest::addColumn<int>("expected");

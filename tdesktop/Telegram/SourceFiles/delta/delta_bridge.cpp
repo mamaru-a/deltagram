@@ -773,6 +773,10 @@ public:
 	, _selfName(selfName) {
 		GlobalBridge = this;
 		_backups = std::make_unique<BackupTransfers>(_rpc);
+		_replies = std::make_unique<ReplyStore>(
+			[rpc = _rpc](QString method, QJsonArray params, DeltaRpc::Callback done) {
+				rpc->call(method, params, std::move(done));
+			}, nullptr);
 		_drafts = std::make_shared<DraftStore>(_rpc, [=](QString error) {
 			reportError(error);
 		});
@@ -835,6 +839,56 @@ public:
 		const auto chatId = chatForPeerUser(userId);
 		if (_queueRuns.contains({ _accountId, chatId }) || _batches.contains({ _accountId, chatId })) return;
 		if (chatId > 0) _drafts->save(_accountId, chatId, text, quotedMessageId);
+	}
+
+	void sendNotificationReply(uint64 userId, QString text) {
+		if (!userId || userId > uint64(std::numeric_limits<int>::max())) return;
+		const auto chat = chatForPeerUser(int(userId));
+		const auto current = _accountScope.guard();
+		const auto alive = _alive;
+		_replies->submit(_accountId, chat, std::move(text), [=](int id, QString error) {
+			if (alive.expired()) return;
+			if (!current()) {
+				if (!error.isEmpty()) reportError(u"A notification reply in your previous profile needs review. Switch back and open Saved replies."_q);
+				return;
+			}
+			if (id > 0) addIncoming(chat, id);
+			if (!error.isEmpty()) reportError(error);
+		});
+	}
+
+	void loadSavedReplies(Fn<void(std::vector<SavedReply>, QString)> done) {
+		const auto current = _accountScope.guard();
+		_replies->load(_accountId, [=](std::vector<SavedReply> replies, QString error) {
+			if (!current()) return;
+			for (auto &reply : replies) {
+				reply.chatName = _names.value(reply.chat, u"Conversation unavailable"_q);
+				reply.userId = _names.contains(reply.chat) ? peerUserForChat(reply.chat) : 0;
+			}
+			done(std::move(replies), std::move(error));
+		});
+	}
+
+	void changeSavedReply(SavedReply reviewed, bool discard, Fn<void(QString)> done) {
+		if (_switching) { done(u"Wait for the profile switch to finish."_q); return; }
+		const auto current = _accountScope.guard();
+		const auto chat = reviewed.chat;
+		const auto finished = [=](int id, QString error) {
+			if (!current()) return;
+			if (!discard && id > 0) addIncoming(chat, id);
+			done(std::move(error));
+		};
+		if (discard) _replies->discard(_accountId, std::move(reviewed), finished);
+		else _replies->send(_accountId, std::move(reviewed), finished);
+	}
+
+	void noticeSavedReplies() {
+		const auto current = _accountScope.guard();
+		_replies->load(_accountId, [=](std::vector<SavedReply> replies, QString error) {
+			if (!current()) return;
+			if (!error.isEmpty()) reportError(error);
+			else if (!replies.empty()) reportError(u"Notification replies need review. Open Saved replies from the main menu."_q);
+		});
 	}
 
 	void loadDraft(int userId, Fn<void(ComposeDraft)> done) {
@@ -1086,6 +1140,10 @@ public:
 	}
 
 	bool preparingSendPreventsQuit() {
+		if (_replies->hasUnsaved()) {
+			reportError(u"A notification reply has not finished saving. Open Saved replies in its profile to send or dismiss it before quitting."_q);
+			return true;
+		}
 		if (!_drafts->preparingSend() && !hasUnsavedPreparation()) return false;
 		reportError(u"A message has not finished saving. Wait for it to finish, or remove the failed attachment before quitting."_q);
 		return true;
@@ -1181,6 +1239,7 @@ public:
 
 	void start() {
 		Core::App().notifications().resetSession(_session);
+		noticeSavedReplies();
 		const auto guard = _alive;
 		_profileActivity->start();
 		_rpc->setEventHandler([=](QJsonObject event) {
@@ -1979,6 +2038,10 @@ public:
 	}
 
 	void switchProfile(int accountId, Fn<void(QString)> done) {
+		if (_replies->hasUnsaved(_accountId)) {
+			done(u"A notification reply has not finished saving. Open Saved replies before switching profiles."_q);
+			return;
+		}
 		if (hasUnsavedPreparation()) {
 			done(u"An attachment has not finished saving. Wait for it to finish, or remove the failed attachment before switching profiles."_q);
 			return;
@@ -2024,6 +2087,7 @@ public:
 				showSelfAvatar();
 				loadDialogs();
 				_switching = false;
+				noticeSavedReplies();
 				done(self->error);
 			};
 			call(u"start_io"_q, { accountId }, [=](QJsonObject reply) {
@@ -3510,6 +3574,7 @@ public:
 	const not_null<Main::Session*> _session;
 	const std::shared_ptr<DeltaRpc> _rpc;
 	std::shared_ptr<DraftStore> _drafts;
+	std::unique_ptr<ReplyStore> _replies;
 	std::shared_ptr<ComposeQueueStore> _queues;
 	std::unique_ptr<ComposeQueueSender> _queueSender;
 	std::set<std::pair<int, int>> _queueRuns;
@@ -3613,6 +3678,22 @@ std::function<bool()> CaptureAccountGuard() {
 
 rpl::producer<int> AccountViewResets() {
 	return AccountViewRevision.changes();
+}
+
+void SendNotificationReply(uint64 userId, QString text) {
+	if (GlobalBridge) GlobalBridge->sendNotificationReply(userId, std::move(text));
+}
+
+void LoadSavedReplies(Fn<void(std::vector<SavedReply>, QString)> done) {
+	if (GlobalBridge) GlobalBridge->loadSavedReplies(std::move(done));
+}
+
+void SendSavedReply(SavedReply reviewed, Fn<void(QString)> done) {
+	if (GlobalBridge) GlobalBridge->changeSavedReply(std::move(reviewed), false, std::move(done));
+}
+
+void DiscardSavedReply(SavedReply reviewed, Fn<void(QString)> done) {
+	if (GlobalBridge) GlobalBridge->changeSavedReply(std::move(reviewed), true, std::move(done));
 }
 
 rpl::producer<int> ComposerChanges() {

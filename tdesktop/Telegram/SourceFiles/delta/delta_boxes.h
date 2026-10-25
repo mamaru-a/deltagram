@@ -22,6 +22,7 @@ struct SectionShow;
 namespace Delta {
 
 void ShowMessageInfo(not_null<Window::SessionController*> controller, int messageId);
+void ShowSavedReplies(not_null<Window::SessionController*> controller);
 void ShowSharedContact(not_null<Window::SessionController*> controller, int messageId);
 void ShowJoinInvite(not_null<Window::SessionController*> controller, const QString &url);
 void ChooseContactToSend(not_null<Main::Session*> session, int userId);

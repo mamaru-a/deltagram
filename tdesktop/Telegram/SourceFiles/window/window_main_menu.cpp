@@ -973,6 +973,13 @@ void MainMenu::setupMenu() {
 		});
 	}
 	addAction(
+		rpl::single(u"Saved replies"_q),
+		{ &st::menuIconRestore }
+	)->setClickedCallback([=] {
+		controller->hideLayer();
+		Delta::ShowSavedReplies(controller);
+	});
+	addAction(
 		tr::lng_menu_settings(),
 		{ &st::menuIconSettings }
 	)->setClickedCallback([=] {

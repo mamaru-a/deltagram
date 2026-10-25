@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "window/notifications_manager.h"
+#include "delta/delta_bridge.h"
 
 #include "base/options.h"
 #include "base/random.h"
@@ -1455,6 +1456,12 @@ void Manager::notificationReplied(
 		return;
 	}
 	const auto history = session->data().history(id.contextId.peerId);
+	if (Delta::Active() && !reply.text.trimmed().isEmpty()) {
+		if (history->peer->isUser()) {
+			Delta::SendNotificationReply(peerToUser(history->peer->id).bare, reply.text);
+		}
+		return;
+	}
 	const auto item = history->owner().message(history->peer, id.msgId);
 	const auto topic = item ? item->topic() : nullptr;
 	const auto topicRootId = topic

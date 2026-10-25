@@ -2064,6 +2064,86 @@ void ShowCreateGroup(Fn<void(int)> done) {
 	}));
 }
 
+void ShowSavedReplies(not_null<Window::SessionController*> controller) {
+	const auto current = CaptureAccountGuard();
+	LoadSavedReplies(crl::guard(controller, [=](std::vector<SavedReply> replies, QString error) {
+		if (!current || !current()) return;
+		controller->show(Box([=](not_null<Ui::GenericBox*> box) {
+			box->setTitle(rpl::single(u"Saved replies"_q));
+			box->setWidth(st::boxWideWidth);
+			box->setMaxHeight(style::ConvertScale(480));
+			const auto info = !error.isEmpty() ? error : replies.empty()
+				? u"There are no notification replies to review."_q
+				: u"Replies saved from notifications. Your conversation drafts are kept separately."_q;
+			box->addRow(object_ptr<Ui::FlatLabel>(box, info, st::aboutLabel), st::boxRowPadding);
+			for (const auto &reply : replies) {
+				const auto status = !reply.durable ? u"Not saved yet"_q
+					: reply.state == ReplyState::Pending ? u"Not sent"_q
+					: reply.state == ReplyState::Attempted ? u"Send outcome unknown"_q : u"Sent"_q;
+				const auto button = box->addRow(object_ptr<Ui::SettingsButton>(box,
+					rpl::single(reply.chatName + u" — "_q + status), st::settingsButtonNoIcon), style::margins());
+				button->setClickedCallback(crl::guard(controller, [=] {
+					box->closeBox();
+					if (!current()) return;
+					controller->show(Box([=](not_null<Ui::GenericBox*> detail) {
+						detail->setTitle(rpl::single(reply.chatName));
+						detail->setWidth(st::boxWideWidth);
+						detail->setMaxHeight(style::ConvertScale(480));
+						const auto explanation = reply.state == ReplyState::Attempted
+							? u"This reply may already have been sent. Check the conversation before dismissing it. It will not be sent again automatically."_q
+							: reply.state == ReplyState::Sent ? u"This reply was sent. You can dismiss its saved record."_q
+							: u"This reply has not been sent. You can send it or discard it."_q;
+						detail->addRow(object_ptr<Ui::FlatLabel>(detail, explanation, st::aboutLabel), st::boxRowPadding);
+						const auto text = detail->addRow(object_ptr<Ui::FlatLabel>(detail, reply.text, st::aboutLabel), st::boxRowPadding);
+						text->setSelectable(true);
+						const auto copy = detail->addRow(object_ptr<Ui::SettingsButton>(detail,
+							rpl::single(u"Copy reply"_q), st::settingsButtonNoIcon), style::margins());
+						copy->setClickedCallback([=] { if (current()) QGuiApplication::clipboard()->setText(reply.text); });
+						if (reply.userId > 0) {
+							const auto open = detail->addRow(object_ptr<Ui::SettingsButton>(detail,
+								rpl::single(u"Open conversation"_q), st::settingsButtonNoIcon), style::margins());
+							open->setClickedCallback(crl::guard(controller, [=] {
+								detail->closeBox();
+								if (current()) controller->showPeerHistory(peerFromUser(UserId(reply.userId)));
+							}));
+						}
+						const auto finished = crl::guard(controller, [=](QString error) {
+							if (!current()) return;
+							if (!error.isEmpty()) controller->showToast(error);
+							ShowSavedReplies(controller);
+						});
+						if (reply.state == ReplyState::Pending) detail->addButton(rpl::single(u"Send"_q), [=] {
+							detail->closeBox();
+							if (current()) SendSavedReply(reply, finished);
+						});
+						detail->addButton(rpl::single(u"Dismiss"_q), crl::guard(controller, [=] {
+							detail->closeBox();
+							if (!current()) return;
+							controller->show(Ui::MakeConfirmBox({
+								.text = reply.state == ReplyState::Pending
+									? u"Discard this unsent notification reply?"_q
+									: u"Dismiss this saved reply? Any message already sent stays in the conversation."_q,
+								.confirmed = [=](Fn<void()> close) {
+									close();
+									if (current()) DiscardSavedReply(reply, finished);
+								},
+								.confirmText = rpl::single(u"Dismiss"_q),
+								.confirmStyle = &st::attentionBoxButton,
+							}));
+						}));
+						detail->addButton(tr::lng_close(), [=] { detail->closeBox(); });
+					}));
+				}));
+			}
+			box->addButton(rpl::single(u"Refresh"_q), crl::guard(controller, [=] {
+				box->closeBox();
+				if (current()) ShowSavedReplies(controller);
+			}));
+			box->addButton(tr::lng_close(), [=] { box->closeBox(); });
+		}));
+	}));
+}
+
 void ShowMessageInfo(not_null<Window::SessionController*> controller, int messageId) {
 	controller->show(Box([=](not_null<Ui::GenericBox*> box) {
 		box->setTitle(rpl::single(u"Message info"_q));

@@ -5,6 +5,7 @@ This file is part of Delta Tel, a Telegram Desktop based Delta Chat client.
 
 #include "delta/delta_rpc.h"
 #include "delta/draft_store.h"
+#include "delta/reply_store.h"
 #include "delta/compose_queue.h"
 #include "delta/compose_batch.h"
 #include "delta/history_mutations.h"
@@ -62,6 +63,10 @@ void StartSession(
 [[nodiscard]] std::function<bool()> CaptureAccountGuard();
 [[nodiscard]] rpl::producer<int> AccountViewResets();
 void SetChatMute(int userId, int durationSeconds);
+void SendNotificationReply(uint64 userId, QString text);
+void LoadSavedReplies(Fn<void(std::vector<SavedReply>, QString)> done);
+void SendSavedReply(SavedReply reviewed, Fn<void(QString)> done);
+void DiscardSavedReply(SavedReply reviewed, Fn<void(QString)> done);
 [[nodiscard]] rpl::producer<int> ComposerChanges();
 [[nodiscard]] bool ComposerWritable(int userId);
 [[nodiscard]] bool PreparingSendPreventsQuit();
