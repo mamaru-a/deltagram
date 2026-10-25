@@ -176,8 +176,10 @@ normal quit/profile switching, and explicit Delete cleanup/unlock with caption
 retention. A prepared send with a lost acknowledgement reconciles once and
 survives restart with no duplicate; both clients retain the prepared image bytes.
 Direct retry before Core ownership is implemented in `7d64366`; its native
-validation and disposable GUI replay remain pending. Broader interruption
-checks remain open.
+validation passed, but disposable Retry replay was interrupted by a reproducible
+search-result crash while loading saved recent peers. The serializer fix and
+unchanged-cache replay are pending native validation. Broader interruption
+checks and recent-search suggestion isolation across profiles remain open.
 
 `ca039dc` adds Core-backed batch compose storage, and `8a2b78c` adds durable-send
 checkpoint continuation and verified-ID resume without replacing a Core draft.

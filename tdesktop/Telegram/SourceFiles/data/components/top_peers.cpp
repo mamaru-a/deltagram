@@ -323,7 +323,7 @@ void TopPeers::applyLocal(QByteArray serialized) {
 	auto disabled = quint32();
 	auto count = quint32();
 	stream >> streamAppVersion >> disabled >> count;
-	if (!stream.ok()) {
+	if (!stream.ok() || count > kLimit) {
 		DEBUG_LOG(("Suggestions: Bad TopPeers local, not ok."));
 		return;
 	}

@@ -108,7 +108,7 @@ void RecentPeers::applyLocal(QByteArray serialized) {
 	auto streamAppVersion = quint32();
 	auto count = quint32();
 	stream >> streamAppVersion >> count;
-	if (!stream.ok()) {
+	if (!stream.ok() || count > kLimit) {
 		DEBUG_LOG(("Suggestions: Bad RecentPeers local, not ok."));
 		return;
 	}

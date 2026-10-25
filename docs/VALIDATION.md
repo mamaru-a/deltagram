@@ -678,8 +678,8 @@ cannot initiate a second handoff. An uncertain save reloads Core's draft;
 an existing different attachment is preserved. Core-owned failures continue
 to use the saved-attachment review flow.
 
-All 89 focused checks passed for that source revision. Its remote native and
-package validation is in progress in
+All 89 focused checks passed for that source revision. Its remote native,
+portable-runtime and package validation passed in
 [run 40198373254](https://github.com/mamaru-a/deltagram/actions/runs/40198373254).
 Direct local Retry has not yet been replayed with that native artifact.
 Subsequent test review corrected temporary JSON-reference lifetimes in two
@@ -737,6 +737,31 @@ drafts, stale/duplicate actions, and real-Core discard after restart while the
 second queued file retains its original bytes. The source audit passes; native
 and GUI validation remain pending. New-batch preparation and restart discovery
 are still unfinished.
+
+### Search-result restart crash — 2026-10-25
+
+The checksum-verified `7d64366` GUI crashed twice when opening an older message
+from search after restart, before the planned Retry test sent any attachment.
+The second reproduction used separated focus/type/click actions and a private
+crash tracer. Its stack is `Dialogs::Widget::chosenRow` → `RecentPeers::bump` →
+`readSearchSuggestions` → `RecentPeers::applyLocal` → `Serialize::readPeer` →
+`Data::Session::peer`, ending at the "Peer id type" assertion.
+
+The stored peer record has an explicit format tag/version, but the reader
+selected several fields and flag conversions using Telegram's historical app
+version thresholds. Deltagram's `AppVersion = 2001` selected the old layout,
+skipping fields written by the current serializer and misaligning the next
+peer record. The source fix uses the explicit modern record tag for those
+fields/conversions, rejects invalid peer types and unsupported record versions,
+checks truncated records before applying their fields, and bounds saved
+recent/top-peer counts. No account or cache files were deleted for recovery.
+
+The source audit passes. Native compilation and replay against the unchanged
+disposable cache remain pending; the 116 focused backend checks do not exercise
+this GUI serializer. Private evidence: `retry-native-crash.trace`,
+`retry-trace-search.png`, and the checksum-verified artifact symbols. Recent/top
+search suggestion isolation across Core profiles also needs a dedicated review:
+these donor caches are owned by the reused desktop session.
 
 ### Second-device dialog integrity — 2026-10-25
 
