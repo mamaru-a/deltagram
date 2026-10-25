@@ -6,6 +6,14 @@ Heavy native builds run remotely, one at a time with four compiler jobs. No
 heavy local builds run in parallel; Ninja records and ccache are preserved.
 Commits and fork CI use `mamaru-a`. No production release has been published.
 
+The latest native/portable/package CI passed at `be7b043`, including all 41
+focused Qt cases (43 including setup/cleanup, no skips):
+[CI run](https://github.com/mamaru-a/deltagram/actions/runs/40069205736).
+Its GUI and Core binaries were downloaded selectively and checked against the
+artifact SHA-256 manifest; debug symbols were not downloaded. Disposable GUI
+replay on 2026-10-25 verifies ordinary single-file handoff and recovery as
+recorded below. No heavy local build was run.
+
 Native compilation, all 33 focused Qt cases (35 including setup/cleanup),
 portable runtime checks on Debian 13 and Ubuntu 22.04, and Debian/RPM/Arch/tar
 package verification passed at `ff64414`:
@@ -161,8 +169,8 @@ substitute for GUI verification.
 
 Production readiness is not established. Normal-text send handoff durability
 now passes the recorded shutdown, Core-failure and uncertain-reply replays.
-Combined forwarding and attachment-send durability still need equivalent
-coverage. The known profile-switch crash, send acknowledgement races,
+Combined forwarding, multi-file batches and transformed-media send durability
+still need equivalent coverage. The known profile-switch crash, send acknowledgement races,
 rejected-send draft loss and quote-deletion presentation defects have passed
 their targeted live replays.
 
@@ -180,12 +188,31 @@ to this handoff and adds a saved-attachment review/send/remove dialog behind
 the attachment button. File-dialog callbacks are guarded against chat/profile
 changes. Failed handoffs reload Core state, including when a save reply is lost.
 
-The local focused suite passes 41 cases (43 including setup/cleanup, no skips),
+The focused suite passes 41 cases (43 including setup/cleanup, no skips),
 including rejected removal, stale-file protection and committed writes with lost
-replies. Native/portable/package CI is running for `be7b043`:
-[CI run](https://github.com/mamaru-a/deltagram/actions/runs/40069205736).
-Its GUI recovery/retry/removal replay is pending. The running disposable GUI is
-still `ff64414`; source and backend tests do not establish a live fix. Multi-file
+replies. Native/portable/package CI passed for `be7b043`. Its checksum-verified
+GUI passed these disposable-account checks on 2026-10-25:
+
+- Rejected send followed by quit/restart retained the file and caption. The
+  original selected file was deleted before quit; Core's recovered bytes still
+  matched SHA-256. The recovery dialog showed the original filename, and one
+  explicit retry produced one outgoing message with an empty composer.
+- A rejected removal preserved the file. Successful removal retained the caption
+  in Core and the GUI; sending that caption afterward produced a text message.
+- An error reply after Core accepted the attachment reconciled the known ID
+  without a resend. Accepted-send quit before acknowledgement restored the same
+  single outgoing message and no draft after restart.
+- Switching away and back during a pending handoff retained the original
+  caption and locked composer; the alternate account's existing draft was
+  unchanged. After rejection, the file remained in its original profile.
+- Killing Core during a pending attachment handoff displayed a stopped state.
+  Restart restored the file and caption with matching bytes and no outgoing
+  message. The alternate profile's draft remained unchanged.
+
+Official Delta Chat Desktop 2.62.0 visibly received the recovered attachment,
+the caption-only message, the lost-reply attachment and the accepted-before-quit
+attachment. Evidence is in `data/integrity-live/attachment-evidence.json` and
+`attachment-*.png`. These checks cover ordinary single files; multi-file
 batches, transformed media and combined forwarding retain their old send paths
 and remain release gates.
 

@@ -105,11 +105,13 @@ forwarding and attachment-send durability and the broader gaps above remain
 open. No production readiness or complete Delta Chat feature parity is claimed.
 Existing unscoped draft files are retained without loading into another profile.
 
-`be7b043` adds ordinary single-file handoff and a saved-attachment recovery dialog
-in source. The focused backend suite passes 41 cases, including Core-managed
-file restart recovery, removal with caption retention and uncertain replies.
-Native CI and live GUI replay are pending; multi-file/media durability remains
-open. This does not promote attachment compatibility to verified.
+`be7b043` passes native/portable/package CI and 41 focused cases. Disposable GUI
+replay on 2026-10-25 verifies ordinary single-file restart recovery after deleting
+the original file, explicit retry, rejected/successful removal with caption
+retention, uncertain send replies, accepted-send quit, profile isolation and
+Core-process failure recovery. Official Desktop 2.62.0 received the accepted
+attachments and caption-only text. Multi-file batches and transformed-media
+durability remain open; this does not establish complete media compatibility.
 
 ## Updating this tracker
 
