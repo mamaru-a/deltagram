@@ -4365,6 +4365,11 @@ void ApiWrap::editMedia(
 	}));
 }
 
+void ApiWrap::resetMediaForAccountChange() {
+	_sendingAlbums.clear();
+	_session->uploader().resetForAccountChange();
+}
+
 void ApiWrap::sendFiles(
 		Ui::PreparedList &&list,
 		SendMediaType type,

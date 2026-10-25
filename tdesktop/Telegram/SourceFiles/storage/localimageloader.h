@@ -10,6 +10,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/variant.h"
 #include "api/api_common.h"
 
+#include <functional>
 #include <memory>
 
 namespace Ui {
@@ -189,6 +190,7 @@ struct FilePrepareResult {
 	~FilePrepareResult();
 
 	TaskId taskId = kEmptyTaskId;
+	std::function<bool()> accountGuard;
 	uint64 id = 0;
 	FileLoadTo to;
 	std::weak_ptr<SendingAlbum> album;
@@ -328,6 +330,7 @@ private:
 
 	uint64 _id = 0;
 	base::weak_ptr<Main::Session> _session;
+	const std::function<bool()> _accountGuard;
 	MTP::DcId _dcId = 0;
 	FileLoadTo _to;
 	const std::shared_ptr<SendingAlbum> _album;

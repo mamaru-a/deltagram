@@ -7,6 +7,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "storage/localimageloader.h"
 
+#include "delta/delta_bridge.h"
+
 #include "api/api_text_entities.h"
 #include "api/api_sending.h"
 #include "data/data_document.h"
@@ -509,6 +511,7 @@ std::shared_ptr<FilePrepareResult> MakePreparedFile(
 FileLoadTask::FileLoadTask(Args &&args)
 : _id(args.idOverride ? args.idOverride : base::RandomValue<uint64>())
 , _session(args.session)
+, _accountGuard(Delta::CaptureAccountGuard())
 , _dcId(args.session->mainDcId())
 , _to(std::move(args.to))
 , _album(std::move(args.album))
@@ -534,6 +537,7 @@ FileLoadTask::FileLoadTask(Args &&args)
 FileLoadTask::FileLoadTask(VoiceArgs &&args)
 : _id(base::RandomValue<uint64>())
 , _session(args.session)
+, _accountGuard(Delta::CaptureAccountGuard())
 , _dcId(args.session->mainDcId())
 , _to(std::move(args.to))
 , _content(std::move(args.voice))
@@ -725,6 +729,7 @@ void FileLoadTask::process(ProcessArgs &&args) {
 		.spoiler = _spoiler,
 		.album = _album,
 	});
+	_result->accountGuard = _accountGuard;
 	if (const auto cover = _videoCover.get()) {
 		cover->process();
 		if (const auto &result = cover->peekResult()) {
@@ -1264,6 +1269,7 @@ void FileLoadTask::process(ProcessArgs &&args) {
 }
 
 void FileLoadTask::finish() {
+	if (_accountGuard && !_accountGuard()) return;
 	const auto session = _session.get();
 	if (!session) {
 		return;

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <memory>
 #include <utility>
 
@@ -9,6 +10,10 @@ class AccountScope final {
 public:
 	void invalidate() {
 		_token = std::make_shared<bool>(true);
+	}
+
+	[[nodiscard]] std::function<bool()> guard() const {
+		return [token = std::weak_ptr<bool>(_token)] { return !token.expired(); };
 	}
 
 	template <typename Callback>

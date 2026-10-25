@@ -796,11 +796,25 @@ private slots:
 		rpc.start(u"" RPC_FIXTURE_PATH ""_s, u"normal"_s);
 		auto stale = false;
 		auto current = false;
+		const auto preparedInOldProfile = account.guard();
+		QVERIFY(preparedInOldProfile());
 		rpc.call(u"hold"_s, {}, account.bind([&](QJsonObject) { stale = true; }));
 		account.invalidate();
+		QVERIFY(!preparedInOldProfile());
+		QVERIFY(account.guard()());
+		// A switch away and back creates another scope, never reviving old work.
+		account.invalidate();
+		QVERIFY(!preparedInOldProfile());
 		rpc.call(u"release"_s, {}, account.bind([&](QJsonObject) { current = true; }));
 		QTRY_VERIFY(current);
 		QVERIFY(!stale);
+		auto preparationGuard = std::function<bool()>();
+		{
+			Delta::AccountScope temporary;
+			preparationGuard = temporary.guard();
+			QVERIFY(preparationGuard());
+		}
+		QVERIFY(!preparationGuard());
 		rpc.stop();
 	}
 

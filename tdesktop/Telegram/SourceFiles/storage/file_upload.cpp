@@ -310,6 +310,7 @@ FullMsgId Uploader::currentUploadId() const {
 void Uploader::upload(
 		FullMsgId itemId,
 		const std::shared_ptr<FilePrepareResult> &file) {
+	if (file->accountGuard && !file->accountGuard()) return;
 	auto preparing = false;
 	if (file->type == SendMediaType::Photo) {
 		const auto photo = session().data().processPhoto(
@@ -601,6 +602,7 @@ void Uploader::finishTranscode(
 void Uploader::deliverDelta(
 		FullMsgId itemId,
 		const std::shared_ptr<FilePrepareResult> &file) {
+	if (file->accountGuard && !file->accountGuard()) return;
 	auto path = file->filepath;
 	if (!path.isEmpty() && QFileInfo(path).size() <= 0) {
 		path.clear();
@@ -651,7 +653,7 @@ void Uploader::deliverDelta(
 		failed(itemId);
 		return;
 	}
-	Delta::RememberPendingFile(itemId.peer.value, itemId.msg.bare, path);
+	Delta::RememberPendingFile(itemId.peer.value, itemId.msg.bare, path, file->filename, file);
 	if (file->type == SendMediaType::Photo) {
 		session().data().photo(file->id)->uploadingData = nullptr;
 	} else if (file->type == SendMediaType::File
@@ -1027,6 +1029,11 @@ void Uploader::maybeSend() {
 
 void Uploader::cancel(FullMsgId itemId) {
 	failed(itemId);
+}
+
+void Uploader::resetForAccountChange() {
+	clear();
+	_pausedId = FullMsgId();
 }
 
 void Uploader::cancelAll() {

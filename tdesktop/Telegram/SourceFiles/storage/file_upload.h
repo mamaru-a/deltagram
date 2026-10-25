@@ -69,6 +69,7 @@ public:
 	void pause(FullMsgId itemId);
 	void cancel(FullMsgId itemId);
 	void cancelAll();
+	void resetForAccountChange();
 
 	[[nodiscard]] rpl::producer<UploadedMedia> photoReady() const {
 		return _photoReady.events();

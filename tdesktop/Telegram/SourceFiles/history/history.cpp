@@ -679,6 +679,7 @@ not_null<HistoryItem*> History::insertItem(
 }
 
 void History::destroyMessage(not_null<HistoryItem*> item) {
+	if (Delta::Active()) Delta::ForgetPendingFile(peer->id.value, item->id.bare);
 	Expects(item->isHistoryEntry() || !item->mainView());
 
 	if (item->isHistoryEntry()) {

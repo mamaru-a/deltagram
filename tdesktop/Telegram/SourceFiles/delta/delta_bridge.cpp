@@ -179,7 +179,12 @@ QHash<qint64, QString> PhotoFiles;
 QHash<qint64, QString> DocumentFiles;
 QHash<int, QJsonObject> CoreMessages;
 QHash<int, int> CoreReadReceipts;
-QHash<QString, QString> PendingUploads;
+struct PendingUpload {
+	QString path;
+	QString filename;
+	std::shared_ptr<void> owner;
+};
+QHash<QString, PendingUpload> PendingUploads;
 
 [[nodiscard]] QString PendingKey(uint64 peer, int64 msg) {
 	return QString::number(peer) + ':' + QString::number(msg);
@@ -1149,7 +1154,8 @@ public:
 			const QString &caption,
 			const QString &viewType,
 			int quotedId,
-			Fn<void(int, QString)> done) {
+			Fn<void(int, QString)> done,
+			const QString &filename = {}) {
 		QJsonObject data;
 		if (!caption.isEmpty()) {
 			data.insert(u"text"_q, caption);
@@ -1158,6 +1164,7 @@ public:
 			data.insert(u"quotedMessageId"_q, quotedId);
 		}
 		data.insert(u"file"_q, path);
+		if (!filename.isEmpty()) data.insert(u"filename"_q, filename);
 		if (!viewType.isEmpty()) {
 			data.insert(u"viewtype"_q, viewType);
 		}
@@ -1599,6 +1606,7 @@ public:
 		}
 		++_dialogsEpoch;
 		_accountScope.invalidate();
+		_session->api().resetMediaForAccountChange();
 		AccountViewRevision = AccountViewRevision.current() + 1;
 		ComposerRevision = ComposerRevision.current() + 1;
 		_session->data().histories().resetBackendRequests();
@@ -3277,6 +3285,10 @@ int AccountGeneration() {
 	return GlobalBridge ? GlobalBridge->_dialogsEpoch : -1;
 }
 
+std::function<bool()> CaptureAccountGuard() {
+	return GlobalBridge ? GlobalBridge->_accountScope.guard() : std::function<bool()>();
+}
+
 rpl::producer<int> AccountViewResets() {
 	return AccountViewRevision.changes();
 }
@@ -3658,10 +3670,15 @@ void AddContact(
 	GlobalBridge->addContact(name, email, std::move(done));
 }
 
-void RememberPendingFile(uint64 peer, int64 msg, const QString &path) {
+void RememberPendingFile(uint64 peer, int64 msg, const QString &path,
+		const QString &filename, std::shared_ptr<void> owner) {
 	if (!path.isEmpty()) {
-		PendingUploads.insert(PendingKey(peer, msg), path);
+		PendingUploads.insert(PendingKey(peer, msg), { path, filename, std::move(owner) });
 	}
+}
+
+void ForgetPendingFile(uint64 peer, int64 msg) {
+	PendingUploads.remove(PendingKey(peer, msg));
 }
 
 bool SendItemText(
@@ -3711,7 +3728,9 @@ bool SendItemMedia(not_null<HistoryItem*> item, Fn<void(bool)> done) {
 	}
 	const auto peer = item->history()->peer;
 	const auto userId = peer->isSelf() ? kSelfUserId : int(peer->id.value);
-	auto path = PendingUploads.take(PendingKey(peer->id.value, item->id.bare));
+	const auto pendingKey = PendingKey(peer->id.value, item->id.bare);
+	const auto prepared = PendingUploads.value(pendingKey);
+	auto path = prepared.path;
 	if (path.isEmpty()) {
 		if (const auto media = item->media()) {
 			if (const auto document = media->document()) {
@@ -3788,9 +3807,17 @@ bool SendItemMedia(not_null<HistoryItem*> item, Fn<void(bool)> done) {
 				}
 				return;
 			}
+			// Capturing the preparation object keeps generated files alive until
+			// Core has finished reading them, including across a profile switch.
+			// Rejected sends keep their file for explicit retry or removal.
+			if (id > 0 && error.isEmpty()) {
+				PendingUploads.remove(pendingKey);
+			} else if (session->data().message(fullId)) {
+				PendingUploads.insert(pendingKey, prepared);
+			}
 			const auto success = ApplySendResult(bridge, session, fullId, id, error);
 			if (done) done(success);
-		});
+		}, prepared.filename);
 	return true;
 }
 
