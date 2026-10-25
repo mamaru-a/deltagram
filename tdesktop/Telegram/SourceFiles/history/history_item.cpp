@@ -4406,6 +4406,16 @@ bool HistoryItem::hasUnpaidContent() const {
 	return false;
 }
 
+void HistoryItem::retrySend() {
+	Expects(hasFailed() && IsClientMsgId(id));
+	_flags = (_flags | MessageFlag::BeingSent) & ~MessageFlag::SendingFailed;
+	invalidateChatListEntry();
+	_history->owner().notifyItemDataChange(this);
+	_history->session().changes().historyUpdated(
+		_history,
+		Data::HistoryUpdate::Flag::ClientSideMessages);
+}
+
 void HistoryItem::sendFailed() {
 	Expects(_flags & MessageFlag::BeingSent);
 	Expects(!(_flags & MessageFlag::SendingFailed));

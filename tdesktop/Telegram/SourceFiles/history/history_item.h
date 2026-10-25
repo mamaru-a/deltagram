@@ -385,6 +385,7 @@ public:
 	[[nodiscard]] bool isRegular() const;
 	[[nodiscard]] bool isUploading() const;
 	void sendFailed();
+	void retrySend();
 	[[nodiscard]] int viewsCount() const;
 	[[nodiscard]] int repliesCount() const;
 	[[nodiscard]] bool repliesAreComments() const;

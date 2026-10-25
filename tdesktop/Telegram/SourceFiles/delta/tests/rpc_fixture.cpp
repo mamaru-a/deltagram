@@ -33,6 +33,7 @@ int main(int argc, char **argv) {
 	auto queuePublished = false;
 	const auto mode = qEnvironmentVariable("DC_ACCOUNTS_PATH");
 	auto queueFault = mode;
+	auto handoffFault = mode;
 	if (mode == u"history-large"_s) {
 		historyIds = {};
 		for (auto id = 1; id <= 205; ++id) historyIds.append(id);
@@ -41,6 +42,11 @@ int main(int argc, char **argv) {
 		const auto request = QJsonDocument::fromJson(QByteArray::fromStdString(line)).object();
 		const auto method = request[u"method"_s].toString();
 		const auto args = request[u"params"_s].toArray();
+		if (method == u"handoff_fault"_s) {
+			handoffFault = args[0].toString();
+			Reply(request, true);
+			continue;
+		}
 		if (mode.startsWith(u"lookup-"_s)) {
 			if (method == u"lookup_calls"_s) { Reply(request, historyCalls); continue; }
 			if (method == u"get_message"_s || method == u"get_message_ids"_s) {
@@ -287,6 +293,14 @@ int main(int argc, char **argv) {
 			};
 			if (method == u"get_draft"_s || method == u"inspect_draft"_s) {
 				auto value = drafts[key];
+				if (method == u"get_draft"_s && writes > 0
+					&& handoffFault == u"handoff-save-unreadable"_s) {
+					std::cout << QJsonDocument(QJsonObject{
+						{u"id"_s, request[u"id"_s]},
+						{u"error"_s, QJsonObject{{u"message"_s, u"Read failed"_s}}},
+					}).toJson(QJsonDocument::Compact).constData() << std::endl;
+					continue;
+				}
 				if (method == u"get_draft"_s && mode == u"handoff-wrong-quote"_s
 					&& value[u"id"_s].toInt() > 0) {
 					value[u"quote"_s] = QJsonObject{{u"messageId"_s, 999}};
@@ -295,7 +309,7 @@ int main(int argc, char **argv) {
 				continue;
 			}
 			++writes;
-			if (mode == u"reject"_s || mode == u"handoff-reject-save"_s) {
+			if (mode == u"reject"_s || handoffFault == u"handoff-reject-save"_s) {
 				std::cout << QJsonDocument(QJsonObject{
 					{u"id"_s, request[u"id"_s]},
 					{u"error"_s, QJsonObject{{u"message"_s, u"write rejected"_s}}},
@@ -307,8 +321,9 @@ int main(int argc, char **argv) {
 				{u"text"_s, args[2]}, {u"file"_s, args[3]}, {u"fileName"_s, args[4]},
 				{u"quote"_s, QJsonObject{{u"messageId"_s, args[5]}}}, {u"viewType"_s, args[6]},
 			};
-			if (mode == u"discard-lost-ack"_s || mode == u"handoff-save-lost-ack"_s) {
-				if (mode == u"handoff-save-lost-ack"_s) drafts[key][u"file"_s] = u"/core/managed.bin"_s;
+			if (mode == u"discard-lost-ack"_s || handoffFault == u"handoff-save-lost-ack"_s
+				|| handoffFault == u"handoff-save-unreadable"_s) {
+				if (handoffFault.startsWith(u"handoff-save-"_s)) drafts[key][u"file"_s] = u"/core/managed.bin"_s;
 				std::cout << QJsonDocument(QJsonObject{
 					{u"id"_s, request[u"id"_s]},
 					{u"error"_s, QJsonObject{{u"message"_s, u"reply lost after commit"_s}}},

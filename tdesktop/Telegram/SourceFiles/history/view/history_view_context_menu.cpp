@@ -1406,6 +1406,19 @@ void AddMessageActions(
 		const ContextMenuRequest &request,
 		not_null<ListWidget*> list) {
 	AddPostLinkAction(menu, request);
+	if (request.item && request.selectedItems.empty()
+		&& Delta::CanRetryPreparedAttachment(request.item)) {
+		const auto controller = list->controller();
+		const auto id = request.item->fullId();
+		const auto current = Delta::CaptureAccountGuard();
+		menu->addAction(tr::lng_bot_download_retry(tr::now),
+			crl::guard(controller, [=] {
+				if (!current || !current()) return;
+				if (const auto item = controller->session().data().message(id)) {
+					Delta::RetryPreparedAttachment(item);
+				}
+			}), &st::menuIconSend);
+	}
 	if (Delta::Active() && request.item && request.selectedItems.empty()
 		&& request.item->id.bare > 0) {
 		const auto controller = list->controller();

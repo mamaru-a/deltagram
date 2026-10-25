@@ -3822,6 +3822,32 @@ void SendReaction(int messageId, const QJsonArray &reactions) {
 	GlobalBridge->sendReaction(messageId, reactions);
 }
 
+bool CanRetryPreparedAttachment(not_null<HistoryItem*> item) {
+	const auto bridge = GlobalBridge;
+	if (!bridge || bridge->_switching || !bridge->_rpc->running()
+		|| &item->history()->session() != bridge->_session.get()
+		|| !item->hasFailed() || !IsClientMsgId(item->id)) {
+		return false;
+	}
+	const auto prepared = PendingUploads.value(
+		PendingKey(item->history()->peer->id.value, item->id.bare));
+	const auto preparation = prepared.preparation;
+	return preparation
+		&& preparation->account == bridge->_accountId
+		&& preparation->epoch == bridge->_dialogsEpoch
+		&& !preparation->owned
+		&& !preparation->finished
+		&& !bridge->_drafts->sending(preparation->account, preparation->chat)
+		&& QFileInfo(prepared.path).isFile();
+}
+
+void RetryPreparedAttachment(not_null<HistoryItem*> item) {
+	if (!CanRetryPreparedAttachment(item)) return;
+	// Mark pending before dispatch so duplicate actions cannot start a send.
+	item->retrySend();
+	SendItemMedia(item, {});
+}
+
 bool SendItemMedia(not_null<HistoryItem*> item, Fn<void(bool)> done) {
 	if (!GlobalBridge) {
 		return false;

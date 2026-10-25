@@ -802,6 +802,84 @@ private slots:
 		rpc->stop();
 	}
 
+	void preparedAttachmentRetry_data() {
+		QTest::addColumn<QString>("mode");
+		QTest::addColumn<bool>("rejectAgain");
+		QTest::addColumn<bool>("replaceDraft");
+		QTest::newRow("retry-after-rejection") << u"handoff-reject-save"_s << false << false;
+		QTest::newRow("repeated-rejection") << u"handoff-reject-save"_s << true << false;
+		QTest::newRow("different-draft-preserved") << u"handoff-reject-save"_s << false << true;
+		QTest::newRow("unconfirmed-save-preserved") << u"handoff-save-unreadable"_s << false << false;
+	}
+
+	void preparedAttachmentRetry() {
+		QFETCH(QString, mode);
+		QFETCH(bool, rejectAgain);
+		QFETCH(bool, replaceDraft);
+		auto rpc = std::make_shared<DeltaRpc>();
+		rpc->start(RPC_FIXTURE_PATH, mode);
+		Delta::DraftStore drafts(rpc, [](QString) {});
+		const auto target = Delta::ComposeDraft{
+			u"Retained caption"_s, 73, u"/picker/image.jpg"_s, u"image.jpg"_s, u"Image"_s,
+		};
+		auto completed = 0;
+		auto owned = 0;
+		drafts.sendAttachment(2, 10, target, [&](int id, QString error) {
+			QCOMPARE(id, 0);
+			QVERIFY(!error.isEmpty());
+			++completed;
+		}, [&](Delta::ComposeDraft) { ++owned; });
+		QTRY_COMPARE(completed, 1);
+		QCOMPARE(owned, 0);
+		QVERIFY(!drafts.sending(2, 10));
+		QCOMPARE(CoreCall(*rpc, u"sends"_s, {})[u"result"_s].toInt(), 0);
+		if (!rejectAgain) CoreCall(*rpc, u"handoff_fault"_s, {u"handoff-ok"_s});
+		if (replaceDraft) {
+			CoreCall(*rpc, u"misc_set_draft"_s, {
+				2, 10, u"Another caption"_s, u"/core/other.bin"_s, u"other.bin"_s, 81, u"File"_s,
+			});
+		}
+		const auto before = CoreCall(*rpc, u"inspect_draft"_s, {2, 10})[u"result"_s];
+		const auto writes = CoreCall(*rpc, u"writes"_s, {})[u"result"_s].toInt();
+		const auto success = !rejectAgain && !replaceDraft && mode == u"handoff-reject-save"_s;
+		auto sentId = 0;
+		drafts.sendAttachment(2, 10, target, [&](int id, QString error) {
+			QCOMPARE(id > 0, success);
+			QCOMPARE(error.isEmpty(), success);
+			sentId = id;
+			++completed;
+		}, [&](Delta::ComposeDraft saved) {
+			QCOMPARE(saved.text, target.text);
+			QCOMPARE(saved.quotedMessageId, target.quotedMessageId);
+			QCOMPARE(saved.file, target.file);
+			++owned;
+		});
+		auto duplicateRejected = false;
+		drafts.sendAttachment(2, 10, target, [&](int id, QString error) {
+			QCOMPARE(id, 0);
+			QVERIFY(!error.isEmpty());
+			duplicateRejected = true;
+		});
+		QVERIFY(duplicateRejected);
+		QTRY_COMPARE(completed, 2);
+		QCOMPARE(owned, success ? 1 : 0);
+		QCOMPARE(CoreCall(*rpc, u"sends"_s, {})[u"result"_s].toInt(), success ? 1 : 0);
+		QCOMPARE(CoreCall(*rpc, u"writes"_s, {})[u"result"_s].toInt(), writes + ((success || rejectAgain) ? 1 : 0));
+		const auto after = CoreCall(*rpc, u"inspect_draft"_s, {2, 10})[u"result"_s];
+		if (success) {
+			QVERIFY(after.toObject().isEmpty());
+			const auto sent = CoreCall(*rpc, u"get_message"_s, {2, sentId})[u"result"_s].toObject();
+			QCOMPARE(sent[u"text"_s].toString(), target.text);
+			QCOMPARE(sent[u"quote"_s].toObject()[u"messageId"_s].toInt(), target.quotedMessageId);
+			QCOMPARE(sent[u"file"_s].toString(), target.file);
+		} else {
+			QCOMPARE(after, before);
+		}
+		QCOMPARE(CoreCall(*rpc, u"inspect_draft"_s, {1, 10})[u"result"_s]
+			.toObject()[u"text"_s].toString(), u"account-1"_s);
+		rpc->stop();
+	}
+
 	void realCoreRejectedDraftHandoff() {
 		const auto program = qEnvironmentVariable("DELTA_TEST_CORE_RPC");
 		if (program.isEmpty()) QSKIP("Set DELTA_TEST_CORE_RPC to test the real Core server.");

@@ -3822,6 +3822,18 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 	}
 
 	const auto infoItem = _dragStateItem ? _dragStateItem : leaderOrSelf;
+	if (infoItem && isUponSelected <= 0
+		&& Delta::CanRetryPreparedAttachment(infoItem)) {
+		const auto id = infoItem->fullId();
+		const auto current = Delta::CaptureAccountGuard();
+		_menu->addAction(tr::lng_bot_download_retry(tr::now),
+			crl::guard(controller, [=] {
+				if (!current || !current()) return;
+				if (const auto item = controller->session().data().message(id)) {
+					Delta::RetryPreparedAttachment(item);
+				}
+			}), &st::menuIconSend);
+	}
 	if (Delta::Active() && infoItem && infoItem->id.bare > 0 && isUponSelected <= 0) {
 		const auto infoId = infoItem->id.bare;
 		if (Delta::CanDownloadMessage(infoId)) {
