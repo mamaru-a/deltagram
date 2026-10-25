@@ -261,12 +261,14 @@ void Uploader::processDocumentProgress(FullMsgId itemId) {
 
 void Uploader::processPhotoFailed(FullMsgId itemId) {
 	if (const auto item = session().data().message(itemId)) {
+		if (Delta::Active() && item->isSending()) item->sendFailed();
 		sendProgressUpdate(item, Api::SendProgressType::UploadPhoto, -1);
 	}
 }
 
 void Uploader::processDocumentFailed(FullMsgId itemId) {
 	if (const auto item = session().data().message(itemId)) {
+		if (Delta::Active() && item->isSending()) item->sendFailed();
 		const auto media = item->media();
 		const auto document = media ? media->document() : nullptr;
 		const auto sendAction = (document && document->isVoiceMessage())
