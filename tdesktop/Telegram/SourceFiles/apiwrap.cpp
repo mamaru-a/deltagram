@@ -3905,9 +3905,9 @@ void ApiWrap::finishForwarding(const SendAction &action) {
 	const auto topicRootId = action.replyTo.topicRootId;
 	const auto monoforumPeerId = action.replyTo.monoforumPeerId;
 	const auto requested = history->forwardDraft(topicRootId, monoforumPeerId);
-	auto toForward = history->resolveForwardDraft(
-		topicRootId,
-		monoforumPeerId);
+	auto toForward = Delta::Active()
+		? history->resolveForwardDraft(requested)
+		: history->resolveForwardDraft(topicRootId, monoforumPeerId);
 	if (Delta::Active() && requested.ids.size() != toForward.items.size()) {
 		if (const auto show = ShowForPeer(history->peer)) show->showToast(u"Some forwarded messages are no longer available. Review the selection before sending."_q);
 		return;
