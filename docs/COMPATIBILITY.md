@@ -187,6 +187,9 @@ components. A subsequent queue sender adds checkpointed advancement, recovery
 of known draft/outgoing IDs and stale-entry guards. All 103 focused checks pass,
 including real-Core rejected-send restart with both retained files. Batch GUI
 integration, native validation of the sender and live recovery remain unfinished.
+The subsequent integration review added guards against overwriting newer text
+or quote drafts and starting during an active draft operation; all 106 focused
+checks pass. These remain backend checks, not batch GUI or live delivery proof.
 
 ## Updating this tracker
 

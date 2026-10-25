@@ -25,6 +25,7 @@ public:
 	using Checkpoint = std::function<void(int, ComposeDraft, std::function<void(QString)>)>;
 	DraftStore(std::shared_ptr<DeltaRpc> rpc, std::function<void(QString)> error);
 	void load(int accountId, int chatId, Callback done);
+	void reload(int accountId, int chatId, Callback done);
 	void save(int accountId, int chatId, const QString &text, int quotedMessageId);
 	void recoverText(int accountId, int chatId, const QString &text, int quotedMessageId,
 		std::function<void(ComposeDraft)> recovered = {});
@@ -46,6 +47,7 @@ public:
 		std::function<void(bool)> done);
 	[[nodiscard]] QString attachmentName(int accountId, int chatId) const;
 	[[nodiscard]] bool sending(int accountId, int chatId) const;
+	[[nodiscard]] bool busy(int accountId, int chatId) const;
 	[[nodiscard]] bool preparingSend() const;
 
 private:

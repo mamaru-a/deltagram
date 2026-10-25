@@ -25,6 +25,15 @@ void DraftStore::load(int accountId, int chatId, Callback done) {
 	ensureLoaded(key);
 }
 
+void DraftStore::reload(int accountId, int chatId, Callback done) {
+	if (busy(accountId, chatId)) {
+		if (done) done({}, u"Wait for the current draft operation before reloading."_s);
+		return;
+	}
+	_entries[Key(accountId, chatId)].loaded = false;
+	load(accountId, chatId, std::move(done));
+}
+
 void DraftStore::save(int accountId, int chatId, const QString &text, int quotedMessageId) {
 	const auto key = Key(accountId, chatId);
 	auto &entry = _entries[key];
@@ -136,6 +145,12 @@ void DraftStore::flush(Key key) {
 bool DraftStore::sending(int accountId, int chatId) const {
 	const auto i = _entries.find(Key(accountId, chatId));
 	return i != _entries.end() && i->second.send.has_value();
+}
+
+bool DraftStore::busy(int accountId, int chatId) const {
+	const auto i = _entries.find(Key(accountId, chatId));
+	return i != _entries.end() && (i->second.send || i->second.saving
+		|| i->second.loading || i->second.pending);
 }
 
 bool DraftStore::preparingSend() const {

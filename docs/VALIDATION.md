@@ -705,6 +705,14 @@ The publication audit checks 13,215 files with zero blocking findings.
 Batch GUI wiring, native validation of the batch sender and live batch recovery
 remain open. Heavy builds remain serial; no second build was started.
 
+The UI integration review exposed a newer-draft hazard: an uncheckpointed queue
+entry could replace a newer text-only Core draft. Queue advancement now rejects
+a different nonempty caption or reply target, and refuses to start during an
+active draft read/write. A guarded reload API reads current Core state without
+interrupting that operation. All 106 focused checks pass, including newer
+caption/reply preservation, an in-flight save, and refreshing a cached draft
+without issuing any writes or sends. Batch UI integration remains pending.
+
 ### Second-device dialog integrity — 2026-10-25
 
 On the disposable `be7b043` GUI, two rapid Continue clicks started two

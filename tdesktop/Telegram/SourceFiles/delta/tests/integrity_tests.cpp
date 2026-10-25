@@ -58,9 +58,51 @@ class IntegrityTests final : public QObject {
 	Q_OBJECT
 
 private slots:
+	void draftReloadPreservesCurrentOperation() {
+		auto rpc = std::make_shared<DeltaRpc>();
+		rpc->start(RPC_FIXTURE_PATH, u"handoff-ok"_s);
+		auto drafts = std::make_shared<Delta::DraftStore>(rpc, [](QString) {});
+		auto queues = std::make_shared<Delta::ComposeQueueStore>(rpc);
+		Delta::ComposeQueueSender sender(rpc, queues, drafts);
+		auto loaded = false;
+		drafts->load(2, 10, [&](Delta::ComposeDraft draft, QString error) {
+			QVERIFY(error.isEmpty()); QCOMPARE(draft.text, u"account-2"_s); loaded = true;
+		});
+		QTRY_VERIFY(loaded);
+		CoreCall(*rpc, u"handoff_fault"_s, {u"handoff-hold-save"_s});
+		drafts->save(2, 10, u"Current composer text"_s, 73);
+		QTRY_VERIFY(CoreCall(*rpc, u"is_held"_s, {})[u"result"_s].toBool());
+		QVERIFY(drafts->busy(2, 10));
+		auto rejected = 0;
+		drafts->reload(2, 10, [&](Delta::ComposeDraft, QString error) {
+			QVERIFY(!error.isEmpty()); ++rejected;
+		});
+		sender.sendNext(2, 10, u"reviewed queue"_s, u"reviewed entry"_s,
+			[&](int id, Delta::ComposeQueue, QString error) {
+				QCOMPARE(id, 0); QVERIFY(!error.isEmpty()); ++rejected;
+			});
+		QCOMPARE(rejected, 2);
+		CoreCall(*rpc, u"release"_s, {});
+		QTRY_VERIFY(!drafts->busy(2, 10));
+		CoreCall(*rpc, u"handoff_fault"_s, {u"handoff-ok"_s});
+		CoreCall(*rpc, u"misc_set_draft"_s,
+			{2, 10, u"Core current draft"_s, u"/core/retained.bin"_s, u"retained.bin"_s, 81, u"File"_s});
+		loaded = false;
+		drafts->reload(2, 10, [&](Delta::ComposeDraft draft, QString error) {
+			QVERIFY(error.isEmpty());
+			QCOMPARE(draft.text, u"Core current draft"_s);
+			QCOMPARE(draft.quotedMessageId, 81);
+			QCOMPARE(draft.file, u"/core/retained.bin"_s);
+			loaded = true;
+		});
+		QTRY_VERIFY(loaded);
+		QCOMPARE(CoreCall(*rpc, u"writes"_s, {})[u"result"_s].toInt(), 2);
+		QCOMPARE(CoreCall(*rpc, u"sends"_s, {})[u"result"_s].toInt(), 0);
+	}
+
 	void queueSenderRecovery_data() {
 		QTest::addColumn<QString>("phase");
-		for (const auto phase : { "fresh", "draft", "outgoing", "uncheckpointed", "changed", "missing" }) {
+		for (const auto phase : { "fresh", "draft", "outgoing", "uncheckpointed", "changed", "missing", "new-text", "new-quote" }) {
 			QTest::newRow(phase) << QString::fromLatin1(phase);
 		}
 	}
@@ -85,8 +127,13 @@ private slots:
 			QVERIFY(error.isEmpty()); saved = std::move(queue); loaded = true;
 		});
 		QTRY_VERIFY(loaded);
+		CoreCall(*rpc, u"remove_draft"_s, {2, 10});
 		auto knownId = 0;
-		if (phase != u"fresh"_s) {
+		if (phase == u"new-text"_s || phase == u"new-quote"_s) {
+			CoreCall(*rpc, u"misc_set_draft"_s, {2, 10,
+				phase == u"new-text"_s ? u"Newer text"_s : u"First caption"_s,
+				QJsonValue(), QJsonValue(), phase == u"new-quote"_s ? 42 : 41, u"Text"_s});
+		} else if (phase != u"fresh"_s) {
 			const auto first = saved.entries.front();
 			const auto &draft = first.draft;
 			CoreCall(*rpc, u"misc_set_draft"_s, {2, 10, draft.text, draft.file, draft.filename, 41, draft.viewType});
@@ -107,7 +154,8 @@ private slots:
 		}
 		const auto before = CoreCall(*rpc, u"inspect_draft"_s, {2, 10})[u"result"_s].toObject();
 		Delta::ComposeQueueSender sender(rpc, queues, drafts);
-		const auto success = phase != u"changed"_s && phase != u"missing"_s;
+		const auto success = phase != u"changed"_s && phase != u"missing"_s
+			&& phase != u"new-text"_s && phase != u"new-quote"_s;
 		auto completed = false;
 		auto after = Delta::ComposeQueue();
 		sender.sendNext(2, 10, saved.id, saved.entries.front().id, [&](int id, Delta::ComposeQueue queue, QString error) {
@@ -169,6 +217,7 @@ private slots:
 			QVERIFY(error.isEmpty()); saved = std::move(queue); completed = true;
 		});
 		QTRY_VERIFY(completed);
+		CoreCall(*rpc, u"remove_draft"_s, {2, 10});
 		CoreCall(*rpc, fault.startsWith(u"queue-"_s) ? u"queue_fault"_s : u"handoff_fault"_s, {fault});
 		auto sender = std::make_unique<Delta::ComposeQueueSender>(rpc, queues, drafts);
 		completed = false;
@@ -218,6 +267,7 @@ private slots:
 				QVERIFY(error.isEmpty()); saved = std::move(queue); completed = true;
 			});
 		QTRY_VERIFY(completed);
+		CoreCall(*rpc, u"remove_draft"_s, {2, 10});
 		CoreCall(*rpc, u"queue_fault"_s, {u"queue-hold-checkpoint"_s});
 		auto sender = std::make_unique<Delta::ComposeQueueSender>(rpc, queues, drafts);
 		sender->sendNext(2, 10, saved.id, saved.entries.front().id, [](int, Delta::ComposeQueue, QString) {

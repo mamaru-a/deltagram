@@ -45,7 +45,7 @@ void ComposeQueueSender::call(QString method, QJsonArray params,
 void ComposeQueueSender::sendNext(int account, int chat, const QString &queueId,
 		const QString &entryId, Done done) {
 	if (account <= 0 || chat <= 0 || queueId.isEmpty() || entryId.isEmpty()
-		|| _drafts->sending(account, chat) || !_busy.insert({ account, chat }).second) {
+		|| _drafts->busy(account, chat) || !_busy.insert({ account, chat }).second) {
 		if (done) done(0, {}, u"This compose queue is unavailable or already sending."_s);
 		return;
 	}
@@ -75,6 +75,13 @@ void ComposeQueueSender::inspect(std::shared_ptr<Sending> state) {
 				return;
 			}
 			if (!known && message[u"file"_s].toString().isEmpty()) {
+				const auto text = message[u"text"_s].toString();
+				const auto quote = message[u"quote"_s].toObject()[u"messageId"_s].toInt();
+				if ((!text.isEmpty() || quote)
+					&& (text != entry.draft.text || quote != entry.draft.quotedMessageId)) {
+					finish(state, 0, u"This chat has a newer draft. It was preserved; review it before sending the queued attachment."_s);
+					return;
+				}
 				send(state);
 				return;
 			}

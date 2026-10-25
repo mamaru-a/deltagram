@@ -343,6 +343,7 @@ int main(int argc, char **argv) {
 				continue;
 			}
 			if (mode == u"hold-first-save"_s && writes == 1) { held = request; continue; }
+			if (handoffFault == u"handoff-hold-save"_s) { held = request; continue; }
 			Reply(request, true);
 			continue;
 		}
