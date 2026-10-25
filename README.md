@@ -89,7 +89,7 @@ Incomplete or not yet verified:
 
 - Physical recording/playback devices, service events and complete profile-switch refresh.
 - Delta Chat calls; Telegram conferences are disabled.
-- Combined file/recording-plus-forwarding and broader attachment interruption cases.
+- Round-video capture and broader forwarding/attachment interruption cases.
 - Camera/mobile QR flows and broad end-to-end compatibility.
 - Accessibility, RTL, advanced media/search and full webxdc behavior need validation.
 

@@ -116,7 +116,8 @@ Both clients displayed the 21-second duration, and preview/reference playback
 advanced with non-silent captured output. The encoded file is mono Opus at
 48 kHz. Reference playback required restarting the disposable reference client
 with its virtual PulseAudio output configured; no hardware microphone or
-speaker was tested. Combined recording-plus-forwarding remains unverified.
+speaker was tested. Combined recording-plus-forwarding is covered separately
+below on `5182d5e`.
 
 Disposable combined-forwarding replay on the checksum-verified `5182d5e` GUI
 selected two files and added a text prefix. Rejected text send retained all
@@ -135,6 +136,19 @@ held while the native review loaded independently and sent the remaining entry.
 Releasing that old one-entry reply after completion did not restore the queue
 hint or block the composer. Clicking the attachment button opened the ordinary
 file picker. Queue and draft were empty; all proxy faults were removed.
+
+Additional `5182d5e` GUI replays cover a newly selected file followed by a
+forward, and a newly recorded quoted voice followed by a forward. Rejected
+initial send preserved both ordered entries before any forward call. The file
+case recovered after the original input was removed. The voice case retained
+the recording draft ID, quote and forward source across normal quit/restart.
+Explicit recovery delivered exactly two messages in each case, in order, with
+matching hashes in official Desktop 2.62.0, retained captions/forward markers,
+and the voice quote intact. Reference voice playback produced non-silent
+virtual output. Each replay issued one forward call; queues/drafts cleared and
+the alternate profile draft remained unchanged. Fault injection is off. These
+checks cover ordinary files and voice recordings; round-video capture and
+physical devices remain unverified.
 
 The batch coordinator collects prepared files by selection index and retains
 their owners through Core storage. No file is queued before every preparation
@@ -251,8 +265,9 @@ a storage test, not codec or playback proof.
 
 The ordinary recording, quoted cross-client playback and rejected-storage/restart
 replay now pass on `49454ee`, as recorded above. The combined forwarding UI is
-compiled by `5182d5e` and uses the generic queue; recording-plus-forwarding and
-physical audio devices still need live validation.
+compiled by `5182d5e` and uses the generic queue. Quoted voice-plus-forwarding
+also passes rejected-send/restart/delivery and reference playback as recorded
+above; round-video capture and physical audio devices still need validation.
 
 ### Recent live regressions and fixes
 
