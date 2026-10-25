@@ -190,6 +190,9 @@ integration, native validation of the sender and live recovery remain unfinished
 The subsequent integration review added guards against overwriting newer text
 or quote drafts and starting during an active draft operation; all 106 focused
 checks pass. These remain backend checks, not batch GUI or live delivery proof.
+Saved-queue review and serial Send remaining controls are now wired in source
+through the attachment button. Native compilation and disposable replay remain
+pending, as do new-batch preparation, discard controls and restart discovery.
 
 ## Updating this tracker
 

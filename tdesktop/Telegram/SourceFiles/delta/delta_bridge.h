@@ -5,6 +5,7 @@ This file is part of Delta Tel, a Telegram Desktop based Delta Chat client.
 
 #include "delta/delta_rpc.h"
 #include "delta/draft_store.h"
+#include "delta/compose_queue.h"
 #include "delta/history_mutations.h"
 #include "mtproto/core_types.h"
 #include "rpl/producer.h"
@@ -62,6 +63,8 @@ void DiscardDraftAttachment(int userId, const QString &expectedFile, Fn<void(boo
 [[nodiscard]] QString DraftAttachmentName(int userId);
 void SaveDraft(int userId, const QString &text, int quotedMessageId);
 void LoadDraft(int userId, Fn<void(ComposeDraft)> done);
+void LoadComposeQueue(int userId, Fn<void(ComposeQueue, QString)> done);
+void SendComposeQueue(int userId, ComposeQueue reviewed, Fn<void(bool)> done);
 void RequestMessageData(int userId, int messageId, Fn<void()> done);
 enum class DeliveryState { Pending, Failed, Sent, Read };
 [[nodiscard]] std::optional<DeliveryState> MessageDelivery(int messageId);

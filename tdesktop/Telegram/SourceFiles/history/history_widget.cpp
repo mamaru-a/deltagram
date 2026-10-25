@@ -6350,6 +6350,40 @@ void HistoryWidget::chooseAttach(
 	}
 	if (deltaComposerLocked() || !_peer || !_canSendMessages) return;
 	const auto history = _history;
+	const auto currentAccount = Delta::CaptureAccountGuard();
+	const auto userId = int(peerToUser(_peer->id).bare);
+	Delta::LoadComposeQueue(userId, crl::guard(this, [=](Delta::ComposeQueue queue, QString error) {
+		if (!currentAccount || !currentAccount() || _history != history || deltaComposerLocked()) return;
+		if (!error.isEmpty()) { controller()->showToast(error); return; }
+		if (queue.entries.empty()) {
+			chooseDeltaDraftAttachment(overrideSendImagesAsPhotos);
+			return;
+		}
+		controller()->show(Box([=](not_null<Ui::GenericBox*> box) {
+			box->setTitle(rpl::single(u"Saved attachments"_q));
+			const auto &first = queue.entries.front().draft;
+			box->addRow(object_ptr<Ui::FlatLabel>(box,
+				rpl::single(u"%1 attachments remain.\n\nNext: %2\n%3\n\nSend the remaining attachments in order. If a send cannot be confirmed, the queue will pause for review."_q
+					.arg(int(queue.entries.size())).arg(first.filename, first.text)) | rpl::map(tr::marked),
+				st::infoAboutGigagroup));
+			box->addButton(rpl::single(u"Send remaining"_q), crl::guard(this, [=] {
+				box->closeBox();
+				if (!currentAccount() || _history != history || deltaComposerLocked()) return;
+				Delta::SendComposeQueue(userId, queue, crl::guard(this, [=](bool sent) {
+					if (!currentAccount() || _history != history) return;
+					if (sent) fastShowAtEnd(history);
+					setInnerFocus();
+				}));
+			}));
+			box->addButton(tr::lng_cancel(), [=] { box->closeBox(); });
+		}));
+	}));
+}
+
+void HistoryWidget::chooseDeltaDraftAttachment(
+		std::optional<bool> overrideSendImagesAsPhotos) {
+	if (deltaComposerLocked() || !_peer || !_canSendMessages) return;
+	const auto history = _history;
 	const auto generation = Delta::AccountGeneration();
 	const auto userId = int(peerToUser(_peer->id).bare);
 	Delta::LoadDraft(userId, crl::guard(this, [=](Delta::ComposeDraft draft) {

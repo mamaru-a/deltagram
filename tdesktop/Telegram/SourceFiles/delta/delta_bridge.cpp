@@ -2,6 +2,7 @@
 This file is part of Delta Tel, a Telegram Desktop based Delta Chat client.
 */
 #include "delta/delta_bridge.h"
+#include "delta/compose_queue_sender.h"
 
 #include "apiwrap.h"
 #include "delta/account_scope.h"
@@ -759,9 +760,11 @@ public:
 	, _selfName(selfName) {
 		GlobalBridge = this;
 		_backups = std::make_unique<BackupTransfers>(_rpc);
-		_drafts = std::make_unique<DraftStore>(_rpc, [=](QString error) {
+		_drafts = std::make_shared<DraftStore>(_rpc, [=](QString error) {
 			reportError(error);
 		});
+		_queues = std::make_shared<ComposeQueueStore>(_rpc);
+		_queueSender = std::make_unique<ComposeQueueSender>(_rpc, _queues, _drafts);
 		_reload.setSingleShot(true);
 		_reload.setInterval(150);
 		QObject::connect(&_reload, &QTimer::timeout, [=] {
@@ -811,6 +814,7 @@ public:
 
 	void saveDraft(int userId, const QString &text, int quotedMessageId) {
 		const auto chatId = chatForPeerUser(userId);
+		if (_queueRuns.contains({ _accountId, chatId })) return;
 		if (chatId > 0) _drafts->save(_accountId, chatId, text, quotedMessageId);
 	}
 
@@ -830,7 +834,77 @@ public:
 		const auto preparation = (i != _preparations.end()) ? i->second.lock() : nullptr;
 		return !_switching && _rpc->running()
 			&& (!preparation || preparation->finished)
+			&& !_queueRuns.contains({ _accountId, chat })
 			&& !_drafts->sending(_accountId, chatForPeerUser(userId));
+	}
+
+	void loadComposeQueue(int userId, Fn<void(ComposeQueue, QString)> done) {
+		const auto guard = _alive;
+		const auto current = _accountScope.guard();
+		_queues->load(_accountId, chatForPeerUser(userId),
+			[=](ComposeQueue queue, QString error) {
+				if (!guard.expired() && current() && done) done(std::move(queue), std::move(error));
+			});
+	}
+
+	void finishComposeQueue(int account, int chat, int userId,
+			std::function<bool()> current, QString error, Fn<void(bool)> done) {
+		const auto guard = _alive;
+		_drafts->reload(account, chat, [=](ComposeDraft draft, QString readError) {
+			if (guard.expired()) return;
+			if (!current()) {
+				_queueRuns.erase({ account, chat });
+				ComposerRevision = ComposerRevision.current() + 1;
+				return;
+			}
+			const auto peer = peerFromUser(UserId(userId));
+			if (readError.isEmpty()) {
+				if (const auto history = _session->data().historyLoaded(peer)) {
+					history->clearLocalDraft({}, {});
+					history->clearCloudDraft({}, {});
+					if (!draft.text.isEmpty() || draft.quotedMessageId) {
+						auto restored = Data::Draft(TextWithTags{ draft.text },
+							FullReplyTo{ .messageId = draft.quotedMessageId > 0
+								? FullMsgId(peer, MsgId(draft.quotedMessageId)) : FullMsgId() },
+							SuggestOptions(), MessageCursor(), Data::WebPageDraft());
+						history->createCloudDraft({}, {}, &restored);
+					}
+					history->applyCloudDraft({}, {});
+				}
+			}
+			const auto failure = !error.isEmpty() ? error : readError;
+			if (!failure.isEmpty()) reportError(failure);
+			_queueRuns.erase({ account, chat });
+			ComposerRevision = ComposerRevision.current() + 1;
+			if (done) done(failure.isEmpty());
+		});
+	}
+
+	void advanceComposeQueue(int account, int chat, int userId,
+			std::function<bool()> current, ComposeQueue queue, Fn<void(bool)> done) {
+		if (!current() || queue.entries.empty()) {
+			finishComposeQueue(account, chat, userId, current, {}, std::move(done));
+			return;
+		}
+		const auto guard = _alive;
+		_queueSender->sendNext(account, chat, queue.id, queue.entries.front().id,
+			[=](int id, ComposeQueue remaining, QString error) {
+				if (guard.expired()) return;
+				if (current() && id > 0 && !_deletedMessages.contains(id)) addIncoming(chat, id);
+				if (!error.isEmpty()) {
+					finishComposeQueue(account, chat, userId, current, std::move(error), done);
+				} else {
+					advanceComposeQueue(account, chat, userId, current, std::move(remaining), done);
+				}
+			});
+	}
+
+	void sendComposeQueue(int userId, ComposeQueue reviewed, Fn<void(bool)> done) {
+		if (!composerWritable(userId) || reviewed.entries.empty()) return;
+		const auto chat = chatForPeerUser(userId);
+		_queueRuns.insert({ _accountId, chat });
+		ComposerRevision = ComposerRevision.current() + 1;
+		advanceComposeQueue(_accountId, chat, userId, _accountScope.guard(), std::move(reviewed), std::move(done));
 	}
 
 	std::shared_ptr<PreparedSend> beginPreparedSend(int userId) {
@@ -3307,7 +3381,10 @@ public:
 
 	const not_null<Main::Session*> _session;
 	const std::shared_ptr<DeltaRpc> _rpc;
-	std::unique_ptr<DraftStore> _drafts;
+	std::shared_ptr<DraftStore> _drafts;
+	std::shared_ptr<ComposeQueueStore> _queues;
+	std::unique_ptr<ComposeQueueSender> _queueSender;
+	std::set<std::pair<int, int>> _queueRuns;
 	std::map<std::pair<int, int>, std::weak_ptr<PreparedSend>> _preparations;
 	std::unique_ptr<BackupTransfers> _backups;
 	int _accountId = 0;
@@ -3419,6 +3496,14 @@ void SaveDraft(int userId, const QString &text, int quotedMessageId) {
 
 void LoadDraft(int userId, Fn<void(ComposeDraft)> done) {
 	if (GlobalBridge) GlobalBridge->loadDraft(userId, std::move(done));
+}
+
+void LoadComposeQueue(int userId, Fn<void(ComposeQueue, QString)> done) {
+	if (GlobalBridge) GlobalBridge->loadComposeQueue(userId, std::move(done));
+}
+
+void SendComposeQueue(int userId, ComposeQueue reviewed, Fn<void(bool)> done) {
+	if (GlobalBridge) GlobalBridge->sendComposeQueue(userId, std::move(reviewed), std::move(done));
 }
 
 void RequestMessageData(int userId, int messageId, Fn<void()> done) {

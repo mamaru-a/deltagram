@@ -713,6 +713,17 @@ interrupting that operation. All 106 focused checks pass, including newer
 caption/reply preservation, an in-flight save, and refreshing a cached draft
 without issuing any writes or sends. Batch UI integration remains pending.
 
+The attachment button now checks for a saved compose queue before opening the
+single-file recovery dialog or file picker. The new review dialog shows the
+remaining count and next filename/caption; its explicit Send remaining action
+advances the queue serially and pauses on any error. While advancing, the bridge
+locks the composer and ignores stale autosave writes. It restores a fresh Core
+draft before unlocking, and an account change stops further advancement without
+applying the original profile's draft to the new view. This UI source passes the
+publication audit but awaits native compilation and disposable replay. New
+multi-file selection/preparation, queue discard controls and recovery discovery
+after restart still need integration; this is not completed batch support.
+
 ### Second-device dialog integrity — 2026-10-25
 
 On the disposable `be7b043` GUI, two rapid Continue clicks started two

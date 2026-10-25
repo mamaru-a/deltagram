@@ -516,6 +516,7 @@ private:
 	void clearOverStates();
 	void chooseAttach(std::optional<bool> overrideSendImagesAsPhotos = {});
 	void chooseNewAttachment(std::optional<bool> overrideSendImagesAsPhotos);
+	void chooseDeltaDraftAttachment(std::optional<bool> overrideSendImagesAsPhotos);
 	void sendDeltaAttachment(Delta::ComposeDraft draft);
 	void sendButtonClicked();
 	void stopStreamedDraft();
