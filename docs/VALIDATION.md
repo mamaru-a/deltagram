@@ -466,8 +466,25 @@ old history instead of the new attachment. `fastShowAtEnd` selects the unread
 position on this path. Private evidence: `prepared-retried-position-7f95.png`.
 The follow-up fix selects the actual end for Delta sends; its native/live replay
 is pending.
-Archive recovery, quote retention, uncompressed retry, uncertain replies and
-the new preparation guards still need exact-binary GUI coverage.
+Quote retention, uncompressed retry, uncertain replies and the new preparation
+guards still need exact-binary GUI coverage. The unquoted archive case below
+provides a separate recovery check.
+
+A generated-archive recovery case also passes on `7f95cca`: rejected send leaves
+Core draft 150 with caption and `archive-integrity.zip`; normal quit/restart
+retains the same draft ID and SHA-256
+`77727a57f007d7d1dc1220df7f5fee2a70aaf561d0278b1bf0a80cab0079d7fd`.
+The settled recovery dialog shows the filename. One explicit Send after clearing
+the fault produces Core message 151 and reference message 163, matching ZIP bytes
+and the single expected fixture entry in official Desktop 2.62.0. Both GUIs show
+the caption/file, the draft clears, other profiles have no matching messages,
+and the alternate draft is unchanged. No temporary archive survives restart.
+Private evidence: `attachment-archive-explicit-rejected-7f95.json`,
+`attachment-archive-explicit-restart-7f95.json`,
+`archive-explicit-review-7f95.png`, `media-archive-explicit-delivered-7f95.json`,
+`archive-explicit-sent-7f95.png`, and `archive-explicit-reference-7f95.png`.
+An earlier archive attempt was excluded from retry evidence because a click
+during the dialog transition selected attachment removal; its caption remained.
 
 Multi-file batches, voice recording and combined forwarding retain their prior
 send paths. Failure before a prepared output exists does not make the original
@@ -526,7 +543,7 @@ Private evidence: `attachment-prepared-save-lost-quote-7f95.json`,
 `attachment-prepared-quote-retried-7f95.json`. This case is a failure, not quote
 compatibility proof.
 
-The source fix routes individual message lookup through Core instead of the
+`7f25d36` routes individual message lookup through Core instead of the
 unsupported donor `messages.getMessages` request. It verifies the message ID,
 chat and visible-history membership, rejects drafts/hidden messages, and scopes
 both reads to the active account. The existing presentation adapter adds the
@@ -539,8 +556,13 @@ All 85 focused checks pass, with no failures or skips, including lookup failures
 wrong IDs/chats, hidden messages, draft exclusion, cancellation at both reads,
 and real-Core lookup before and after deletion. The source audit has zero
 blocking findings across 13,213 files. Native compilation and exact-binary GUI
-replay of this quote fix remain pending. The separate `252bfa0` native/package
-run is still in progress; no second heavy build was started.
+replay of this quote fix remain pending in
+[run 40195411077](https://github.com/mamaru-a/deltagram/actions/runs/40195411077).
+It started only after the separate `252bfa0` native/portable/package
+[run 40193903762](https://github.com/mamaru-a/deltagram/actions/runs/40193903762)
+completed successfully, including all 77 focused checks for that revision.
+The `252bfa0` GUI/Core artifacts were checksum-verified; its navigation fix
+still needs GUI replay.
 
 ### Queued-send checkpoint — 2026-10-25
 
@@ -560,7 +582,8 @@ rejected and duplicate checkpoint continuation, destruction of its owner,
 identity/content mismatches, a committed checkpoint whose readback is lost, and
 resuming the recorded ID without any draft rewrite. A real-Core rejected resume
 also preserves the original draft ID after restart. Batch controller/GUI wiring
-and native/live validation of these newer APIs remain open.
+and live validation remain open. Native/portable/package validation passed
+with all 77 checks at `252bfa0` (run `40193903762`).
 
 ### Second-device dialog integrity — 2026-10-25
 

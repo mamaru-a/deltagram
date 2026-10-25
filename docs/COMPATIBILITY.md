@@ -158,12 +158,14 @@ verified GUI retains a rejected prepared image and caption across quit/restart,
 then delivers one explicit retry with byte-identical prepared JPEG content in
 official Desktop 2.62.0. Temporary staging is cleaned and other profiles remain
 isolated. The replay also exposed a jump to old history after recovery; the
-`252bfa0` fix selects the actual chat end and is awaiting native/live validation.
+`252bfa0` fix selects the actual chat end and passes native/package validation;
+GUI replay is pending.
 A separate lost-save-ack/restart case retained the quote in Core but dropped it
 on explicit retry because its older message was not loaded in the GUI. The
 Core-backed lookup and quote-preservation fix passes focused checks (85 total),
-but native/live replay remains pending. Broader prepared-archive, uncompressed
-and interruption checks remain open.
+but native/live replay remains pending. A generated ZIP also passes rejected-send
+restart/retry on `7f95cca`, with identical archive bytes and contents in both
+clients. Uncompressed and broader interruption checks remain open.
 
 `ca039dc` adds Core-backed batch compose storage, and `8a2b78c` adds durable-send
 checkpoint continuation and verified-ID resume without replacing a Core draft.
