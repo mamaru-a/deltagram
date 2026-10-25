@@ -5,6 +5,7 @@ This file is part of Delta Tel, a Telegram Desktop based Delta Chat client.
 
 #include "apiwrap.h"
 #include "delta/account_scope.h"
+#include "delta/backup_transfer.h"
 #include "delta/message_order.h"
 #include "delta/message_visibility.h"
 #include "delta/message_download.h"
@@ -741,6 +742,7 @@ public:
 	, _accountId(accountId)
 	, _selfName(selfName) {
 		GlobalBridge = this;
+		_backups = std::make_unique<BackupTransfers>(_rpc);
 		_drafts = std::make_unique<DraftStore>(_rpc, [=](QString error) {
 			reportError(error);
 		});
@@ -751,6 +753,8 @@ public:
 		});
 	}
 	~Bridge() {
+		_accountScope.invalidate();
+		_backups.reset();
 		if (GlobalBridge == this) {
 			PendingUploads.clear();
 			GlobalBridge = nullptr;
@@ -1212,45 +1216,21 @@ public:
 			});
 	}
 
-	void startSecondDevice(
+	Fn<void()> startSecondDevice(
 			Fn<void(QString, QString)> ready,
 			Fn<void(QString)> finished) {
 		const auto guard = _alive;
-		call(
-			u"provide_backup"_q,
-			{ _accountId },
-			[=](QJsonObject result) {
-				if (!guard.expired() && finished) {
-					finished(HasError(result) ? ErrorText(result) : QString());
+		const auto account = _accountScope.guard();
+		return _backups->start(_accountId,
+			[=](QString svg, QString error) {
+				if (!guard.expired() && account() && ready) {
+					ready(std::move(svg), std::move(error));
 				}
-			});
-		call(
-			u"get_backup_qr"_q,
-			{ _accountId },
-			[=](QJsonObject result) {
-				if (guard.expired()) {
-					return;
+			},
+			[=](QString error) {
+				if (!guard.expired() && account() && finished) {
+					finished(std::move(error));
 				}
-				if (HasError(result)) {
-					if (ready) {
-						ready(QString(), ErrorText(result));
-					}
-					return;
-				}
-				const auto qr = result.value(u"result"_q).toString();
-				call(
-					u"create_qr_svg"_q,
-					{ qr },
-					[=](QJsonObject svg) {
-						if (guard.expired() || !ready) {
-							return;
-						}
-						ready(
-							HasError(svg)
-								? QString()
-								: svg.value(u"result"_q).toString(),
-							HasError(svg) ? ErrorText(svg) : QString());
-					});
 			});
 	}
 
@@ -1336,13 +1316,6 @@ public:
 					done(HasError(reply) ? ErrorText(reply) : QString());
 				}
 			});
-	}
-
-	void stopSecondDevice() {
-		call(
-			u"stop_ongoing_process"_q,
-			{ _accountId },
-			[](QJsonObject) {});
 	}
 
 	void setSelfAvatar(const QString &path, Fn<void(QString)> done) {
@@ -3225,6 +3198,7 @@ public:
 	const not_null<Main::Session*> _session;
 	const std::shared_ptr<DeltaRpc> _rpc;
 	std::unique_ptr<DraftStore> _drafts;
+	std::unique_ptr<BackupTransfers> _backups;
 	int _accountId = 0;
 	QString _selfName;
 	QString _selfAvatar;
@@ -3917,22 +3891,14 @@ void AddTransportFromQr(const QString &qr, Fn<void(QString)> done) {
 	GlobalBridge->addTransportFromQr(qr, std::move(done));
 }
 
-void StartSecondDevice(
+Fn<void()> StartSecondDevice(
 		Fn<void(QString, QString)> ready,
 		Fn<void(QString)> finished) {
 	if (!GlobalBridge) {
-		if (ready) {
-			ready(QString(), u"Delta Chat is not running."_q);
-		}
-		return;
+		if (finished) finished(u"Delta Chat is not running."_q);
+		return {};
 	}
-	GlobalBridge->startSecondDevice(std::move(ready), std::move(finished));
-}
-
-void StopSecondDevice() {
-	if (GlobalBridge) {
-		GlobalBridge->stopSecondDevice();
-	}
+	return GlobalBridge->startSecondDevice(std::move(ready), std::move(finished));
 }
 
 void LoadInviteQr(

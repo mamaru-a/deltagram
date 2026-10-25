@@ -48,7 +48,7 @@ are not copied here. Deltagram evidence comes from [PROGRESS.md](PROGRESS.md),
 | Profile and group photos | 🟡 Partial | Settings image selection/crop/save and account avatar colors checked locally with Core; group checks recorded. Complete camera workflows and live photo distribution need checking. |
 | Onboarding and relay settings | 🟡 Partial | Fresh GUI creation, repeated-submit protection, fail-closed discovery, QR-image join and live exchange passed on `3c2def3`. Configured-account recovery without duplicate provisioning passed on `a8c544f`; backup restore remains unverified. |
 | Invite QR scanning | 🟡 Partial | Camera capture, QR image files and clipboard screenshots feed Core invites for an explicit Join. Image decoding is checked locally; physical camera capture needs hardware validation. |
-| Second-device setup | 🟡 Partial | Real Core backup QR generation exists; completed transfer to another device is unverified. |
+| Second-device setup | 🟡 Partial | Full transfer to official Desktop 2.62.0, restored history/media and bidirectional message synchronization passed on `a1cbe2a`. Early preparation cancellation has a confirmed race; its ownership fix awaits native/live validation. |
 | Contact status and biographies | 🟡 Partial | Available Core contact status displayed; imported vCard biographies are unsupported by the current Core snapshot. |
 | Search | 🟡 Partial | Core result IDs now feed paged global/in-chat search, with canceled-query/account guards and visible failures. Saved Messages self-peer loading no longer requires a Telegram phone number. `3c2def3` passed all 60 global/in-chat matches, final-page navigation, delayed replacement/cancellation and visible rejection. Help/HTML searches need separate checks. |
 | App picker and webxdc | 🟡 Partial | Embedded app store exists; host rendering, draft preparation and synchronized webxdc updates are unverified. |
@@ -118,8 +118,10 @@ delayed Core reads, a profile switch while the request is pending, matching
 filename/content/bytes in official Desktop 2.62.0, cleanup after acceptance,
 and retention followed by explicit deletion after rejection. Background media
 preparation guards have focused tests; live interruption of preparation itself
-remains unverified. Byte-backed staging cleanup and second-device dialog
-start/cancel guards are implemented in `a1cbe2a` and await native/live validation.
+remains unverified. Byte-backed staging cleanup, private permissions, second-device dialog
+start/cancel guards and a full transfer passed native/live validation on `a1cbe2a`.
+A further early-cancellation race is repaired in source with six new focused test
+cases; native/live validation of that repair is pending.
 
 ## Updating this tracker
 

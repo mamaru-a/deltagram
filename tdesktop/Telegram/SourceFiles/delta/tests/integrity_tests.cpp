@@ -1,4 +1,5 @@
 #include "delta_rpc.h"
+#include "backup_transfer.h"
 #include "draft_store.h"
 #include "account_scope.h"
 #include "account_inventory.h"
@@ -35,12 +36,160 @@ QJsonObject CoreCall(DeltaRpc &rpc, const QString &method, const QJsonArray &par
 	return reply;
 }
 
+int BackupCalls(DeltaRpc &rpc, const QString &method, int account = 0) {
+	const auto calls = CoreCall(rpc, u"backup_calls"_s, {})[u"result"_s].toArray();
+	auto count = 0;
+	for (const auto &value : calls) {
+		const auto call = value.toObject();
+		if (call[u"method"_s] == method
+			&& (!account || call[u"params"_s].toArray()[0].toInt() == account)) {
+			++count;
+		}
+	}
+	return count;
+}
+
 } // namespace
 
 class IntegrityTests final : public QObject {
 	Q_OBJECT
 
 private slots:
+	void backupCancellation_data() {
+		QTest::addColumn<bool>("early");
+		QTest::newRow("cancel-during-preparation") << true;
+		QTest::newRow("cancel-after-qr") << false;
+	}
+
+	void backupCancellation() {
+		QFETCH(bool, early);
+		auto rpc = std::make_shared<DeltaRpc>();
+		rpc->start(RPC_FIXTURE_PATH, u"backup"_s);
+		Delta::BackupTransfers transfers(rpc);
+		auto ready = 0;
+		auto completed = 0;
+		const auto cancel = transfers.start(3, [&](QString svg, QString error) {
+			QCOMPARE(svg, u"<svg/>"_s);
+			QVERIFY(error.isEmpty());
+			++ready;
+		}, [&](QString) { ++completed; });
+		QVERIFY(cancel);
+		if (early) { cancel(); cancel(); }
+		QCOMPARE(BackupCalls(*rpc, u"stop_ongoing_process"_s), 0);
+		auto duplicateRejected = false;
+		const auto duplicate = transfers.start(3, {}, [&](QString error) {
+			duplicateRejected = !error.isEmpty();
+		});
+		QVERIFY(!duplicate);
+		QVERIFY(duplicateRejected);
+		CoreCall(*rpc, u"release_backup_qr"_s, {3});
+		if (!early) {
+			QTRY_COMPARE(ready, 1);
+			cancel();
+			cancel();
+		}
+		QTRY_COMPARE(completed, 1);
+		QCOMPARE(ready, early ? 0 : 1);
+		QCOMPARE(BackupCalls(*rpc, u"provide_backup"_s), 1);
+		QCOMPARE(BackupCalls(*rpc, u"stop_ongoing_process"_s, 3), 1);
+		QCOMPARE(BackupCalls(*rpc, u"create_qr_svg"_s), early ? 0 : 1);
+		const auto next = transfers.start(3, {}, [&](QString) { ++completed; });
+		QVERIFY(next);
+		QCOMPARE(BackupCalls(*rpc, u"provide_backup"_s), 2);
+		CoreCall(*rpc, u"finish_backup"_s, {3});
+		QTRY_COMPARE(completed, 2);
+		cancel(); // An old dialog cannot stop a later attempt.
+		QCOMPARE(BackupCalls(*rpc, u"stop_ongoing_process"_s), 1);
+		rpc->stop();
+	}
+
+	void backupOwnerDestructionAndAccountIsolation() {
+		auto rpc = std::make_shared<DeltaRpc>();
+		rpc->start(RPC_FIXTURE_PATH, u"backup"_s);
+		auto completed = 0;
+		{
+			Delta::BackupTransfers transfers(rpc);
+			const auto first = transfers.start(3, {}, [&](QString) { ++completed; });
+			const auto second = transfers.start(2, {}, [&](QString) { ++completed; });
+			QVERIFY(first && second);
+			first();
+			CoreCall(*rpc, u"release_backup_qr"_s, {3});
+			QTRY_COMPARE(completed, 1);
+			QCOMPARE(BackupCalls(*rpc, u"stop_ongoing_process"_s, 2), 0);
+		}
+		// Destruction cancels the still-preparing transfer even after its handle is gone.
+		CoreCall(*rpc, u"release_backup_qr"_s, {2});
+		QTRY_COMPARE(completed, 2);
+		QCOMPARE(BackupCalls(*rpc, u"stop_ongoing_process"_s, 3), 1);
+		QCOMPARE(BackupCalls(*rpc, u"stop_ongoing_process"_s, 2), 1);
+		QCOMPARE(BackupCalls(*rpc, u"create_qr_svg"_s), 0);
+		rpc->stop();
+	}
+
+	void backupIgnoresLateReadAfterCompletion() {
+		auto rpc = std::make_shared<DeltaRpc>();
+		rpc->start(RPC_FIXTURE_PATH, u"backup"_s);
+		Delta::BackupTransfers transfers(rpc);
+		auto ready = 0;
+		auto completed = 0;
+		const auto old = transfers.start(3, [&](QString, QString) { ++ready; },
+			[&](QString) { ++completed; });
+		old();
+		CoreCall(*rpc, u"finish_backup"_s, {3});
+		QTRY_COMPARE(completed, 1);
+		const auto next = transfers.start(3, [&](QString, QString) { ++ready; },
+			[&](QString) { ++completed; });
+		CoreCall(*rpc, u"release_backup_qr"_s, {3}); // Late result for old attempt.
+		QCOMPARE(BackupCalls(*rpc, u"create_qr_svg"_s), 0);
+		old();
+		QCOMPARE(BackupCalls(*rpc, u"stop_ongoing_process"_s), 0);
+		CoreCall(*rpc, u"release_backup_qr"_s, {3});
+		QTRY_COMPARE(ready, 1);
+		next();
+		QTRY_COMPARE(completed, 2);
+		QCOMPARE(BackupCalls(*rpc, u"stop_ongoing_process"_s), 1);
+		rpc->stop();
+	}
+
+	void backupCancellationSurvivesReadTimeout() {
+		auto rpc = std::make_shared<DeltaRpc>();
+		rpc->start(RPC_FIXTURE_PATH, u"backup"_s);
+		Delta::BackupTransfers transfers(rpc);
+		auto ready = 0;
+		auto completed = 0;
+		const auto cancel = transfers.start(3, [&](QString, QString) { ++ready; },
+			[&](QString) { ++completed; });
+		cancel();
+		CoreCall(*rpc, u"error_backup_qr"_s, {3});
+		QTRY_COMPARE(BackupCalls(*rpc, u"get_backup_qr"_s), 2);
+		QCOMPARE(BackupCalls(*rpc, u"provide_backup"_s), 1);
+		QCOMPARE(BackupCalls(*rpc, u"stop_ongoing_process"_s), 0);
+		CoreCall(*rpc, u"release_backup_qr"_s, {3});
+		QTRY_COMPARE(completed, 1);
+		QCOMPARE(ready, 0);
+		QCOMPARE(BackupCalls(*rpc, u"stop_ongoing_process"_s), 1);
+		rpc->stop();
+	}
+
+	void backupCoreFailureCompletesOnce() {
+		auto rpc = std::make_shared<DeltaRpc>();
+		rpc->start(RPC_FIXTURE_PATH, u"backup"_s);
+		Delta::BackupTransfers transfers(rpc);
+		auto completed = 0;
+		const auto cancel = transfers.start(3, {}, [&](QString error) {
+			QVERIFY(!error.isEmpty());
+			++completed;
+		});
+		cancel();
+		QCOMPARE(BackupCalls(*rpc, u"provide_backup"_s), 1);
+		CoreCall(*rpc, u"crash"_s, {});
+		QTRY_COMPARE(completed, 1);
+		QVERIFY(!rpc->running());
+		cancel();
+		QCOMPARE(completed, 1);
+		rpc->stop();
+	}
+
 	void draftHandoffFailures_data() {
 		QTest::addColumn<QString>("mode");
 		QTest::addColumn<bool>("success");

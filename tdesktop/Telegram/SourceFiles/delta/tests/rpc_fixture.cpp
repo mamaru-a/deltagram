@@ -25,6 +25,9 @@ int main(int argc, char **argv) {
 	auto sentMessages = QMap<int, QJsonObject>();
 	auto historyIds = QJsonArray{10, 80, 12};
 	auto historyCalls = QJsonArray();
+	auto backupCalls = QJsonArray();
+	auto backupProviders = QMap<int, QJsonObject>();
+	auto backupReads = QMap<int, QList<QJsonObject>>();
 	const auto mode = qEnvironmentVariable("DC_ACCOUNTS_PATH");
 	if (mode == u"history-large"_s) {
 		historyIds = {};
@@ -35,6 +38,45 @@ int main(int argc, char **argv) {
 		const auto method = request[u"method"_s].toString();
 		const auto args = request[u"params"_s].toArray();
 		if (method == u"crash"_s) return 17;
+		if (method == u"backup_calls"_s) { Reply(request, backupCalls); continue; }
+		if (mode == u"backup"_s) {
+			const auto account = args[0].toInt();
+			if (method == u"provide_backup"_s || method == u"get_backup_qr"_s
+				|| method == u"create_qr_svg"_s || method == u"stop_ongoing_process"_s) {
+				backupCalls.append(QJsonObject{{u"method"_s, method}, {u"params"_s, args}});
+				if (method == u"provide_backup"_s) {
+					backupProviders[account] = request;
+				} else if (method == u"get_backup_qr"_s) {
+					backupReads[account].append(request);
+				} else {
+					Reply(request, method == u"create_qr_svg"_s ? QJsonValue(u"<svg/>"_s) : QJsonValue());
+					if (method == u"stop_ongoing_process"_s && backupProviders.contains(account)) {
+						Reply(backupProviders.take(account), QJsonValue());
+					}
+				}
+				continue;
+			}
+			if (method == u"release_backup_qr"_s || method == u"error_backup_qr"_s) {
+				if (!backupReads[account].isEmpty()) {
+					const auto read = backupReads[account].takeFirst();
+					if (method == u"release_backup_qr"_s) {
+						Reply(read, u"fixture-backup-%1"_s.arg(account));
+					} else {
+						std::cout << QJsonDocument(QJsonObject{
+							{u"id"_s, read[u"id"_s]},
+							{u"error"_s, QJsonObject{{u"message"_s, u"Read timed out"_s}}},
+						}).toJson(QJsonDocument::Compact).constData() << std::endl;
+					}
+				}
+				Reply(request, true);
+				continue;
+			}
+			if (method == u"finish_backup"_s) {
+				if (backupProviders.contains(account)) Reply(backupProviders.take(account), QJsonValue());
+				Reply(request, true);
+				continue;
+			}
+		}
 		if (method == u"malformed"_s) { std::cout << "{broken\n" << std::flush; continue; }
 		if (method == u"incomplete"_s) {
 			std::cout << QJsonDocument(QJsonObject{{u"id"_s, request[u"id"_s]}})

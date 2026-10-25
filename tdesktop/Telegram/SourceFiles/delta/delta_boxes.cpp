@@ -1354,6 +1354,7 @@ void ShowSecondDevice() {
 		struct State {
 			rpl::variable<bool> busy = false;
 			int generation = 0;
+			Fn<void()> cancel;
 		};
 		const auto state = box->lifetime().make_state<State>();
 		box->setTitle(rpl::single(u"Add Second Device"_q));
@@ -1393,7 +1394,7 @@ void ShowSecondDevice() {
 			state->busy = true;
 			const auto generation = ++state->generation;
 			status->setText(u"Preparing account…"_q);
-			StartSecondDevice(
+			state->cancel = StartSecondDevice(
 				[=](QString svg, QString error) {
 					if (!weak || generation != state->generation) {
 						return;
@@ -1423,6 +1424,7 @@ void ShowSecondDevice() {
 						return;
 					}
 					++state->generation;
+					state->cancel = nullptr;
 					state->busy = false;
 					qrWrap->toggle(false, anim::type::instant);
 					if (error.isEmpty()) {
@@ -1442,7 +1444,9 @@ void ShowSecondDevice() {
 			++state->generation;
 			if (!state->busy.current()) return;
 			state->busy = false;
-			StopSecondDevice();
+			if (const auto cancel = std::exchange(state->cancel, nullptr)) {
+				cancel();
+			}
 		};
 		box->boxClosing() | rpl::on_next(cancel, box->lifetime());
 		box->lifetime().add(cancel);

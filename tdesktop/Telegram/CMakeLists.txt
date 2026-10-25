@@ -1430,6 +1430,8 @@ PRIVATE
     intro/intro_widget.h
     delta/delta_rpc.cpp
     delta/delta_rpc.h
+    delta/backup_transfer.cpp
+    delta/backup_transfer.h
     delta/draft_store.cpp
     delta/draft_store.h
     delta/history_mutations.cpp

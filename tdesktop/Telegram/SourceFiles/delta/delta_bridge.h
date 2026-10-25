@@ -128,10 +128,9 @@ void SetChatArchived(
 	bool archived,
 	Fn<void(QString error)> done);
 
-void StartSecondDevice(
+[[nodiscard]] Fn<void()> StartSecondDevice(
 	Fn<void(QString svg, QString error)> ready,
 	Fn<void(QString error)> finished);
-void StopSecondDevice();
 
 void JoinInviteQr(const QString &qr, Fn<void(QString error)> done);
 

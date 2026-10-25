@@ -272,9 +272,15 @@ another user. Private evidence: `staging-clipboard-baseline.json`,
 `attachment-staging-clipboard-baseline.json` under `data/integrity-live/`.
 `1f3add9` replaces the reusable filename with `QTemporaryFile`, checks flushing,
 and transfers deletion responsibility to the retained preparation owner. Failed
-writes are removed automatically. The source publication audit passes; native
-compilation and the cleanup/permissions GUI replay of this follow-up are pending.
-It is included in the serialized `a1cbe2a` validation described below.
+writes are removed automatically. Native/portable/package CI and disposable GUI replay pass on `a1cbe2a`.
+With a ten-second delayed image send, the staging file existed with mode `0600`
+until Core accepted the message, then disappeared. The image bytes matched in
+official Desktop 2.62.0. A rejected clipboard image retained its private staging
+file; explicit deletion removed it without creating a Core/reference message.
+The other profiles had no matching messages and the alternate draft stayed
+unchanged. Private evidence: `media-image-private-pending.json`,
+`media-image-accepted.json`, `media-image-rejected.json` and
+`media-image-discarded.json`.
 
 ### Second-device dialog integrity — 2026-10-25
 
@@ -288,11 +294,40 @@ returned to Core connectivity `4000`. Private method-count evidence is in
 `a1cbe2a` disables and guards Continue while a transfer is active, ignores stale
 QR callbacks from a completed attempt, and cancels only an active attempt once
 when its dialog closes. The destruction fallback cannot issue a second stop.
-Native/portable/package validation is running for `a1cbe2a`, after `8e37b6c`
+Native/portable/package validation passed for `a1cbe2a`, after `8e37b6c`
 completed: [run 40176649206](https://github.com/mamaru-a/deltagram/actions/runs/40176649206).
-GUI replay of the backup and image-cleanup follow-ups is pending. Completed
-cross-client backup transfer and cancellation during early Core preparation
-remain unverified.
+The checksum-verified GUI passed rapid repeated Continue (one provider/read and
+one stop after closing) and idle Cancel (no provider/read/stop). Private evidence:
+`backup-repeat-fixed.json` and `backup-idle-fixed.json`.
+
+A complete transfer to official Desktop 2.62.0 also passed with pinned Core
+2.63.0-dev. The restored disposable profile contained the prior archive/image
+history, with matching image bytes. A message sent from the restored profile
+arrived at the reference account and synchronized to the original Qt client.
+A reply arrived on both restored and original devices. Core resumed mail IO
+(connectivity `4000`), and the unrelated profile draft remained intact.
+Private evidence: `backup-transfer-evidence.json`,
+`handoff-backup-restored-send.json` and `handoff-backup-incoming-sync.json`.
+Transfer QR files were deleted afterward; account secrets are not in this report.
+
+An additional early-cancel replay found a separate race: delaying dispatch of
+`provide_backup` by five seconds and closing immediately sent stop before the
+provider existed. After the dialog disappeared, Core still returned a live
+backup QR. Explicit cleanup stopped it. This was reproduced on `8e37b6c`; the
+`a1cbe2a` UI guards do not change that ordering. Private evidence:
+`backup-early-baseline.json`.
+
+The follow-up moves ownership to `BackupTransfers`, returning an attempt-specific
+cancellation handle bound to the original account. Cancellation during preparation
+is retained until Core reports QR readiness; it then stops the provider once.
+UI callbacks remain account-scoped, while cleanup survives dialog closure and
+account changes. Duplicate providers for the same account are rejected until the
+first completes. Only failed readiness reads are retried; provider starts and
+stops are never automatically retried. Six new focused cases cover early/ready
+cancellation, owner destruction, account isolation, late replies, readiness
+read timeout and Core failure. The full focused suite passes 49 checks including
+setup/cleanup, zero failures/skips. Native compilation and GUI replay of this
+follow-up are pending.
 
 The focused suite covers partial multi-stage deletion failure, but the tested
 group delete dialog does not expose that combined path. Broader operational and

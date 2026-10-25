@@ -27,7 +27,7 @@ if (BUILD_TESTING)
     add_executable(delta_rpc_fixture tests/rpc_fixture.cpp)
     target_link_libraries(delta_rpc_fixture PRIVATE Qt6::Core)
     add_executable(delta_integrity_tests
-        tests/integrity_tests.cpp delta_rpc.cpp draft_store.cpp history_mutations.cpp)
+        tests/integrity_tests.cpp backup_transfer.cpp delta_rpc.cpp draft_store.cpp history_mutations.cpp)
     target_include_directories(delta_integrity_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     target_link_libraries(delta_integrity_tests PRIVATE Qt6::Core Qt6::Test)
     target_compile_definitions(delta_integrity_tests PRIVATE
