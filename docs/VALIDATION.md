@@ -34,6 +34,36 @@ Ubuntu 24.04 under Xvfb.
 
 ### Batch preparation storage checks
 
+The follow-up generic queue backend supports a text prefix, prepared files and
+individual forwards in one durable compose plan. Core's `forward_messages`
+returns no message IDs and can partially commit before returning an error. A
+disposable Saved Messages probe confirmed one outgoing forward after a mixed
+valid-source/draft-source request returned an error; its temporary draft was
+removed without repeating the request. This is Core behavior evidence, not a
+new GUI forwarding pass.
+
+Each forward now records an attempted state before calling Core. An uncertain
+result remains queued for review and explicit discard, without automatic retry
+or content-based guesses about message identity. A confirmed forward advances
+without sending again. Source account/chat, visible membership and preview
+metadata are checked, and newer destination drafts remain untouched. Batch
+publication reconciliation compares forward identity and state as well as text,
+files and ordering. The backend is not yet connected to the donor forwarding UI.
+
+All 182 focused checks pass with no failures or skips, including rejected and
+uncertain forward checkpoints, lost acknowledgements, destruction during a held
+reply, source isolation, changed-source rejection, and ordered text/forward
+advancement. The source audit has zero blocking findings across 13,217 files.
+These checks include the pinned Core storage cases, but forwarding fault cases
+use the RPC fixture. Native compilation and live GUI forwarding remain pending.
+
+The batch GUI revision `7074268` passed native compilation, smoke tests, portable
+runtime and package verification in
+[CI run 40211761527](https://github.com/mamaru-a/deltagram/actions/runs/40211761527).
+Its GUI/Core binaries were checksum verified for disposable replay. Later
+recoded-image recovery, discovery, recording and forwarding changes are not
+covered by that native build.
+
 The batch coordinator collects prepared files by selection index and retains
 their owners through Core storage. No file is queued before every preparation
 finishes, and the coordinator never sends. Rejected storage can be explicitly

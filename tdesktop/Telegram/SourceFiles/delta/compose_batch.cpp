@@ -19,6 +19,10 @@ bool SameQueue(const ComposeQueue &a, const ComposeQueue &b) {
 		&& std::equal(a.entries.begin(), a.entries.end(), b.entries.begin(),
 			[](const QueuedCompose &a, const QueuedCompose &b) {
 				return a.id == b.id && a.messageId == b.messageId
+					&& a.forward.has_value() == b.forward.has_value()
+					&& (!a.forward || (a.forward->chat == b.forward->chat
+						&& a.forward->message == b.forward->message))
+					&& a.forwardState == b.forwardState
 					&& a.draft.text == b.draft.text
 					&& a.draft.quotedMessageId == b.draft.quotedMessageId
 					&& a.draft.file == b.draft.file
@@ -57,7 +61,7 @@ ComposeBatch::ComposeBatch(std::shared_ptr<ComposeQueueStore> queues,
 
 bool ComposeBatch::accepting(size_t index) const {
 	return (_state == State::Preparing || _state == State::Failed)
-		&& index < _slots.size() && !_slots[index].draft
+		&& index < _slots.size() && !_slots[index].draft && !_slots[index].forward
 		&& !_slots[index].writing
 		&& _slots[index].error.isEmpty();
 }
@@ -138,18 +142,44 @@ bool ComposeBatch::failed(size_t index, QString error) {
 	return true;
 }
 
+bool ComposeBatch::preparedText(size_t index, ComposeDraft draft) {
+	if (!accepting(index)) return false;
+	if (draft.text.trimmed().isEmpty() || draft.quotedMessageId < 0
+		|| !draft.file.isEmpty() || !draft.filename.isEmpty() || draft.viewType != u"Text"_s) {
+		failed(index, u"The text could not be prepared. Nothing was sent."_s);
+		return false;
+	}
+	_selection[index] = draft;
+	_slots[index].draft = std::move(draft);
+	if (ready()) save();
+	else update(_state, _error);
+	return true;
+}
+
+bool ComposeBatch::preparedForward(size_t index, ForwardSource source) {
+	if (!accepting(index)) return false;
+	if (source.chat <= 0 || source.message <= 0) {
+		failed(index, u"The forwarded message could not be prepared. Nothing was sent."_s);
+		return false;
+	}
+	_slots[index].forward = source;
+	if (ready()) save();
+	else update(_state, _error);
+	return true;
+}
+
 bool ComposeBatch::ready() const {
 	return std::all_of(_slots.begin(), _slots.end(), [](const Slot &slot) {
-		return slot.draft.has_value();
+		return slot.draft.has_value() || slot.forward.has_value();
 	});
 }
 
 void ComposeBatch::save() {
 	const auto self = shared_from_this();
 	update(State::Saving);
-	auto drafts = std::vector<ComposeDraft>();
-	for (const auto &slot : _slots) drafts.push_back(*slot.draft);
-	_queues->stage(_account, _chat, std::move(drafts),
+	auto intents = std::vector<ComposeIntent>();
+	for (const auto &slot : _slots) intents.push_back({ slot.draft.value_or(ComposeDraft()), slot.forward });
+	_queues->stagePlan(_account, _chat, std::move(intents),
 		[self](ComposeQueue queue, QString error) {
 			self->_queue = std::move(queue);
 			const auto state = error.isEmpty() ? State::Saved : State::Failed;
@@ -164,7 +194,7 @@ bool ComposeBatch::retrySave() {
 		update(State::Preparing);
 		if (_state != State::Preparing) return true;
 		for (size_t index = 0; index != _slots.size(); ++index) {
-			if (!_slots[index].draft) writeBytes(index);
+			if (!_slots[index].draft && !_slots[index].forward) writeBytes(index);
 		}
 		return true;
 	}
@@ -192,7 +222,7 @@ bool ComposeBatch::retrySave() {
 bool ComposeBatch::canRetrySave() const {
 	return _state == State::Failed
 		&& std::all_of(_slots.begin(), _slots.end(), [](const Slot &slot) {
-			return !slot.writing && (slot.draft.has_value() || !slot.bytes.isEmpty());
+			return !slot.writing && (slot.draft.has_value() || slot.forward.has_value() || !slot.bytes.isEmpty());
 		});
 }
 

@@ -77,6 +77,7 @@ void ComposeQueueSender::begin(int account, int chat, const QString &queueId,
 }
 
 void ComposeQueueSender::discard(std::shared_ptr<Sending> state) {
+	if (state->queue.entries.front().forward) { advance(state, 0); return; }
 	const auto valid = [=](const QJsonValue &value) {
 		if (value.isNull()) return true;
 		if (!value.isObject()) return false;
@@ -110,6 +111,7 @@ void ComposeQueueSender::discard(std::shared_ptr<Sending> state) {
 
 void ComposeQueueSender::inspect(std::shared_ptr<Sending> state) {
 	const auto entry = state->queue.entries.front();
+	if (entry.forward) { forward(state); return; }
 	const auto known = entry.messageId > 0;
 	call(known ? u"get_message"_s : u"get_draft"_s,
 		{ state->account, known ? entry.messageId : state->chat }, [=, this](QJsonObject reply) {
@@ -141,7 +143,7 @@ void ComposeQueueSender::inspect(std::shared_ptr<Sending> state) {
 			}
 			if (known && (status == 20 || status == 24 || status == 26 || status == 28)) {
 				// Core may recode an image after the draft checkpoint, changing its blob.
-				if (message[u"file"_s].toString().isEmpty()) finish(state, 0, ReadError());
+				if (message[u"file"_s].toString().isEmpty() != entry.draft.file.isEmpty()) finish(state, 0, ReadError());
 				else advance(state, id);
 				return;
 			}
@@ -162,6 +164,57 @@ void ComposeQueueSender::inspect(std::shared_ptr<Sending> state) {
 				else send(state);
 			});
 		});
+}
+
+void ComposeQueueSender::markForward(std::shared_ptr<Sending> state, ForwardState next,
+		std::function<void()> done) {
+	const auto guard = std::weak_ptr<bool>(_alive);
+	_queues->markForward(state->account, state->chat, state->queue.id,
+		state->queue.entries.front().id, next, [=, this](ComposeQueue queue, QString error) {
+			if (guard.expired()) return;
+			state->queue = std::move(queue);
+			if (!error.isEmpty()) finish(state, 0, std::move(error));
+			else done();
+		});
+}
+
+void ComposeQueueSender::forward(std::shared_ptr<Sending> state) {
+	const auto entry = state->queue.entries.front();
+	if (entry.forwardState == ForwardState::Confirmed) { advance(state, 0); return; }
+	if (entry.forwardState == ForwardState::Attempted) {
+		finish(state, 0, u"This forward may already have been sent. Review the destination chat, then discard this queue entry to continue. It will not be sent again automatically."_s);
+		return;
+	}
+	const auto source = *entry.forward;
+	call(u"get_message"_s, { state->account, source.message }, [=, this](QJsonObject reply) {
+		const auto message = reply[u"result"_s].toObject();
+		const auto status = message[u"state"_s].toInt();
+		if (reply.contains(u"error"_s) || message[u"id"_s].toInt() != source.message
+			|| message[u"chatId"_s].toInt() != source.chat
+			|| !(status == 10 || status == 13 || status == 16 || status == 20 || status == 24 || status == 26 || status == 28)
+			|| message[u"text"_s].toString() != entry.draft.text
+			|| message[u"viewType"_s].toString() != entry.draft.viewType
+			|| message[u"fileName"_s].toString() != entry.draft.filename) {
+			finish(state, 0, u"The original forwarded message changed or is unavailable. Review it before continuing."_s);
+			return;
+		}
+		call(u"get_message_ids"_s, { state->account, source.chat, false, false }, [=, this](QJsonObject listed) {
+			if (listed.contains(u"error"_s) || !listed[u"result"_s].isArray()
+				|| !listed[u"result"_s].toArray().contains(source.message)) {
+				finish(state, 0, u"The original forwarded message is no longer visible."_s);
+				return;
+			}
+			markForward(state, ForwardState::Attempted, [=, this] {
+				call(u"forward_messages"_s, { state->account, QJsonArray{ source.message }, state->chat }, [=, this](QJsonObject result) {
+					if (result.contains(u"error"_s) || !result.contains(u"result"_s) || !result[u"result"_s].isNull()) {
+						finish(state, 0, u"The forward was not confirmed. Review the destination chat before discarding this queue entry; it will not be retried automatically."_s);
+						return;
+					}
+					markForward(state, ForwardState::Confirmed, [=, this] { advance(state, 0); });
+				});
+			});
+		});
+	});
 }
 
 void ComposeQueueSender::checkpoint(std::shared_ptr<Sending> state, int id,
@@ -185,9 +238,9 @@ void ComposeQueueSender::send(std::shared_ptr<Sending> state) {
 		else advance(state, id);
 	};
 	if (entry.messageId > 0) {
-		_drafts->resumeAttachment(state->account, state->chat, entry.messageId, entry.draft, done);
+		_drafts->resumeQueued(state->account, state->chat, entry.messageId, entry.draft, done);
 	} else {
-		_drafts->sendAttachment(state->account, state->chat, entry.draft, done, {},
+		_drafts->sendQueued(state->account, state->chat, entry.draft, done,
 			[=, this](int id, ComposeDraft draft, std::function<void(QString)> next) {
 				if (guard.expired()) { next(u"The compose operation was closed."_s); return; }
 				checkpoint(state, id, std::move(draft), std::move(next));

@@ -232,11 +232,21 @@ strict. A disposable Saved Messages probe confirms Core's recoding, and the
 153 focused checks include no-resend recovery, mismatched-message rejection and
 queue mutation during a held discovery read. Discovery uses a read-only snapshot
 so it cannot reserve the mutation lock, and rejects superseded UI replies.
-The new GUI
-paths still require native compilation and disposable live replay. Broader
+The batch GUI revision `7074268` passes native/portable/package validation;
+its disposable GUI replay remains pending. Subsequent recovery, discovery and
+recording changes still require native compilation and disposable live replay. Broader
 interruption/profile cases need live coverage. The review
 dialog's clipped Cancel button and one-item count wording pass native visual
 replay on `b5c4e9e`.
+
+The generic queue backend now supports text, prepared files and individual
+forwards as one durable plan. It persists a forward attempt before calling Core,
+requires explicit review/discard after an uncertain result, and never resends a
+confirmed forward. All 182 focused checks pass, including source isolation,
+interrupted replies and exact publication reconciliation. A disposable Core
+probe confirms that a multi-source forward can partially commit before returning
+an error. The donor forwarding UI is not yet connected to this backend; native
+and cross-client forwarding replay remain open.
 
 ## Updating this tracker
 

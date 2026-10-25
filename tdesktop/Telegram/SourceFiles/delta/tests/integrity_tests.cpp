@@ -53,12 +53,256 @@ int BackupCalls(DeltaRpc &rpc, const QString &method, int account = 0) {
 	return count;
 }
 
+QJsonObject ForwardFixtureSource(int id = 41, int chat = 11) {
+	return {
+		{u"id"_s, id}, {u"chatId"_s, chat}, {u"state"_s, 16},
+		{u"text"_s, u"Forward source %1"_s.arg(id)},
+		{u"viewType"_s, u"Text"_s}, {u"fileName"_s, QString()},
+	};
+}
+
 } // namespace
 
 class IntegrityTests final : public QObject {
 	Q_OBJECT
 
 private slots:
+	void combinedBatchPublication_data() {
+		QTest::addColumn<QString>("phase");
+		for (const auto phase : { "fresh", "rejected", "uncertain", "changed-source", "changed-state", "invalid-source" }) {
+			QTest::newRow(phase) << QString::fromLatin1(phase);
+		}
+	}
+
+	void combinedBatchPublication() {
+		QFETCH(QString, phase);
+		auto rpc = std::make_shared<DeltaRpc>();
+		rpc->start(RPC_FIXTURE_PATH, u"queue-normal"_s);
+		CoreCall(*rpc, u"set_source_message"_s, {2, ForwardFixtureSource(), phase != u"invalid-source"_s});
+		CoreCall(*rpc, u"queue_fault"_s, {phase == u"rejected"_s ? u"queue-reject-publish"_s
+			: phase == u"fresh"_s || phase == u"invalid-source"_s ? u"queue-normal"_s : u"queue-unknown-publish"_s});
+		auto queues = std::make_shared<Delta::ComposeQueueStore>(rpc);
+		auto batch = Delta::ComposeBatch::Create(queues, 2, 10, 2, {});
+		QVERIFY(batch->preparedForward(1, {11, 41}));
+		QCOMPARE(batch->state(), Delta::ComposeBatch::State::Preparing);
+		QCOMPARE(CoreCall(*rpc, u"writes"_s, {})[u"result"_s].toInt(), 0);
+		QVERIFY(batch->preparedText(0, {u"Introduction"_s, 0, {}, {}, u"Text"_s}));
+		QTRY_VERIFY(batch->state() != Delta::ComposeBatch::State::Saving);
+		QCOMPARE(batch->state(), phase == u"fresh"_s ? Delta::ComposeBatch::State::Saved : Delta::ComposeBatch::State::Failed);
+		if (phase != u"fresh"_s) {
+			CoreCall(*rpc, u"queue_fault"_s, {u"queue-normal"_s});
+			CoreCall(*rpc, u"set_source_message"_s, {2, ForwardFixtureSource(), true});
+			if (phase.startsWith(u"changed-"_s)) {
+				auto ledger = QJsonDocument::fromJson(CoreCall(*rpc, u"get_config"_s,
+					{2, u"ui.deltagram.compose.queue.10"_s})[u"result"_s].toString().toUtf8()).object();
+				auto entries = ledger[u"entries"_s].toArray();
+				auto entry = entries[1].toObject();
+				auto forward = entry[u"forward"_s].toObject();
+				forward[phase == u"changed-source"_s ? u"message"_s : u"state"_s] = phase == u"changed-source"_s ? 42 : 1;
+				entry[u"forward"_s] = forward;
+				entries[1] = entry;
+				ledger[u"entries"_s] = entries;
+				CoreCall(*rpc, u"set_config"_s, {2, u"ui.deltagram.compose.queue.10"_s,
+					QString::fromUtf8(QJsonDocument(ledger).toJson(QJsonDocument::Compact))});
+			}
+			QVERIFY(batch->retrySave());
+			QTRY_VERIFY(batch->state() != Delta::ComposeBatch::State::Saving);
+			QCOMPARE(batch->state(), phase.startsWith(u"changed-"_s)
+				? Delta::ComposeBatch::State::Failed : Delta::ComposeBatch::State::Saved);
+			QCOMPARE(batch->reconciled(), phase == u"uncertain"_s);
+		}
+		QCOMPARE(CoreCall(*rpc, u"sends"_s, {})[u"result"_s].toInt(), 0);
+		QVERIFY(CoreCall(*rpc, u"forward_calls"_s, {})[u"result"_s].toArray().isEmpty());
+	}
+
+	void forwardSourceIsolation_data() {
+		QTest::addColumn<QString>("phase");
+		for (const auto phase : { "wrong-account", "wrong-chat", "draft", "hidden" }) {
+			QTest::newRow(phase) << QString::fromLatin1(phase);
+		}
+	}
+
+	void forwardSourceIsolation() {
+		QFETCH(QString, phase);
+		auto rpc = std::make_shared<DeltaRpc>();
+		rpc->start(RPC_FIXTURE_PATH, u"queue-normal"_s);
+		auto source = ForwardFixtureSource();
+		if (phase == u"draft"_s) source[u"state"_s] = 19;
+		if (phase == u"wrong-chat"_s) source[u"chatId"_s] = 12;
+		CoreCall(*rpc, u"set_source_message"_s, {phase == u"wrong-account"_s ? 3 : 2, source, phase != u"hidden"_s});
+		Delta::ComposeQueueStore queues(rpc);
+		auto completed = false;
+		queues.stagePlan(2, 10, {{{}, Delta::ForwardSource{11, 41}}},
+			[&](Delta::ComposeQueue queue, QString error) {
+				QVERIFY(!error.isEmpty()); QVERIFY(queue.entries.empty()); completed = true;
+			});
+		QTRY_VERIFY(completed);
+		QVERIFY(CoreCall(*rpc, u"queue_config"_s, {})[u"result"_s].toObject().isEmpty());
+		QVERIFY(CoreCall(*rpc, u"forward_calls"_s, {})[u"result"_s].toArray().isEmpty());
+	}
+
+	void forwardInterruptedReply() {
+		auto rpc = std::make_shared<DeltaRpc>();
+		rpc->start(RPC_FIXTURE_PATH, u"queue-normal"_s);
+		CoreCall(*rpc, u"set_source_message"_s, {2, ForwardFixtureSource(), true});
+		auto queues = std::make_shared<Delta::ComposeQueueStore>(rpc);
+		auto drafts = std::make_shared<Delta::DraftStore>(rpc, [](QString) {});
+		auto saved = Delta::ComposeQueue();
+		auto completed = false;
+		queues->stagePlan(2, 10, {{{}, Delta::ForwardSource{11, 41}}},
+			[&](Delta::ComposeQueue queue, QString error) {
+				QVERIFY(error.isEmpty()); saved = std::move(queue); completed = true;
+			});
+		QTRY_VERIFY(completed);
+		CoreCall(*rpc, u"forward_fault"_s, {u"hold"_s});
+		auto sender = std::make_unique<Delta::ComposeQueueSender>(rpc, queues, drafts);
+		completed = false;
+		sender->sendNext(2, 10, saved.id, saved.entries.front().id,
+			[&](int, Delta::ComposeQueue, QString) { completed = true; });
+		QTRY_COMPARE(CoreCall(*rpc, u"forward_calls"_s, {})[u"result"_s].toArray().size(), 1);
+		QVERIFY(sender->busy(2, 10));
+		sender.reset();
+		CoreCall(*rpc, u"release"_s, {});
+		QVERIFY(!completed);
+		sender = std::make_unique<Delta::ComposeQueueSender>(rpc, queues, drafts);
+		sender->sendNext(2, 10, saved.id, saved.entries.front().id,
+			[&](int id, Delta::ComposeQueue queue, QString error) {
+				QCOMPARE(id, 0); QVERIFY(!error.isEmpty());
+				QCOMPARE(queue.entries.front().forwardState, Delta::ForwardState::Attempted);
+				completed = true;
+			});
+		QTRY_VERIFY(completed);
+		QCOMPARE(CoreCall(*rpc, u"forward_calls"_s, {})[u"result"_s].toArray().size(), 1);
+	}
+
+	void forwardQueueRecovery_data() {
+		QTest::addColumn<QString>("phase");
+		for (const auto phase : { "fresh", "rejected", "lost-ack", "confirmation-rejected",
+			"attempted", "confirmed", "attempt-rejected", "attempt-unknown", "source-changed", "source-hidden" }) {
+			QTest::newRow(phase) << QString::fromLatin1(phase);
+		}
+	}
+
+	void forwardQueueRecovery() {
+		QFETCH(QString, phase);
+		auto rpc = std::make_shared<DeltaRpc>();
+		rpc->start(RPC_FIXTURE_PATH, u"queue-normal"_s);
+		const auto source = ForwardFixtureSource();
+		CoreCall(*rpc, u"set_source_message"_s, {2, source, true});
+		auto queues = std::make_shared<Delta::ComposeQueueStore>(rpc);
+		auto drafts = std::make_shared<Delta::DraftStore>(rpc, [](QString) {});
+		auto saved = Delta::ComposeQueue();
+		auto completed = false;
+		queues->stagePlan(2, 10, {{ {}, Delta::ForwardSource{11, 41} }},
+			[&](Delta::ComposeQueue queue, QString error) {
+				QVERIFY(error.isEmpty()); saved = std::move(queue); completed = true;
+			});
+		QTRY_VERIFY(completed);
+		QCOMPARE(saved.entries.size(), size_t(1));
+		QVERIFY(saved.entries.front().forward.has_value());
+		if (phase == u"attempted"_s || phase == u"confirmed"_s) {
+			for (const auto state : { Delta::ForwardState::Attempted, Delta::ForwardState::Confirmed }) {
+				completed = false;
+				queues->markForward(2, 10, saved.id, saved.entries.front().id, state,
+					[&](Delta::ComposeQueue queue, QString error) {
+						QVERIFY(error.isEmpty()); saved = std::move(queue); completed = true;
+					});
+				QTRY_VERIFY(completed);
+				if (phase == u"attempted"_s) break;
+			}
+		}
+		if (phase == u"attempt-rejected"_s || phase == u"attempt-unknown"_s) {
+			CoreCall(*rpc, u"queue_fault"_s, {phase == u"attempt-rejected"_s
+				? u"queue-reject-publish"_s : u"queue-unknown-publish"_s});
+		}
+		auto changed = source;
+		if (phase == u"source-changed"_s) changed[u"text"_s] = u"Edited after selection"_s;
+		CoreCall(*rpc, u"set_source_message"_s, {2, changed, phase != u"source-hidden"_s});
+		CoreCall(*rpc, u"forward_fault"_s, {phase});
+		const auto beforeDraft = CoreCall(*rpc, u"inspect_draft"_s, {2, 10}).value(u"result"_s);
+		auto sender = std::make_unique<Delta::ComposeQueueSender>(rpc, queues, drafts);
+		completed = false;
+		const auto success = phase == u"fresh"_s || phase == u"confirmed"_s;
+		sender->sendNext(2, 10, saved.id, saved.entries.front().id,
+			[&](int id, Delta::ComposeQueue queue, QString error) {
+				QCOMPARE(id, 0); QCOMPARE(error.isEmpty(), success);
+				if (success) QVERIFY(queue.entries.empty());
+				completed = true;
+			});
+		QTRY_VERIFY(completed);
+		const auto called = phase == u"fresh"_s || phase == u"rejected"_s
+			|| phase == u"lost-ack"_s || phase == u"confirmation-rejected"_s;
+		QCOMPARE(CoreCall(*rpc, u"forward_calls"_s, {})[u"result"_s].toArray().size(), called ? 1 : 0);
+		QCOMPARE(CoreCall(*rpc, u"inspect_draft"_s, {2, 10})[u"result"_s], beforeDraft);
+		sender.reset(); drafts.reset(); queues.reset();
+		CoreCall(*rpc, u"queue_fault"_s, {u"queue-normal"_s});
+		CoreCall(*rpc, u"forward_fault"_s, {u"normal"_s});
+		CoreCall(*rpc, u"set_source_message"_s, {2, source, true});
+		queues = std::make_shared<Delta::ComposeQueueStore>(rpc);
+		drafts = std::make_shared<Delta::DraftStore>(rpc, [](QString) {});
+		sender = std::make_unique<Delta::ComposeQueueSender>(rpc, queues, drafts);
+		completed = false;
+		queues->load(2, 10, [&](Delta::ComposeQueue queue, QString error) {
+			QVERIFY(error.isEmpty()); saved = std::move(queue); completed = true;
+		});
+		QTRY_VERIFY(completed);
+		if (!success) {
+			const auto uncertain = saved.entries.front().forwardState == Delta::ForwardState::Attempted;
+			const auto id = saved.id;
+			const auto entryId = saved.entries.front().id;
+			completed = false;
+			sender->sendNext(2, 10, id, entryId, [&](int, Delta::ComposeQueue, QString error) {
+				QCOMPARE(error.isEmpty(), !uncertain); completed = true;
+			});
+			QTRY_VERIFY(completed);
+			QCOMPARE(CoreCall(*rpc, u"forward_calls"_s, {})[u"result"_s].toArray().size(), int(called) + int(!uncertain));
+			if (uncertain) {
+				completed = false;
+				sender->discardNext(2, 10, id, entryId, [&](int sent, Delta::ComposeQueue queue, QString error) {
+					QCOMPARE(sent, 0); QVERIFY(error.isEmpty()); QVERIFY(queue.entries.empty()); completed = true;
+				});
+				QTRY_VERIFY(completed);
+				QCOMPARE(CoreCall(*rpc, u"inspect_draft"_s, {2, 10})[u"result"_s], beforeDraft);
+			}
+		}
+		QCOMPARE(CoreCall(*rpc, u"sends"_s, {})[u"result"_s].toInt(), 0);
+	}
+
+	void combinedTextAndForwardQueue() {
+		auto rpc = std::make_shared<DeltaRpc>();
+		rpc->start(RPC_FIXTURE_PATH, u"queue-normal"_s);
+		CoreCall(*rpc, u"set_source_message"_s, {2, ForwardFixtureSource(), true});
+		CoreCall(*rpc, u"set_source_message"_s, {2, ForwardFixtureSource(42, 12), true});
+		CoreCall(*rpc, u"remove_draft"_s, {2, 10});
+		auto queues = std::make_shared<Delta::ComposeQueueStore>(rpc);
+		auto drafts = std::make_shared<Delta::DraftStore>(rpc, [](QString) {});
+		Delta::ComposeQueueSender sender(rpc, queues, drafts);
+		auto saved = Delta::ComposeQueue();
+		auto completed = false;
+		queues->stagePlan(2, 10, {
+			{{u"Introduction"_s, 0, {}, {}, u"Text"_s}, {}},
+			{{}, Delta::ForwardSource{11, 41}}, {{}, Delta::ForwardSource{12, 42}},
+		}, [&](Delta::ComposeQueue queue, QString error) {
+			QVERIFY(error.isEmpty()); saved = std::move(queue); completed = true;
+		});
+		QTRY_VERIFY(completed);
+		for (auto index = 0; index != 3; ++index) {
+			completed = false;
+			sender.sendNext(2, 10, saved.id, saved.entries.front().id,
+				[&](int id, Delta::ComposeQueue queue, QString error) {
+					QVERIFY(error.isEmpty()); QCOMPARE(id > 0, index == 0);
+					saved = std::move(queue); completed = true;
+				});
+			QTRY_VERIFY(completed);
+			QCOMPARE(saved.entries.size(), size_t(2 - index));
+			QCOMPARE(CoreCall(*rpc, u"sends"_s, {})[u"result"_s].toInt(), 1);
+			QCOMPARE(CoreCall(*rpc, u"forward_calls"_s, {})[u"result"_s].toArray().size(), index);
+		}
+		const auto calls = CoreCall(*rpc, u"forward_calls"_s, {})[u"result"_s].toArray();
+		QCOMPARE(calls[0].toArray(), QJsonArray({2, QJsonArray{41}, 10}));
+		QCOMPARE(calls[1].toArray(), QJsonArray({2, QJsonArray{42}, 10}));
+	}
+
 	void recordingBytesSurviveStorageFailure_data() {
 		QTest::addColumn<QString>("fault");
 		for (const auto fault : { "queue-reject-copy", "queue-reject-pin",

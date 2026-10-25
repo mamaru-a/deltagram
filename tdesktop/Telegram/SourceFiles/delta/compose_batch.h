@@ -15,6 +15,8 @@ public:
 		std::shared_ptr<ComposeQueueStore> queues,
 		int account, int chat, std::vector<ComposeDraft> selection, Changed changed);
 	bool prepared(size_t index, ComposeDraft draft, std::shared_ptr<void> owner);
+	bool preparedText(size_t index, ComposeDraft draft);
+	bool preparedForward(size_t index, ForwardSource source);
 	bool preparedBytes(size_t index, ComposeDraft draft, QByteArray bytes,
 		QString temporaryDirectory = {});
 	bool failed(size_t index, QString error);
@@ -33,6 +35,7 @@ public:
 private:
 	struct Slot {
 		std::optional<ComposeDraft> draft;
+		std::optional<ForwardSource> forward;
 		std::shared_ptr<void> owner;
 		QString error;
 		QByteArray bytes;

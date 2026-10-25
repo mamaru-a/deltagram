@@ -190,6 +190,20 @@ void DraftStore::sendAttachment(int accountId, int chatId, ComposeDraft draft,
 	beginSend(Key(accountId, chatId), std::move(draft), std::move(done), std::move(prepared), std::move(checkpoint));
 }
 
+void DraftStore::sendQueued(int accountId, int chatId, ComposeDraft draft,
+		SendCallback done, Checkpoint checkpoint) {
+	beginSend(Key(accountId, chatId), std::move(draft), std::move(done), {}, std::move(checkpoint));
+}
+
+void DraftStore::resumeQueued(int accountId, int chatId, int messageId, ComposeDraft draft,
+		SendCallback done) {
+	if (messageId <= 0) {
+		if (done) done(0, u"The saved message ID is missing."_s);
+		return;
+	}
+	beginSend(Key(accountId, chatId), std::move(draft), std::move(done), {}, {}, messageId);
+}
+
 void DraftStore::resumeAttachment(int accountId, int chatId, int messageId, ComposeDraft draft,
 		SendCallback done, PreparedCallback prepared) {
 	if (messageId <= 0 || draft.file.isEmpty()) {

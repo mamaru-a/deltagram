@@ -3,6 +3,7 @@
 #include <QJsonObject>
 #include <QJsonArray>
 #include <QMap>
+#include <QSet>
 #include <QFileInfo>
 
 #include <iostream>
@@ -28,6 +29,10 @@ int main(int argc, char **argv) {
 	auto discarded = false;
 	auto draftReads = 0;
 	auto sentMessages = QMap<int, QJsonObject>();
+	auto sourceMessages = QMap<QString, QJsonObject>();
+	auto visibleSources = QSet<QString>();
+	auto forwardCalls = QJsonArray();
+	auto forwardFault = QString();
 	auto historyIds = QJsonArray{10, 80, 12};
 	auto historyCalls = QJsonArray();
 	auto backupCalls = QJsonArray();
@@ -47,6 +52,40 @@ int main(int argc, char **argv) {
 		const auto request = QJsonDocument::fromJson(QByteArray::fromStdString(line)).object();
 		const auto method = request[u"method"_s].toString();
 		const auto args = request[u"params"_s].toArray();
+		if (method == u"forward_fault"_s) { forwardFault = args[0].toString(); Reply(request, true); continue; }
+		if (method == u"forward_calls"_s) { Reply(request, forwardCalls); continue; }
+		if (method == u"set_source_message"_s) {
+			const auto message = args[1].toObject();
+			const auto key = QString::number(args[0].toInt()) + ':' + QString::number(message[u"id"_s].toInt());
+			sourceMessages[key] = message;
+			if (args[2].toBool()) visibleSources.insert(key);
+			else visibleSources.remove(key);
+			Reply(request, true);
+			continue;
+		}
+		if (method == u"forward_messages"_s) {
+			forwardCalls.append(args);
+			if (forwardFault != u"rejected"_s) {
+				for (const auto &id : args[1].toArray()) {
+					auto message = sourceMessages.value(QString::number(args[0].toInt()) + ':' + QString::number(id.toInt()));
+					const auto next = 700 + sentMessages.size();
+					message[u"id"_s] = next;
+					message[u"chatId"_s] = args[2];
+					message[u"state"_s] = 20;
+					message[u"isForwarded"_s] = true;
+					sentMessages[next] = std::move(message);
+				}
+			}
+			if (forwardFault == u"hold"_s) { held = request; heldResult = QJsonValue(QJsonValue::Null); continue; }
+			if (forwardFault == u"confirmation-rejected"_s) queueFault = u"queue-reject-publish"_s;
+			if (forwardFault == u"rejected"_s || forwardFault == u"lost-ack"_s) {
+				std::cout << QJsonDocument(QJsonObject{
+					{u"id"_s, request[u"id"_s]},
+					{u"error"_s, QJsonObject{{u"message"_s, u"Forward not confirmed"_s}}},
+				}).toJson(QJsonDocument::Compact).constData() << std::endl;
+			} else Reply(request, QJsonValue(QJsonValue::Null));
+			continue;
+		}
 		if (method == u"handoff_fault"_s) {
 			handoffFault = args[0].toString();
 			Reply(request, true);
@@ -103,6 +142,16 @@ int main(int argc, char **argv) {
 				auto values = QJsonObject();
 				for (auto i = queueConfig.begin(); i != queueConfig.end(); ++i) values[i.key()] = i.value();
 				Reply(request, values);
+				continue;
+			}
+			if (method == u"get_message_ids"_s) {
+				auto ids = QJsonArray();
+				const auto prefix = QString::number(args[0].toInt()) + ':';
+				for (auto i = sourceMessages.begin(); i != sourceMessages.end(); ++i) {
+					if (i.key().startsWith(prefix) && visibleSources.contains(i.key())
+						&& i.value()[u"chatId"_s] == args[1]) ids.append(i.value()[u"id"_s]);
+				}
+				Reply(request, ids);
 				continue;
 			}
 			if (method == u"queue_copies"_s) {
@@ -231,7 +280,7 @@ int main(int argc, char **argv) {
 		}
 		if (method == u"removals"_s) { Reply(request, removals); continue; }
 		if ((mode.startsWith(u"handoff-"_s) || mode.startsWith(u"queue-"_s)) && method == u"get_message"_s) {
-			auto message = sentMessages.value(args[1].toInt());
+			auto message = sourceMessages.value(QString::number(args[0].toInt()) + ':' + QString::number(args[1].toInt()), sentMessages.value(args[1].toInt()));
 			for (const auto &draft : drafts) {
 				if (draft[u"id"_s] == args[1]) message = draft;
 			}

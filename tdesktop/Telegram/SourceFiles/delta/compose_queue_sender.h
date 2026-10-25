@@ -23,6 +23,9 @@ private:
 	void begin(int account, int chat, const QString &queueId,
 		const QString &entryId, bool discard, Done done);
 	void inspect(std::shared_ptr<Sending> state);
+	void forward(std::shared_ptr<Sending> state);
+	void markForward(std::shared_ptr<Sending> state, ForwardState next,
+		std::function<void()> done);
 	void discard(std::shared_ptr<Sending> state);
 	void checkpoint(std::shared_ptr<Sending> state, int id, ComposeDraft draft,
 		std::function<void(QString)> done);

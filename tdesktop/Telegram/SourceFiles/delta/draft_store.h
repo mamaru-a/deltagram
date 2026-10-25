@@ -32,6 +32,10 @@ public:
 		std::function<void(ComposeDraft)> recovered = {});
 	void sendText(int accountId, int chatId, const QString &text, int quotedMessageId,
 		SendCallback done);
+	void sendQueued(int accountId, int chatId, ComposeDraft draft, SendCallback done,
+		Checkpoint checkpoint);
+	void resumeQueued(int accountId, int chatId, int messageId, ComposeDraft draft,
+		SendCallback done);
 	// One handoff per chat. On rejection, load() returns Core's managed file
 	// path; callers must use it for recovery and must serialize attachment batches.
 	// prepared() runs only after Core confirms its durable draft, before send.
