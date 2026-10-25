@@ -65,9 +65,39 @@ profile lifetime guards. A traced repeat retained the data but did not refresh
 the list after completion. A second traced replay with allocator poisoning
 reproduced a double-free while destroying the settings refresh callback retained by `ConfirmContactBlocking`.
 Matching checksum-verified symbols resolved the callback destruction through
-`Bridge::setContactBlocked` and `DeltaRpc::handleLine`. The callback fix still
-requires native replay; blocking is not considered release-ready from the
-passing backend suite alone.
+`Bridge::setContactBlocked` and `DeltaRpc::handleLine`.
+
+[Validation at `44a91b5`](https://github.com/mamaru-a/deltagram/actions/runs/40242501856)
+passed native compilation, all 259 checks, portable runtime checks and package
+verification. Disposable replay on the checksum-verified GUI then passed:
+
+- A rejected block submits once, shows failure, refreshes the blocked list and
+  keeps the GUI alive. Core preserves the unblocked state, existing history and
+  both drafts.
+- A committed block with a lost acknowledgement is confirmed by readback. The
+  contact appears in the blocked list, its chat row disappears and the active
+  conversation closes without deleting its composer draft. The audit records
+  one block attempt in the original profile.
+- An incoming probe from official Desktop 2.62.0 is stored by Core as state 16
+  while blocked, with no fresh count or visible conversation. Blocked state,
+  the hidden row and both drafts survive normal quit/restart.
+- Unblocking with a lost acknowledgement is confirmed by readback. The chat
+  row returns and the blocked list becomes empty. A new reference-client probe
+  is fresh (state 10), with a blue unread badge. Opening the conversation clears
+  unread state, displays each probe once and restores the original composer.
+- Switching to the alternate profile during a delayed contact preflight
+  invalidates the request chain. The audit observes the old profile's read but
+  no block/unblock write after the switch. Both profile drafts remain intact.
+- After restoring the onboarding profile and normal quit/restart, Core retains
+  the unblocked state, all baseline message IDs, both probes, no fresh messages
+  and both drafts. Fault policies are cleared and one project GUI/proxy/Core
+  ownership chain is verified.
+
+These checks cover the direct-contact settings flow. Group-member profile
+navigation, broader donor entry points and the remaining compatibility gates
+still require their own evidence. PR #1 was merged externally at `ea5bec5`;
+[draft PR #2](https://github.com/omidz4t/deltagram/pull/2) carries the callback
+correction and its evidence.
 
 ### Unsupported passkey controls — 2026-10-26
 
