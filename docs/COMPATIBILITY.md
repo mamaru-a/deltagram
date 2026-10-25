@@ -1,6 +1,6 @@
 # Experimental compatibility tracker
 
-Last reviewed: 2026-10-25. Deltagram is experimental and is not yet a complete
+Last reviewed: 2026-10-26. Deltagram is experimental and is not yet a complete
 Delta Chat client. Core provides messaging protocols and encryption; retaining
 a Telegram widget does not establish that its action works with Core.
 
@@ -52,10 +52,11 @@ are not copied here. Deltagram evidence comes from [PROGRESS.md](PROGRESS.md),
 | Contact status and biographies | 🟡 Partial | Available Core contact status displayed; imported vCard biographies are unsupported by the current Core snapshot. |
 | Search | 🟡 Partial | Core result IDs now feed paged global/in-chat search, with canceled-query/account guards and visible failures. Saved Messages self-peer loading no longer requires a Telegram phone number. `3c2def3` passed all 60 global/in-chat matches, final-page navigation, delayed replacement/cancellation and visible rejection. Help/HTML searches need separate checks. |
 | App picker and webxdc | 🟡 Partial | Embedded app store exists; host rendering, draft preparation and synchronized webxdc updates are unverified. |
-| Calls | ❌ Unavailable | Delta Chat calling is not implemented. Chat-header call buttons are hidden, call entry points stop before device permissions, Telegram conference creation/joining is disabled, and tde2e is excluded. |
+| Calls | ❌ Unavailable | Delta Chat calling is not implemented. Chat-header call buttons are hidden, call entry points stop before device permissions, Telegram conference creation/joining is disabled, and tde2e is excluded. Unsupported call acceptance and separate call-device settings are removed; native settings replay passed on `a6d878d`. |
 | Service-event presentation | ❌ Unavailable | Recorded as unfinished in the development log. |
 | Donor export, sharing restrictions and auto-delete controls | ❌ Unavailable | These Telegram-only actions are hidden/guarded; no Core-backed implementation is claimed. |
 | Settings privacy presentation | 🟡 Partial | Hiding the settings email remains unfinished. |
+| Blocked-user settings | ❌ Unavailable | Source audit found that the Blocked users screen still uses donor `Api::BlockedPeers` requests; no Core-backed block/list path is connected there. Its visible controls need migration or removal before release. |
 
 ## Compatibility checks still needed
 
@@ -68,7 +69,7 @@ They are **unverified**, rather than assumed to work because the donor UI has th
 | Chat management | ❓ Unverified | Clear history rejection/success and date-range deletion have targeted GUI checks; bulk read state and last-read positioning still need coverage. |
 | Member profiles | ❓ Unverified | Opening a profile from a group member list. |
 | Attachments | 🟡 Partial | Ordinary single-file recovery, prepared/resized/rotated image delivery, uncompressed bytes, private staging cleanup and generated archives have revision-specific checks below. Prepared-image restart/retry passes with an older quote after the Core lookup fix. Multiple-file/video paths and broader prepared-media recovery remain open. |
-| Notifications | 🟡 Partial | `94ad667` passes native/package checks and 211 focused checks. Disposable replay verifies inactive-profile delivery/counts, collapsed and sidebar badges, mute persistence/suppression, and rejection of stale notification actions across switches/restarts; valid activation/read actions work. A new Core mute read fixes the reproduced post-expiry notification loss; rejected reads preserve messages without popups, and late reads cannot notify another profile. Idle expiry, inline replies, inactive-profile popups and desktop-shell rendering remain open. |
+| Notifications | 🟡 Partial | `94ad667` passes native/package checks and 211 focused checks. Disposable replay verifies inactive-profile delivery/counts, collapsed and sidebar badges, mute persistence/suppression, and rejection of stale notification actions across switches/restarts; valid activation/read actions work. A new Core mute read fixes the reproduced post-expiry notification loss; rejected reads preserve messages without popups, and late reads cannot notify another profile. Native/package validation at `a6d878d` passes 226 checks. Disposable inline-reply recovery covers rejected sends, lost send/storage acknowledgements, restart, exact text recovery and composer preservation against official Desktop 2.62.0. `148156d` fixes the reproduced 15 ms popup loss during dialog refresh and passes native/package checks plus fault-free inline delivery, notification cleanup, draft preservation and muted suppression. `d428416` passes native/package checks, rendered notification/settings-search cleanup and direct-to-Core inline delivery, restart and draft-preservation replay. Unsupported notification defaults and subscription search entries are removed. Idle expiry, inactive-profile popups and desktop-shell rendering remain open. |
 | Accessibility and localization | ❓ Unverified | Screen readers, keyboard navigation and RTL layouts. |
 | Appearance | 🟡 Partial | General wallpaper: local gallery and custom images in Settings → Chat Settings. Custom-image persistence checked across chats, profiles and restart; per-chat wallpaper is unavailable and removed from the chat menu. Full day/night combinations remain unverified. |
 | External integration | ❓ Unverified | Camera capture and sharing into/out of the application. |

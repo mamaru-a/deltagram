@@ -89,9 +89,23 @@ the conversation remained unread. The chat-list adapter supplied an empty
 donor notification default for an unmuted chat. Applying it briefly inherited
 the donor's unknown/muted default and cleared the popup before Core's explicit
 mute state was restored. Core-account dialog refresh now leaves notification
-settings to the existing generic Core mute update. This fix still needs native
-compilation and a fault-free delivery/reply replay; production readiness is
-not established.
+settings to the existing generic Core mute update. [Validation at `148156d`](https://github.com/mamaru-a/deltagram/actions/runs/40235418361)
+passed native compilation, all 226 checks and portable/package verification.
+Its checksum-verified GUI retained a normal notification through list refresh
+without fault injection. One native inline action closed the popup after about
+19 seconds, sent one reply to official Desktop 2.62.0, cleared recovery and
+preserved both composer drafts. Core later confirmed the reply as read.
+Muting through the GUI still suppressed the next real incoming notification,
+excluded it from the global fresh list and displayed a grey per-chat unread
+badge. The GUI unmute action restored the original setting. These checks use
+the private notification protocol receiver; physical desktop-shell rendering
+and full production readiness remain unverified.
+
+The global Desktop notifications toggle also suppressed a real incoming popup
+while preserving unread state in an unmuted chat; the setting was restored and
+both drafts remained intact. An earlier attempt lost the private test RPC
+connection and is excluded from the result. The fixture now publishes policy
+files atomically and reports worker failures; the repeated check passed.
 
 ### Unsupported call settings — 2026-10-26
 
@@ -120,7 +134,23 @@ Legacy notification-type links open the supported Notifications panel. A
 baseline settings search also exposed Telegram Premium reaction features.
 Premium, Stars and Business search registrations now respect their existing
 unavailability in the main settings menu.
-Native compilation and rendered/search verification of this cleanup are pending.
+[Native/package validation at `d428416`](https://github.com/mamaru-a/deltagram/actions/runs/40236535237)
+passed compilation, all 226 checks and portable/package verification. The
+checksum-verified GUI shows only working global, preview and native notification
+controls. Settings search no longer exposes the notification reaction, muted
+count or call-acceptance controls; the unrelated Advanced private-chat download
+result remains. Searching for sound still opens and highlights Allow sound.
+The legacy private-chat notification link opens the supported Notifications
+panel. Premium reaction search results are absent.
+
+With this GUI connected directly to Core, a real incoming popup remained
+available until one inline reply action. Official Desktop 2.62.0 displayed
+one reply; Saved replies was empty, and the onboarding and alternate profiles
+still displayed their exact original drafts. After normal restart, read-only
+Core checks confirmed the same outgoing message ID in read state, no recovery
+record and both drafts unchanged. The test-only native-notification preference
+was restored to off and remained off after restart; desktop notifications
+remain enabled. Fault policies are cleared. Production readiness is still open.
 
 ### Inactive-profile delivery and unread tracking
 
