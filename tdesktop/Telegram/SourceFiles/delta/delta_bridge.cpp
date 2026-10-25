@@ -750,6 +750,7 @@ public:
 	}
 	~Bridge() {
 		if (GlobalBridge == this) {
+			PendingUploads.clear();
 			GlobalBridge = nullptr;
 			GlobalSelfAvatarColor = QColor();
 			CoreMessages.clear();
