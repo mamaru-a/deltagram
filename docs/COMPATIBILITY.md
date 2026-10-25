@@ -129,6 +129,18 @@ fixtures for Core failure/pending/read states plus local image rejection.
 Assistive-technology runtime coverage remains open. The presentation fix does
 not repair transformed-media durability.
 
+`21bbd2a` passes native/portable/package validation and all 50 focused checks.
+It removes a separate preparation-time clipboard copy missed by the earlier
+uploader-path checks and sends prepared/resized photo bytes instead of original
+encoded clipboard bytes. Disposable live replay confirms private staging,
+cleanup after acceptance or explicit removal, and matching resized/rotated
+images in official Desktop 2.62.0. `703ae5b` also passes native/package checks
+and preserves a 5 MB JPEG through the explicit uncompressed path. Core accepts
+`File` to skip recompression, then classifies recognized images as `Image`;
+document rendering is not guaranteed. `f751489` clarifies the English option
+label, with native/live label verification pending. Prepared-media restart
+recovery remains open.
+
 ## Updating this tracker
 
 Record the source revision, client versions, environment and test scope before

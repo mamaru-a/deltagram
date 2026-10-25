@@ -6,7 +6,7 @@ Heavy native builds run remotely, one at a time with four compiler jobs. No
 heavy local builds run in parallel; Ninja records and ccache are preserved.
 Commits and fork CI use `mamaru-a`. No production release has been published.
 
-The latest native/portable/package CI passed at `be7b043`, including all 41
+The ordinary-attachment native/portable/package CI passed at `be7b043`, including all 41
 focused Qt cases (43 including setup/cleanup, no skips):
 [CI run](https://github.com/mamaru-a/deltagram/actions/runs/40069205736).
 Its GUI and Core binaries were downloaded selectively and checked against the
@@ -281,6 +281,69 @@ The other profiles had no matching messages and the alternate draft stayed
 unchanged. Private evidence: `media-image-private-pending.json`,
 `media-image-accepted.json`, `media-image-rejected.json` and
 `media-image-discarded.json`.
+
+Those checks inspected the uploader-owned path. A later whole-temp-directory
+check on `2e051d8` found a second copy written earlier by `FileLoadTask`: normal
+clipboard photos left an unowned `delta-tel-clip-*` JPEG with mode `0644` after
+acceptance and explicit rejection/deletion. This is a cleanup/permission defect;
+access by another user was not tested. The earlier uploader fix did not remove
+this separate copy.
+
+The same replay exercised the encoded-JPEG clipboard format. Although the
+preparation result was a 1280×960 JPEG, the uploader selected the original
+3200×2400 JPEG. The protected staging file had the original bytes while the
+unowned extra copy contained the resized image. `21bbd2a` removes the early
+write and gives prepared photo parts precedence over original clipboard bytes;
+send-as-file keeps its original-byte behavior. All 50 focused checks pass
+(including setup/cleanup, zero failures or skips), and source audit passes.
+Native, portable and distribution-package validation passed in
+[CI run](https://github.com/mamaru-a/deltagram/actions/runs/40182693311).
+The checksum-verified GUI passes disposable live replay against official
+Desktop 2.62.0: one private `0600` staging file contains the prepared 1280×960
+JPEG, rejection retains it, explicit deletion removes it, and delayed acceptance
+also removes it. Whole-temp-directory checks find no extra preparation copies.
+Core and the reference client have identical resized bytes. A 90-degree editor
+rotation also arrives correctly in the reference GUI, with matching bytes and
+no staging residue. Other profiles have no matching messages, and the alternate
+draft remains unchanged. Private fixed evidence: `prepared-encoded-fixed-*.json`,
+`media-encoded-fixed-delivered.json`, `media-rotated-fixed-delivered.json` and
+`prepared-rotated-reference.png`.
+Private baseline evidence: `prepared-baseline-staging.json`,
+`prepared-encoded-baseline-rejected.json` and
+`prepared-encoded-baseline-discarded.json`. The generated baseline copies were
+removed after recording evidence. This change does not fix restart recovery.
+
+The send-as-document replay preserved a small 3200×2400 JPEG, but source review
+found the bridge was discarding the explicit file choice and selecting Core's
+`Image` input type. This permits Core to recompress larger files. `703ae5b`
+carries the choice through preparation and upload to Core's `File` input type.
+Native, portable, distribution-package and all 50 focused checks passed in
+[CI run](https://github.com/mamaru-a/deltagram/actions/runs/40183517022).
+Baseline evidence: `prepared-document-encoded-dialog.png`,
+`prepared-message-types.json` and `media-document-fixed-delivered.json`.
+
+The initial fixed-binary assertion expected stored type `File` and failed.
+Inspection of pinned Core's `BlobObject::check_or_recode_image` showed that
+expectation was incorrect: `File` skips recompression, then a recognized image
+is recorded as `Image`. A 5,080,933-byte JPEG sent through the `703ae5b` GUI's
+uncompressed choice retained its exact bytes. A direct Core `Image` control
+with the same source recompressed it to 3,152,369 bytes. This control bypasses
+the GUI and is not presented as a second GUI baseline. Normal photo mode still
+stages a resized 1280×995 image with private permissions. Both GUI sends arrive
+in official Desktop 2.62.0 with exactly matching bytes, no duplicate messages,
+no staging residue, no matches in the other profiles, and the alternate draft
+unchanged. Evidence: `prepared-message-original-large-703.json`,
+`prepared-core-compressed-control.json`, `prepared-message-normal-photo-703.json`,
+`media-original-large-703-delivered.json`, `media-normal-photo-703-delivered.json`
+and `prepared-normal-photo-703-final.json`. `f751489` changes the
+English option to “Send without compression” instead of promising document
+rendering; its native/live label checks are pending in
+[CI run](https://github.com/mamaru-a/deltagram/actions/runs/40184912481).
+
+Source review also found that `Storage::WriteArchiveFile` skips a selected file
+that disappears between gathering entries and reading them. The archive can
+then finish without reporting that omission. A deterministic preparation-race
+replay and a fail-closed correction remain open; this has not been live-tested.
 
 ### Second-device dialog integrity — 2026-10-25
 
