@@ -433,6 +433,28 @@ Private evidence: `media-temp-failure-c996.json`, `temp-failure-c996.png`,
 `staging-recovered-reference-c996.png`.
 Prepared-media restart recovery and batch durability remain open.
 
+### Prepared single-attachment handoff — 2026-10-25
+
+`7f95cca` routes a single prepared image, video or generated archive through
+Core's draft handoff after preparation. It retains the caption and quote, locks
+the composer, and prevents normal quit/profile switching until Core confirms a
+durable copy. A failed send reloads Core's current draft for review rather than
+restoring the pre-send snapshot. A lost save acknowledgement can establish
+ownership through readback, but does not trigger a send or automatic retry.
+
+The focused suite passes 56 checks, with no skips, including prepared-attachment
+ownership ordering, rejected saves/sends, lost acknowledgements, quote mismatch,
+and real-Core recovery after the original file is removed. The source audit
+reports 13,211 files and zero blocking findings. Native/portable/package run
+`40189771900` is still pending, as is exact-binary GUI replay; these source and
+backend checks do not close the prepared-media restart gate yet.
+
+Multi-file batches, voice recording and combined forwarding retain their prior
+send paths. Failure before a prepared output exists does not make the original
+input durable. A failed save before Core confirms ownership retains the local
+attachment and blocks normal quit/profile switching until explicit removal;
+its recovery UX still needs live validation.
+
 ### Second-device dialog integrity — 2026-10-25
 
 On the disposable `be7b043` GUI, two rapid Continue clicks started two
