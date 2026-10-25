@@ -1415,7 +1415,12 @@ void AddMessageActions(
 			crl::guard(controller, [=] {
 				if (!current || !current()) return;
 				if (const auto item = controller->session().data().message(id)) {
-					Delta::RetryPreparedAttachment(item);
+					const auto history = item->history();
+					Delta::RetryPreparedAttachment(item, crl::guard(controller, [=](bool sent) {
+						if (!sent || !current() || controller->activeChatCurrent().history() != history) return;
+						controller->showPeerHistory(history->peer,
+							Window::SectionShow::Way::ClearStack, ShowAtTheEndMsgId);
+					}));
 				}
 			}), &st::menuIconSend);
 	}

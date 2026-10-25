@@ -86,7 +86,8 @@ Incomplete or not yet verified:
 - Voice playback UI, service events and complete profile-switch refresh.
 - Delta Chat calls; Telegram conferences are disabled.
 - Multi-file recovery and broader interruption cases for prepared attachments.
-- Search-result restart crash: the serializer fix awaits native/live replay.
+- Quoted local Retry delivery works, but its accepted bubble can disappear from
+  the open history until restart; the refresh fix awaits native/live replay.
 - Camera/mobile QR flows and broad end-to-end compatibility.
 - Accessibility, RTL, advanced media/search and full webxdc behavior need validation.
 

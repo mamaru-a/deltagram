@@ -108,7 +108,7 @@ void RememberPendingFile(uint64 peer, int64 msg, const QString &path,
 void ForgetPendingFile(uint64 peer, int64 msg);
 bool SendItemMedia(not_null<HistoryItem*> item, Fn<void(bool)> done);
 [[nodiscard]] bool CanRetryPreparedAttachment(not_null<HistoryItem*> item);
-void RetryPreparedAttachment(not_null<HistoryItem*> item);
+void RetryPreparedAttachment(not_null<HistoryItem*> item, Fn<void(bool)> done);
 bool SendItemText(not_null<HistoryItem*> item, const QString &text, Fn<void(bool)> done);
 void SendReaction(int messageId, const QJsonArray &reactions);
 void SetSelfAvatar(const QString &path, Fn<void(QString)> done);

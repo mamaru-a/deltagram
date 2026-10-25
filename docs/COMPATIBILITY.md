@@ -180,8 +180,11 @@ unquoted-image replay on `7d64366`: repeated save rejection retains private
 prepared bytes, a delayed Retry blocks duplicate actions, and one send delivers
 identical bytes to both clients. Normal restart retains one message and no draft.
 A separate quoted Retry setup exposed a reproducible search-result crash while
-loading saved recent peers. The serializer fix and unchanged-cache replay are
-pending native validation. Broader interruption
+loading saved recent peers. `490cadd` passes native/package checks and opens that
+same result with the original cache preserved. Quoted Retry then delivers the
+older quote and identical image bytes to the reference client, but Deltagram's
+accepted bubble disappears from its open history until restart. A follow-up
+history refresh fix awaits native/live replay. Broader interruption
 checks and recent-search suggestion isolation across profiles remain open.
 
 A follow-up source change clears recent/ranked peers and open-chat navigation

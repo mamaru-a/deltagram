@@ -6361,6 +6361,7 @@ void HistoryWidget::chooseAttach(
 		}
 		controller()->show(Box([=](not_null<Ui::GenericBox*> box) {
 			box->setTitle(rpl::single(u"Saved attachments"_q));
+			box->setWidth(st::boxWideWidth);
 			const auto &first = queue.entries.front().draft;
 			box->addRow(object_ptr<Ui::FlatLabel>(box,
 				rpl::single(u"%1 attachments remain.\n\nNext: %2\n%3\n\nSend the remaining attachments in order. If a send cannot be confirmed, the queue will pause for review."_q

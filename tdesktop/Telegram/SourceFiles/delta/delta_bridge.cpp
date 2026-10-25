@@ -3951,11 +3951,17 @@ bool CanRetryPreparedAttachment(not_null<HistoryItem*> item) {
 		&& QFileInfo(prepared.path).isFile();
 }
 
-void RetryPreparedAttachment(not_null<HistoryItem*> item) {
+void RetryPreparedAttachment(not_null<HistoryItem*> item, Fn<void(bool)> done) {
 	if (!CanRetryPreparedAttachment(item)) return;
+	const auto history = item->history();
+	const auto current = CaptureAccountGuard();
 	// Mark pending before dispatch so duplicate actions cannot start a send.
 	item->retrySend();
-	SendItemMedia(item, {});
+	SendItemMedia(item, [=](bool sent) {
+		if (!current || !current()) return;
+		if (sent) history->setNotLoadedAtBottom();
+		if (done) done(sent);
+	});
 }
 
 bool SendItemMedia(not_null<HistoryItem*> item, Fn<void(bool)> done) {

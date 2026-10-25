@@ -797,6 +797,32 @@ truncated peek. It also removes the debug log containing the parsed name/phone.
 These malformed-record changes pass the source audit; native/runtime validation
 is still pending and they are not covered by the focused backend test target.
 
+Native/portable/package validation of `490cadd` passed in run 40202325093,
+including all 116 focused checks with no failures or skips. Its checksum-verified
+GUI opens the exact older search result that crashed `7d64366`, with the original
+disposable account/cache preserved. No cache reset was used. The later profile
+suggestion isolation and malformed-record changes at `6078103` are undergoing
+serial validation in
+[run 40204220735](https://github.com/mamaru-a/deltagram/actions/runs/40204220735),
+started after the preceding run completed.
+
+The unblocked quoted local-Retry case on `490cadd` retains quote 27 and private
+prepared bytes after a rejected save. One explicit Retry issues one send and
+delivers Core message 184 / reference message 180 with the older quote, caption
+and identical prepared JPEG bytes. Core's draft clears and staging is removed;
+other profiles remain unchanged. The reference GUI displays the quoted image.
+However, the open Deltagram history loses the accepted bubble while the chat-list
+preview updates; reopening the chat retains that stale visible range. A normal
+restart displays the delivered image and quote without resending. Private
+evidence: `quoted-local-retry-*.png`, `attachment-quoted-local-retry-accepted.json`
+and `media-quoted-local-retry-reference-bytes.json`.
+
+The follow-up Retry callback invalidates the accepted chat's cached bottom and
+loads the end only when that chat and account are still active. It leaves a
+newly selected chat/profile alone. This source fix awaits native/live replay.
+The initial queue-recovery dialog also clipped Cancel beside its other two
+buttons; it now uses the existing wide-box style, pending native visual replay.
+
 ### Second-device dialog integrity — 2026-10-25
 
 On the disposable `be7b043` GUI, two rapid Continue clicks started two
