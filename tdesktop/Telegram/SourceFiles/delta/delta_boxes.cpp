@@ -2081,7 +2081,8 @@ void ShowSavedReplies(not_null<Window::SessionController*> controller) {
 					: reply.state == ReplyState::Pending ? u"Not sent"_q
 					: reply.state == ReplyState::Attempted ? u"Send outcome unknown"_q : u"Sent"_q;
 				const auto button = box->addRow(object_ptr<Ui::SettingsButton>(box,
-					rpl::single(reply.chatName + u" — "_q + status), st::settingsButtonNoIcon), style::margins());
+					rpl::single(reply.chatName), st::settingsButtonNoIcon), style::margins());
+				box->addRow(object_ptr<Ui::FlatLabel>(box, status, st::aboutLabel), st::boxRowPadding);
 				button->setClickedCallback(crl::guard(controller, [=] {
 					box->closeBox();
 					if (!current()) return;
