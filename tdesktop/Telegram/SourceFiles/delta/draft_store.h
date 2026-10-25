@@ -22,6 +22,7 @@ public:
 	using Callback = std::function<void(ComposeDraft, QString)>;
 	using SendCallback = std::function<void(int, QString)>;
 	using PreparedCallback = std::function<void(ComposeDraft)>;
+	using Checkpoint = std::function<void(int, ComposeDraft, std::function<void(QString)>)>;
 	DraftStore(std::shared_ptr<DeltaRpc> rpc, std::function<void(QString)> error);
 	void load(int accountId, int chatId, Callback done);
 	void save(int accountId, int chatId, const QString &text, int quotedMessageId);
@@ -33,8 +34,14 @@ public:
 	// path; callers must use it for recovery and must serialize attachment batches.
 	// prepared() runs only after Core confirms its durable draft, before send.
 	// It can also report a committed save after a lost reply; that case never sends.
+	// checkpoint() must durably record the ID/canonical draft, then resolve with
+	// an empty error to permit sending. A failed checkpoint leaves the draft intact.
 	void sendAttachment(int accountId, int chatId, ComposeDraft draft, SendCallback done,
-		PreparedCallback prepared = {});
+		PreparedCallback prepared = {}, Checkpoint checkpoint = {});
+	// Resume only an already-checkpointed queue item. Read/verify its existing
+	// draft ID and contents; never replace the draft or allocate a new message ID.
+	void resumeAttachment(int accountId, int chatId, int messageId, ComposeDraft draft,
+		SendCallback done, PreparedCallback prepared = {});
 	void discardAttachment(int accountId, int chatId, const QString &expectedFile,
 		std::function<void(bool)> done);
 	[[nodiscard]] QString attachmentName(int accountId, int chatId) const;
@@ -51,6 +58,8 @@ private:
 			bool prepared = false;
 			bool discard = false;
 			PreparedCallback preparedCallback;
+			Checkpoint checkpoint;
+			int knownDraftId = 0;
 		};
 		ComposeDraft value;
 		std::optional<Send> send;
@@ -62,9 +71,11 @@ private:
 	};
 	void ensureLoaded(Key key);
 	void beginSend(Key key, ComposeDraft draft, SendCallback done,
-		PreparedCallback prepared = {});
+		PreparedCallback prepared = {}, Checkpoint checkpoint = {}, int knownDraftId = 0);
 	void flush(Key key);
 	void startSend(Key key);
+	void confirmDraft(Key key, QString saveError);
+	void sendSavedDraft(Key key, int id);
 	void startDiscard(Key key);
 	void finishSend(Key key, int messageId, QString error);
 	void notifyReaders(Entry &entry, const QString &error);

@@ -326,12 +326,12 @@ void ComposeQueueStore::abandonStage(std::shared_ptr<Staging> state, QString err
 }
 
 void ComposeQueueStore::checkpoint(int account, int chat, const QString &queueId,
-		const QString &entryId, int messageId, Done done) {
+		const QString &entryId, int messageId, Done done, std::optional<ComposeDraft> prepared) {
 	if (messageId <= 0) {
 		if (done) done({}, u"The saved Core message ID is invalid."_s);
 		return;
 	}
-	changeFirst({ account, chat }, queueId, entryId, messageId, std::move(done));
+	changeFirst({ account, chat }, queueId, entryId, messageId, std::move(done), std::move(prepared));
 }
 
 void ComposeQueueStore::removeFirst(int account, int chat, const QString &queueId,
@@ -339,7 +339,8 @@ void ComposeQueueStore::removeFirst(int account, int chat, const QString &queueI
 	changeFirst({ account, chat }, queueId, entryId, 0, std::move(done));
 }
 
-void ComposeQueueStore::changeFirst(Key key, QString queueId, QString entryId, int messageId, Done done) {
+void ComposeQueueStore::changeFirst(Key key, QString queueId, QString entryId, int messageId, Done done,
+		std::optional<ComposeDraft> prepared) {
 	if (!begin(key, done)) return;
 	read(key, [=, this](ComposeQueue queue, QString, QString error) {
 		if (!error.isEmpty() || queue.id != queueId || queue.entries.empty()
@@ -353,6 +354,15 @@ void ComposeQueueStore::changeFirst(Key key, QString queueId, QString entryId, i
 			if (entry.messageId && entry.messageId != messageId) {
 				finish(key, std::move(queue), u"This attachment already has a different Core message ID."_s, done);
 				return;
+			}
+			if (prepared) {
+				if (prepared->file != entry.draft.file || prepared->text != entry.draft.text
+					|| prepared->quotedMessageId != entry.draft.quotedMessageId) {
+					finish(key, std::move(queue), u"Core's saved attachment differs from the queued item."_s, done);
+					return;
+				}
+				entry.draft.filename = prepared->filename;
+				entry.draft.viewType = prepared->viewType;
 			}
 			entry.messageId = messageId;
 		} else {

@@ -161,7 +161,7 @@ int main(int argc, char **argv) {
 		}
 		if (method == u"writes"_s) { Reply(request, writes); continue; }
 		if (method == u"sends"_s) { Reply(request, sends); continue; }
-		if (mode.startsWith(u"handoff-"_s) && method == u"get_message"_s) {
+		if ((mode.startsWith(u"handoff-"_s) || mode.startsWith(u"queue-"_s)) && method == u"get_message"_s) {
 			Reply(request, sentMessages.value(args[1].toInt()));
 			continue;
 		}
@@ -256,7 +256,7 @@ int main(int argc, char **argv) {
 			const auto key = QString::number(args[0].toInt()) + ':' + QString::number(args[1].toInt());
 			if (!drafts.contains(key)) drafts[key] = {
 				{u"text"_s, u"account-%1"_s.arg(args[0].toInt())},
-				{u"file"_s, (mode == u"plain"_s || mode.startsWith(u"handoff-"_s)) ? QString() : u"/fixture/attachment.bin"_s},
+				{u"file"_s, (mode == u"plain"_s || mode.startsWith(u"handoff-"_s) || mode.startsWith(u"queue-"_s)) ? QString() : u"/fixture/attachment.bin"_s},
 				{u"fileName"_s, u"attachment.bin"_s},
 				{u"viewType"_s, u"File"_s},
 			};

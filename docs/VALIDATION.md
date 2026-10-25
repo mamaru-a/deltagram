@@ -446,8 +446,26 @@ The focused suite passes 56 checks, with no skips, including prepared-attachment
 ownership ordering, rejected saves/sends, lost acknowledgements, quote mismatch,
 and real-Core recovery after the original file is removed. The source audit
 reports 13,211 files and zero blocking findings. Native/portable/package run
-`40189771900` is still pending, as is exact-binary GUI replay; these source and
-backend checks do not close the prepared-media restart gate yet.
+`40189771900` passed, including all 56 focused checks and package verification.
+
+The checksum-verified GUI passes a rejected prepared-image send followed by
+normal quit/restart and one explicit retry. Core retains the caption, filename
+and prepared 1280×995 JPEG with SHA-256
+`fb6f1dbd5258f4579cd08469d636bd9952cdd655a3b45d6b7213dad59c1a6bf3`,
+while the temporary preparation file is already gone. The recovery dialog
+shows the saved filename. Retry produces one outgoing message (Core 137), one
+matching reference message (157), identical bytes in official Desktop 2.62.0,
+an empty draft and a read receipt. Other profiles have no matching messages;
+the alternate draft is unchanged. Private evidence: `attachment-prepared-rejected-7f95.json`,
+`attachment-prepared-restart-7f95.json`, `media-prepared-retried-delivered-7f95.json`,
+`prepared-recovery-dialog-7f95.png`, `prepared-retried-reference-7f95.png`, and
+`prepared-message-prepared-retried-7f95.json`.
+
+This replay also exposes a navigation defect: after retry, the Qt chat jumps to
+old history instead of the new attachment. `fastShowAtEnd` selects the unread
+position on this path. Private evidence: `prepared-retried-position-7f95.png`.
+Archive recovery, quote retention, uncompressed retry, uncertain replies and
+the new preparation guards still need exact-binary GUI coverage.
 
 Multi-file batches, voice recording and combined forwarding retain their prior
 send paths. Failure before a prepared output exists does not make the original
@@ -492,6 +510,26 @@ deleting both originals. The source audit reports zero blocking findings across
 send checkpoint continuation are not connected yet, and no native/live batch
 recovery proof is claimed. The prepared-single-attachment native run remains
 separate at `7f95cca`.
+
+### Queued-send checkpoint — 2026-10-25
+
+`DraftStore` can now wait for an asynchronous durable checkpoint after confirming
+Core's draft and before issuing `misc_send_draft`. The checkpoint receives the
+known ID and Core's canonical filename/type. Rejection leaves the draft intact;
+late or duplicate continuations cannot issue another send. The queue stores the
+canonical fields without changing the retained file, caption or quote.
+
+An already-checkpointed attachment uses a separate resume path that verifies
+the saved ID, chat, state, file, filename, type, caption and quote without writing
+another draft. This matters because `misc_set_draft` constructs a new message
+and can replace the old draft ID. A changed draft is preserved and not sent.
+
+All 77 focused checks pass, with no failures or skips. Added checks cover delayed,
+rejected and duplicate checkpoint continuation, destruction of its owner,
+identity/content mismatches, a committed checkpoint whose readback is lost, and
+resuming the recorded ID without any draft rewrite. A real-Core rejected resume
+also preserves the original draft ID after restart. Batch controller/GUI wiring
+and native/live validation of these newer APIs remain open.
 
 ### Second-device dialog integrity — 2026-10-25
 

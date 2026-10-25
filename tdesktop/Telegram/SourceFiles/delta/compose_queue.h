@@ -36,7 +36,8 @@ public:
 	// Persist Core's known draft ID before allowing a send. Only the first item
 	// can advance, and a known ID cannot be replaced by a different one.
 	void checkpoint(int account, int chat, const QString &queueId,
-		const QString &entryId, int messageId, Done done);
+		const QString &entryId, int messageId, Done done,
+		std::optional<ComposeDraft> prepared = std::nullopt);
 	// Call only after reconciling a send or an explicit user discard. The queue
 	// is updated before removing its blob pin. Errors require a fresh load.
 	void removeFirst(int account, int chat, const QString &queueId,
@@ -55,7 +56,8 @@ private:
 	void write(int account, QString key, QJsonValue value, std::function<void(QString, bool)> done);
 	void stageNext(std::shared_ptr<Staging> state);
 	void abandonStage(std::shared_ptr<Staging> state, QString error, size_t index = 0);
-	void changeFirst(Key key, QString queueId, QString entryId, int messageId, Done done);
+	void changeFirst(Key key, QString queueId, QString entryId, int messageId, Done done,
+		std::optional<ComposeDraft> prepared = std::nullopt);
 	void inspectCleanup(std::shared_ptr<Cleaning> state, size_t index = 0);
 	void releaseOrphans(std::shared_ptr<Cleaning> state, size_t index = 0);
 	void finishCleanup(std::shared_ptr<Cleaning> state, QString error);

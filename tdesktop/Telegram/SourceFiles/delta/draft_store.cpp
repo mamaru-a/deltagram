@@ -151,12 +151,21 @@ void DraftStore::sendText(int accountId, int chatId, const QString &text,
 }
 
 void DraftStore::sendAttachment(int accountId, int chatId, ComposeDraft draft,
-		SendCallback done, PreparedCallback prepared) {
+		SendCallback done, PreparedCallback prepared, Checkpoint checkpoint) {
 	if (draft.file.isEmpty()) {
 		if (done) done(0, u"The attachment file is missing."_s);
 		return;
 	}
-	beginSend(Key(accountId, chatId), std::move(draft), std::move(done), std::move(prepared));
+	beginSend(Key(accountId, chatId), std::move(draft), std::move(done), std::move(prepared), std::move(checkpoint));
+}
+
+void DraftStore::resumeAttachment(int accountId, int chatId, int messageId, ComposeDraft draft,
+		SendCallback done, PreparedCallback prepared) {
+	if (messageId <= 0 || draft.file.isEmpty()) {
+		if (done) done(0, u"The saved attachment or message ID is missing."_s);
+		return;
+	}
+	beginSend(Key(accountId, chatId), std::move(draft), std::move(done), std::move(prepared), {}, messageId);
 }
 
 void DraftStore::discardAttachment(int accountId, int chatId,
@@ -216,7 +225,7 @@ void DraftStore::startDiscard(Key key) {
 }
 
 void DraftStore::beginSend(Key key, ComposeDraft draft, SendCallback done,
-		PreparedCallback prepared) {
+		PreparedCallback prepared, Checkpoint checkpoint, int knownDraftId) {
 	auto &entry = _entries[key];
 	if (entry.send || (draft.text.trimmed().isEmpty() && draft.file.isEmpty())) {
 		if (done) done(0, u"A message is already being saved, or its text is empty."_s);
@@ -224,6 +233,8 @@ void DraftStore::beginSend(Key key, ComposeDraft draft, SendCallback done,
 	}
 	entry.send = Entry::Send{ std::move(draft), std::move(done) };
 	entry.send->preparedCallback = std::move(prepared);
+	entry.send->checkpoint = std::move(checkpoint);
+	entry.send->knownDraftId = knownDraftId;
 	ensureLoaded(key);
 }
 
@@ -238,6 +249,10 @@ void DraftStore::startSend(Key key) {
 		return;
 	}
 	entry.send->started = true;
+	if (entry.send->knownDraftId > 0) {
+		confirmDraft(key, {});
+		return;
+	}
 	const auto target = entry.send->draft;
 	const auto text = target.text;
 	const auto quote = target.quotedMessageId;
@@ -250,65 +265,86 @@ void DraftStore::startSend(Key key) {
 		[=, this](QJsonObject reply) {
 			if (guard.expired()) return;
 			const auto saveError = reply.contains(u"error"_s) ? Failure(reply) : QString();
-			if (!saveError.isEmpty() && !_entries[key].send->preparedCallback) {
+			if (!saveError.isEmpty() && !_entries[key].send->preparedCallback && !_entries[key].send->checkpoint) {
 				finishSend(key, 0, Failure(reply));
 				return;
 			}
 			_entries[key].value = target;
-			_rpc->call(u"get_draft"_s, {key.first, key.second}, [=, this](QJsonObject read) {
-				if (guard.expired()) return;
-				const auto draft = read.value(u"result"_s).toObject();
-				const auto id = draft.value(u"id"_s).toInt();
-				if (read.contains(u"error"_s) || id <= 0
-					|| draft.value(u"state"_s).toInt() != 19
-					|| draft.value(u"chatId"_s).toInt() != key.second
-					|| draft.value(u"text"_s).toString() != text
-					|| draft.value(u"quote"_s).toObject().value(u"messageId"_s).toInt() != quote
-					|| draft.value(u"file"_s).toString().isEmpty() != target.file.isEmpty()) {
-					finishSend(key, 0, u"Could not confirm the saved draft. Nothing was sent."_s);
-					return;
-				}
-				// Core copies the attachment into its managed blob store. Keep that
-				// durable path for recovery instead of the original picker/temp path.
-				_entries[key].value.file = draft.value(u"file"_s).toString();
-				_entries[key].value.filename = draft.value(u"fileName"_s).toString();
-				_entries[key].value.viewType = draft.value(u"viewType"_s).toString();
-				_entries[key].send->prepared = true;
-				// Report ownership before attempting the send. Prepared-media callers
-				// may now release their temporary source and recover this Core draft.
-				const auto prepared = _entries[key].send->preparedCallback;
-				if (prepared) prepared(_entries[key].value);
-				if (guard.expired()) return;
-				if (!saveError.isEmpty()) {
-					// A lost save reply is reconciled for recovery, never retried or
-					// followed by a send the caller cannot distinguish from rejection.
-					finishSend(key, 0, saveError);
-					return;
-				}
-				_rpc->call(u"misc_send_draft"_s, {key.first, key.second},
-					[=, this](QJsonObject sent) {
-						if (guard.expired()) return;
-						if (!sent.contains(u"error"_s) && sent.value(u"result"_s).toInt() == id) {
-							finishSend(key, id, {});
-							return;
-						}
-						// Core may have committed before an error reached us. Inspect
-						// the known ID; never retry a possibly completed send.
-						_rpc->call(u"get_message"_s, {key.first, id},
-							[=, this](QJsonObject checked) {
-								if (guard.expired()) return;
-								const auto message = checked.value(u"result"_s).toObject();
-								const auto state = message.value(u"state"_s).toInt();
-								const auto owned = !checked.contains(u"error"_s)
-									&& message.value(u"id"_s).toInt() == id
-									&& message.value(u"chatId"_s).toInt() == key.second
-									&& (state == 20 || state == 24 || state == 26 || state == 28);
-								finishSend(key, owned ? id : 0, owned ? QString()
-									: u"The send was not confirmed. Check the chat and its saved draft before retrying."_s);
-							});
-					});
-			});
+			confirmDraft(key, saveError);
 		});
+}
+
+void DraftStore::confirmDraft(Key key, QString saveError) {
+	const auto target = _entries[key].send->draft;
+	const auto knownId = _entries[key].send->knownDraftId;
+	const auto guard = std::weak_ptr<bool>(_alive);
+	_rpc->call(u"get_draft"_s, {key.first, key.second}, [=, this](QJsonObject read) {
+		if (guard.expired()) return;
+		const auto draft = read.value(u"result"_s).toObject();
+		const auto id = draft.value(u"id"_s).toInt();
+		const auto file = draft.value(u"file"_s).toString();
+		if (read.contains(u"error"_s) || id <= 0
+			|| (knownId > 0 && (id != knownId || file != target.file
+				|| draft.value(u"fileName"_s).toString() != target.filename
+				|| draft.value(u"viewType"_s).toString() != target.viewType))
+			|| draft.value(u"state"_s).toInt() != 19
+			|| draft.value(u"chatId"_s).toInt() != key.second
+			|| draft.value(u"text"_s).toString() != target.text
+			|| draft.value(u"quote"_s).toObject().value(u"messageId"_s).toInt() != target.quotedMessageId
+			|| file.isEmpty() != target.file.isEmpty()) {
+			finishSend(key, 0, u"Could not confirm the saved draft. Nothing was sent."_s);
+			return;
+		}
+		// Core owns the managed file before the optional queue checkpoint.
+		auto &entry = _entries[key];
+		entry.value = target;
+		entry.value.file = file;
+		entry.value.filename = draft.value(u"fileName"_s).toString();
+		entry.value.viewType = draft.value(u"viewType"_s).toString();
+		entry.send->prepared = true;
+		const auto prepared = entry.send->preparedCallback;
+		if (prepared) prepared(entry.value);
+		if (guard.expired()) return;
+		if (!saveError.isEmpty()) {
+			// A reconciled save error permits recovery, not an automatic send.
+			finishSend(key, 0, saveError);
+			return;
+		}
+		const auto checkpoint = _entries[key].send->checkpoint;
+		if (!checkpoint) {
+			sendSavedDraft(key, id);
+			return;
+		}
+		const auto resolved = std::make_shared<bool>(false);
+		checkpoint(id, _entries[key].value, [=, this](QString error) {
+			if (guard.expired() || std::exchange(*resolved, true)) return;
+			if (!error.isEmpty()) finishSend(key, 0, std::move(error));
+			else sendSavedDraft(key, id);
+		});
+	});
+}
+
+void DraftStore::sendSavedDraft(Key key, int id) {
+	const auto guard = std::weak_ptr<bool>(_alive);
+	_rpc->call(u"misc_send_draft"_s, {key.first, key.second}, [=, this](QJsonObject sent) {
+		if (guard.expired()) return;
+		if (!sent.contains(u"error"_s) && sent.value(u"result"_s).toInt() == id) {
+			finishSend(key, id, {});
+			return;
+		}
+		// Reconcile the known ID instead of retrying a possibly committed send.
+		_rpc->call(u"get_message"_s, {key.first, id}, [=, this](QJsonObject checked) {
+			if (guard.expired()) return;
+			const auto message = checked.value(u"result"_s).toObject();
+			const auto state = message.value(u"state"_s).toInt();
+			const auto owned = !checked.contains(u"error"_s)
+				&& message.value(u"id"_s).toInt() == id
+				&& message.value(u"chatId"_s).toInt() == key.second
+				&& (state == 20 || state == 24 || state == 26 || state == 28);
+			finishSend(key, owned ? id : 0, owned ? QString()
+				: u"The send was not confirmed. Check the chat and its saved draft before retrying."_s);
+		});
+	});
 }
 
 void DraftStore::finishSend(Key key, int messageId, QString error) {

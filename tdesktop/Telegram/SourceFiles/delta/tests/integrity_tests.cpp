@@ -57,6 +57,125 @@ class IntegrityTests final : public QObject {
 	Q_OBJECT
 
 private slots:
+	void attachmentCheckpoint_data() {
+		QTest::addColumn<QString>("decision");
+		QTest::newRow("accepted-once") << u"accept"_s;
+		QTest::newRow("rejected") << u"reject"_s;
+		QTest::newRow("owner-destroyed") << u"destroy"_s;
+	}
+
+	void attachmentCheckpoint() {
+		QFETCH(QString, decision);
+		auto rpc = std::make_shared<DeltaRpc>();
+		rpc->start(RPC_FIXTURE_PATH, u"handoff-accepted"_s);
+		auto drafts = std::make_unique<Delta::DraftStore>(rpc, [](QString) { QFAIL("Unexpected draft failure"); });
+		auto resolved = std::function<void(QString)>();
+		auto completions = 0;
+		auto knownId = 0;
+		drafts->sendAttachment(2, 10,
+			{ u"checkpoint caption"_s, 41, u"/fixture/source.bin"_s, u"source.bin"_s, u"File"_s },
+			[&](int id, QString error) {
+				QCOMPARE(id, decision == u"accept"_s ? knownId : 0);
+				QCOMPARE(error.isEmpty(), decision == u"accept"_s);
+				++completions;
+			}, {}, [&](int id, Delta::ComposeDraft prepared, std::function<void(QString)> next) {
+				QCOMPARE(prepared.text, u"checkpoint caption"_s);
+				QCOMPARE(prepared.quotedMessageId, 41);
+				knownId = id;
+				resolved = std::move(next);
+			});
+		QTRY_VERIFY(bool(resolved));
+		QVERIFY(knownId > 0);
+		QVERIFY(drafts->sending(2, 10));
+		QVERIFY(!drafts->preparingSend()); // The file is already a Core-owned draft.
+		QCOMPARE(CoreCall(*rpc, u"sends"_s, {})[u"result"_s].toInt(), 0);
+		if (decision == u"destroy"_s) drafts.reset();
+		resolved(decision == u"reject"_s ? u"Checkpoint failed"_s : QString());
+		resolved({}); // A late or duplicated continuation must never send twice.
+		if (decision != u"destroy"_s) QTRY_COMPARE(completions, 1);
+		QCOMPARE(CoreCall(*rpc, u"sends"_s, {})[u"result"_s].toInt(), decision == u"accept"_s ? 1 : 0);
+		if (decision == u"destroy"_s) QCOMPARE(completions, 0);
+	}
+
+	void resumeAttachmentChecksIdentity_data() {
+		QTest::addColumn<QString>("changed");
+		for (const auto name : { "none", "id", "file", "caption", "quote", "filename", "type" }) {
+			QTest::newRow(name) << QString::fromLatin1(name);
+		}
+	}
+
+	void resumeAttachmentChecksIdentity() {
+		QFETCH(QString, changed);
+		auto rpc = std::make_shared<DeltaRpc>();
+		rpc->start(RPC_FIXTURE_PATH, u"handoff-accepted"_s);
+		auto target = Delta::ComposeDraft{ u"resume caption"_s, 41, u"/core/source.bin"_s, u"source.bin"_s, u"File"_s };
+		CoreCall(*rpc, u"misc_set_draft"_s, {2, 10, target.text, target.file, target.filename, 41, target.viewType});
+		const auto original = CoreCall(*rpc, u"get_draft"_s, {2, 10})[u"result"_s].toObject();
+		const auto id = original[u"id"_s].toInt();
+		QVERIFY(id > 0);
+		if (changed == u"file"_s) target.file += u".changed"_s;
+		if (changed == u"caption"_s) target.text += u" changed"_s;
+		if (changed == u"quote"_s) target.quotedMessageId = 42;
+		if (changed == u"filename"_s) target.filename += u".changed"_s;
+		if (changed == u"type"_s) target.viewType = u"Image"_s;
+		Delta::DraftStore drafts(rpc, [](QString) { QFAIL("Unexpected draft failure"); });
+		auto completed = false;
+		drafts.resumeAttachment(2, 10, id + (changed == u"id"_s ? 1 : 0), target, [&](int sent, QString error) {
+			QCOMPARE(sent, changed == u"none"_s ? id : 0);
+			QCOMPARE(error.isEmpty(), changed == u"none"_s);
+			completed = true;
+		});
+		QTRY_VERIFY(completed);
+		QCOMPARE(CoreCall(*rpc, u"writes"_s, {})[u"result"_s].toInt(), 1);
+		QCOMPARE(CoreCall(*rpc, u"sends"_s, {})[u"result"_s].toInt(), changed == u"none"_s ? 1 : 0);
+		if (changed != u"none"_s) QCOMPARE(CoreCall(*rpc, u"get_draft"_s, {2, 10})[u"result"_s].toObject(), original);
+	}
+
+	void queueCheckpointFailureThenResume() {
+		QTemporaryDir temporary;
+		QFile file(temporary.filePath(u"source.bin"_s));
+		QVERIFY(file.open(QIODevice::WriteOnly));
+		QVERIFY(file.write("checkpoint fixture") > 0);
+		file.close();
+		auto rpc = std::make_shared<DeltaRpc>();
+		rpc->start(RPC_FIXTURE_PATH, u"queue-normal"_s);
+		Delta::ComposeQueueStore queues(rpc);
+		Delta::DraftStore drafts(rpc, [](QString) { QFAIL("Unexpected draft failure"); });
+		auto saved = Delta::ComposeQueue();
+		auto completed = false;
+		queues.stage(2, 10, {{ u"queued"_s, 0, file.fileName(), u"source.bin"_s, u"File"_s }},
+			[&](Delta::ComposeQueue queue, QString error) {
+				QVERIFY(error.isEmpty()); saved = std::move(queue); completed = true;
+			});
+		QTRY_VERIFY(completed);
+		completed = false;
+		drafts.sendAttachment(2, 10, saved.entries.front().draft, [&](int id, QString error) {
+			QCOMPARE(id, 0); QVERIFY(!error.isEmpty()); completed = true;
+		}, {}, [&](int id, Delta::ComposeDraft prepared, std::function<void(QString)> next) {
+			CoreCall(*rpc, u"queue_fault"_s, { u"queue-unknown-publish"_s });
+			queues.checkpoint(2, 10, saved.id, saved.entries.front().id, id,
+				[next](Delta::ComposeQueue, QString error) { next(std::move(error)); }, prepared);
+		});
+		QTRY_VERIFY(completed);
+		QCOMPARE(CoreCall(*rpc, u"sends"_s, {})[u"result"_s].toInt(), 0);
+		CoreCall(*rpc, u"queue_fault"_s, { u"queue-normal"_s });
+		completed = false;
+		queues.load(2, 10, [&](Delta::ComposeQueue queue, QString error) {
+			QVERIFY(error.isEmpty()); saved = std::move(queue); completed = true;
+		});
+		QTRY_VERIFY(completed);
+		const auto entry = saved.entries.front();
+		QVERIFY(entry.messageId > 0);
+		const auto writes = CoreCall(*rpc, u"writes"_s, {})[u"result"_s].toInt();
+		completed = false;
+		drafts.resumeAttachment(2, 10, entry.messageId, entry.draft, [&](int id, QString error) {
+			QCOMPARE(id, entry.messageId); QVERIFY(error.isEmpty()); completed = true;
+		});
+		QTRY_VERIFY(completed);
+		QCOMPARE(CoreCall(*rpc, u"sends"_s, {})[u"result"_s].toInt(), 1);
+		QCOMPARE(CoreCall(*rpc, u"writes"_s, {})[u"result"_s].toInt(), writes);
+	}
+
 	void composeQueueStorage_data() {
 		QTest::addColumn<QString>("mode");
 		QTest::addColumn<bool>("success");
@@ -127,12 +246,17 @@ private slots:
 		});
 		QTRY_VERIFY(completed);
 		completed = false;
+		auto canonical = saved.entries[0].draft;
+		canonical.filename = u"normalized.vcf"_s;
+		canonical.viewType = u"Vcard"_s;
 		queues.checkpoint(2, 10, saved.id, saved.entries[0].id, 300,
 			[&](Delta::ComposeQueue queue, QString error) {
 				QVERIFY(error.isEmpty());
 				QCOMPARE(queue.entries[0].messageId, 300);
+				QCOMPARE(queue.entries[0].draft.filename, canonical.filename);
+				QCOMPARE(queue.entries[0].draft.viewType, canonical.viewType);
 				completed = true;
-			});
+			}, canonical);
 		QTRY_VERIFY(completed);
 		completed = false;
 		queues.checkpoint(2, 10, saved.id, saved.entries[0].id, 301,
@@ -722,6 +846,16 @@ private slots:
 		QFile saved(recovered.file);
 		QVERIFY(saved.open(QIODevice::ReadOnly));
 		QCOMPARE(saved.readAll(), bytes);
+		completed = false;
+		drafts.resumeAttachment(account, chat, persisted[u"id"_s].toInt(), recovered,
+			[&](int id, QString error) {
+				QCOMPARE(id, 0); // Still no configured transport; preserve this ID.
+				QVERIFY(!error.isEmpty());
+				completed = true;
+			});
+		QTRY_VERIFY(completed);
+		QCOMPARE(CoreCall(*rpc, u"get_draft"_s, {account, chat})[u"result"_s].toObject()[u"id"_s],
+			persisted[u"id"_s]);
 		auto removed = false;
 		drafts.discardAttachment(account, chat, recovered.file, [&](bool success) {
 			QVERIFY(success);
