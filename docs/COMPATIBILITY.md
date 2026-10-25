@@ -184,13 +184,19 @@ loading saved recent peers. `490cadd` passes native/package checks and opens tha
 same result with the original cache preserved. Quoted Retry then delivers the
 older quote and identical image bytes to the reference client, but Deltagram's
 accepted bubble disappears from its open history until restart. A follow-up
-history refresh fix awaits native/live replay. Broader interruption
+history refresh fix passes native/package checks and disposable replay on
+`b5c4e9e`: the quoted image remains visible immediately after one Retry, both
+clients retain the older quote and matching bytes, and the draft/staging clear.
+Broader interruption
 checks and recent-search suggestion isolation across profiles remain open.
 
 A follow-up source change clears recent/ranked peers and open-chat navigation
 on profile switch and prevents importing unscoped donor suggestion records.
 Peer suggestions are currently session-local; settings-search history remains
-available. Native and live isolation validation of this change are pending.
+available. `6078103` passes native/package checks and disposable profile-switch
+checks: Recent and Ctrl+Tab history clear, the alternate draft stays unchanged,
+and the pending queue remains in its original account. Active-popup races and
+malformed-record runtime cases remain unverified.
 
 `ca039dc` adds Core-backed batch compose storage, and `8a2b78c` adds durable-send
 checkpoint continuation and verified-ID resume without replacing a Core draft.
@@ -208,9 +214,13 @@ recovery from a directly seeded two-file ledger: rejected send, normal restart,
 same-ID resume, ordered byte-identical delivery to both GUIs and queue/pin/draft
 cleanup. A separate GUI case preserves a newer draft through rejected queue
 advancement and both confirmed discards; the remaining file retains its bytes.
-New-batch preparation and restart discovery remain unfinished. Matching-draft
-discard and broader interruption/profile cases need live coverage. The review
-dialog's clipped Cancel button is fixed in source, pending native visual replay.
+`6078103` additionally preserves a matching draft/queue after rejected removal,
+and reconciles a committed removal with an error acknowledgement through readback,
+clearing only the first entry and matching draft while retaining the second file.
+New-batch preparation and restart discovery remain unfinished. Broader
+interruption/profile cases need live coverage. The review
+dialog's clipped Cancel button and one-item count wording pass native visual
+replay on `b5c4e9e`.
 
 ## Updating this tracker
 

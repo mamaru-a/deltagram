@@ -854,6 +854,54 @@ injection is cleared. Evidence: `queue-gui-discard1/` JSON records and
 queue/profile interruptions still need live GUI coverage. The clipped-button
 fix and corrected one-item count wording also await native visual validation.
 
+### Matching-draft discard and profile search isolation — 2026-10-25
+
+Native/portable/package validation of `6078103` passed in run 40204220735,
+including all 116 focused checks. The verified GUI loads a two-file ledger whose
+first draft ID 190 was checkpointed after a rejected send on `490cadd`; originals
+are absent. A rejected `remove_draft` keeps ID 190, its caption and both pinned
+files. On the next explicit discard, Core removes the draft but the proxy
+replaces its acknowledgement with an error. Readback confirms removal, so the
+GUI clears the composer and removes only the first queue entry/pin. The second
+file retains its bytes and pin. No messages from this fixture are sent. Evidence:
+`queue-gui-matching1/{rejected,remove-rejected,remove-lost-ack}.json` and
+`queue-matching-remove-*.png`.
+
+The same GUI successfully opens the older search result and displays its peer
+under Recent. Switching from the onboarding profile to the alternate profile
+clears that suggestion; returning also starts with empty transient suggestions.
+A separate Ctrl+Tab check first displays the original profile's two opened
+chats, then displays neither after switching. The alternate draft remains
+unchanged. The saved queue stays only in the original Core account and retains
+its remaining file through both switches. Evidence: `isolation-*.png` and
+`profile-scope-*.json`. These checks cover ordinary profile switching; active
+popup races and malformed saved-record runtime fixtures remain separate gaps.
+
+Serial native/package validation of the accepted-Retry refresh and queue dialog
+layout/count fixes at `b5c4e9e` is running in
+[run 40206069076](https://github.com/mamaru-a/deltagram/actions/runs/40206069076),
+started after `6078103` completed. New-batch preparation remains unfinished.
+
+That run passed, including all 116 focused checks. The verified `b5c4e9e` GUI
+shows Cancel, Discard next and Send remaining completely and correctly labels
+one remaining attachment. The retained matching-discard fixture survives another
+restart with unchanged bytes; explicit final discard removes its last entry/pin
+without sending. Its Core draft stays empty and the alternate draft is preserved.
+
+The quoted local Retry display regression also passes replay on `b5c4e9e`.
+After navigating to the older search result, a rejected prepared save retains
+quote 27, caption and one private JPEG. One explicit Retry delivers Core message
+194 / reference message 186 with the same older quote and prepared bytes
+(`fb6f1dbd5258f4579cd08469d636bd9952cdd655a3b45d6b7213dad59c1a6bf3`).
+The accepted bubble remains visible immediately at the end of the open chat;
+no restart or navigation is needed. Both GUIs display the quote and image, the
+audit records one send call, staging is empty, and the composer/Core draft clear.
+Other profiles remain unchanged and fault injection is cleared. Evidence:
+`retry-refresh-{prepared,accepted,reference}.png`,
+`attachment-retry-refresh-{rejected,accepted}.json`,
+`media-retry-refresh-accepted.json`, and `retry-refresh-audit.json`.
+Changing chats/profiles during the new refresh callback still needs live replay.
+
 ### Second-device dialog integrity — 2026-10-25
 
 On the disposable `be7b043` GUI, two rapid Continue clicks started two
