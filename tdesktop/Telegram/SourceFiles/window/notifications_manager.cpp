@@ -27,6 +27,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_document_media.h"
 #include "data/data_saved_sublist.h"
 #include "data/data_session.h"
+#include "data/data_histories.h"
 #include "data/data_channel.h"
 #include "data/data_forum_topic.h"
 #include "data/data_user.h"
@@ -1459,6 +1460,8 @@ void Manager::notificationReplied(
 	if (Delta::Active() && !reply.text.trimmed().isEmpty()) {
 		if (history->peer->isUser()) {
 			Delta::SendNotificationReply(peerToUser(history->peer->id).bare, reply.text);
+			history->owner().histories().readInbox(history);
+			system()->clearFromHistory(history);
 		}
 		return;
 	}
