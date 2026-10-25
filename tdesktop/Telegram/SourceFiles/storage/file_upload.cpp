@@ -662,7 +662,8 @@ void Uploader::deliverDelta(
 		failed(itemId);
 		return;
 	}
-	Delta::RememberPendingFile(itemId.peer.value, itemId.msg.bare, path, file->filename, file);
+	Delta::RememberPendingFile(itemId.peer.value, itemId.msg.bare,
+		path, file->filename, file, file->forceFile);
 	if (file->type == SendMediaType::Photo) {
 		session().data().photo(file->id)->uploadingData = nullptr;
 	} else if (file->type == SendMediaType::File

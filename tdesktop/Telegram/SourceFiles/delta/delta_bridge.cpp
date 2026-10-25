@@ -186,6 +186,7 @@ struct PendingUpload {
 	QString path;
 	QString filename;
 	std::shared_ptr<void> owner;
+	bool forceFile = false;
 };
 QHash<QString, PendingUpload> PendingUploads;
 
@@ -3648,9 +3649,11 @@ void AddContact(
 }
 
 void RememberPendingFile(uint64 peer, int64 msg, const QString &path,
-		const QString &filename, std::shared_ptr<void> owner) {
+		const QString &filename, std::shared_ptr<void> owner, bool forceFile) {
 	if (!path.isEmpty()) {
-		PendingUploads.insert(PendingKey(peer, msg), { path, filename, std::move(owner) });
+		PendingUploads.insert(PendingKey(peer, msg), {
+			path, filename, std::move(owner), forceFile,
+		});
 	}
 }
 
@@ -3774,7 +3777,7 @@ bool SendItemMedia(not_null<HistoryItem*> item, Fn<void(bool)> done) {
 		userId,
 		path,
 		caption,
-		viewType,
+		prepared.forceFile ? u"File"_q : viewType,
 		quotedId,
 		[=](int id, QString error) {
 			const auto session = weak.get();

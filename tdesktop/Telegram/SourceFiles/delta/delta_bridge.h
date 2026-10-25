@@ -93,7 +93,7 @@ void AddContact(
 	Fn<void(int userId, QString error)> done);
 
 void RememberPendingFile(uint64 peer, int64 msg, const QString &path,
-	const QString &filename, std::shared_ptr<void> owner);
+	const QString &filename, std::shared_ptr<void> owner, bool forceFile);
 void ForgetPendingFile(uint64 peer, int64 msg);
 bool SendItemMedia(not_null<HistoryItem*> item, Fn<void(bool)> done);
 bool SendItemText(not_null<HistoryItem*> item, const QString &text, Fn<void(bool)> done);

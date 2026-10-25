@@ -4407,7 +4407,8 @@ void ApiWrap::sendFiles(
 			? SendMediaType::Photo
 			: SendMediaType::File;
 		const auto forceFile = (type == SendMediaType::File)
-			&& (file.type == Ui::PreparedFile::Type::Video);
+			&& (file.type == Ui::PreparedFile::Type::Video
+				|| file.type == Ui::PreparedFile::Type::Photo);
 		auto fileTo = to;
 		if (file.ttlSeconds && !fileTo.options.scheduled) {
 			fileTo.options.ttlSeconds = file.ttlSeconds;
