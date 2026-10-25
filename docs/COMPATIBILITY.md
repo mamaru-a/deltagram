@@ -237,7 +237,11 @@ disposable GUI selection/rejected-send/restart replay. With both original files
 removed, explicit recovery delivers them once in order to official Desktop
 2.62.0 with matching bytes and caption, then clears queue/pins/draft while
 preserving the alternate profile. Subsequent recovery, discovery and
-recording changes still require native compilation and disposable live replay. Broader
+recording changes pass native/portable/package validation on `49454ee`; their
+disposable live replay remains pending. A separate `7074268` storage-rejection
+replay preserves the pending batch, blocks normal quit, and recovers its files
+and caption through explicit Retry. Confirmed discard then clears both entries
+without delivery or changes to the alternate profile's draft. Broader
 interruption/profile cases need live coverage. The review
 dialog's clipped Cancel button and one-item count wording pass native visual
 replay on `b5c4e9e`.

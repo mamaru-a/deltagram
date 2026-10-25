@@ -76,6 +76,15 @@ profile draft remained unchanged, and the other profiles had no matching items.
 The audit recorded two imports, two draft saves and three send calls: one
 injected rejection followed by the two accepted sends. Fault injection is off.
 
+A second `7074268` GUI replay rejected Core's blob import. The pending two-file
+selection remained available with Retry/Discard, normal quit was refused with
+an explanatory toast, and no draft or send was issued. Explicit Retry retained
+both files and the caption, published the queue, and stopped at an injected send
+rejection. Confirmed discards removed the first matching draft and then the
+remaining entry; queue/pins/draft cleared, no outgoing or reference messages
+were created, and the alternate profile draft stayed intact. Fault injection
+was removed after the check.
+
 A subsequent source change connects composer text, prepared file batches,
 recordings and direct forwarding controls to the generic queue. It captures the
 forward selection before asynchronous preflight, keeps changed selections, and
@@ -86,7 +95,11 @@ until explicit review/discard. All 184 focused checks and the Linux offline
 regressions pass; the additional cases cover file and voice prefixes before
 ordered forwards. This does not compile or exercise the new GUI wiring. Native
 and disposable forwarding replay are still required. The earlier native run for
-`49454ee` is in progress and does not include this subsequent UI change.
+`49454ee` passed native compilation, focused tests, portable-runtime and package
+checks in [CI run 40217054282](https://github.com/mamaru-a/deltagram/actions/runs/40217054282).
+It includes recording, discovery, recoded-image recovery and the forwarding
+backend, but does not include the subsequent forwarding UI changes through
+`eb53438`. Those still need native compilation and disposable replay.
 
 The batch coordinator collects prepared files by selection index and retains
 their owners through Core storage. No file is queued before every preparation
