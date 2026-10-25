@@ -8,6 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "window/notifications_manager.h"
 
 #include "base/options.h"
+#include "base/random.h"
 #include "base/platform/base_platform_info.h"
 #include "base/qt/qt_key_modifiers.h"
 #include "platform/platform_notifications_manager.h"
@@ -279,10 +280,38 @@ bool System::nativeEnforced() const {
 	return !OptionCustomNotification.value() && Platform::Notifications::Enforced();
 }
 
-Main::Session *System::findSession(uint64 sessionId) const {
+uint64 SessionId(not_null<Main::Session*> session) {
+	return Core::App().notifications().sessionId(session);
+}
+
+uint64 System::sessionId(not_null<Main::Session*> session) const {
+	const auto original = session->uniqueId();
+	const auto i = _scopedSessionIds.find(original);
+	return (i != end(_scopedSessionIds)) ? i->second : original;
+}
+
+void System::resetSession(not_null<Main::Session*> session) {
+	const auto previous = sessionId(session);
+	if (_lastHistorySessionId == previous) {
+		_waitForAllGroupedTimer.cancel();
+		_lastForwardedCount = 0;
+		_lastHistoryItemId = FullMsgId();
+		_lastHistorySessionId = 0;
+		_lastSoundId = {};
+	}
+	clearFromSession(session);
+	const auto original = session->uniqueId();
+	auto scoped = uint64(0);
+	do {
+		scoped = base::RandomValue<uint64>();
+	} while (!scoped || scoped == original || scoped == previous);
+	_scopedSessionIds[original] = scoped;
+}
+
+Main::Session *System::findSession(uint64 id) const {
 	for (const auto &[index, account] : Core::App().domain().accounts()) {
 		if (const auto session = account->maybeSession()) {
-			if (session->uniqueId() == sessionId) {
+			if (sessionId(session) == id) {
 				return session;
 			}
 		}
@@ -295,7 +324,7 @@ bool System::skipSentNotification(
 		base::flat_map<SentNotificationId, crl::time> &already) const {
 	const auto id = SentNotificationId{
 		.itemId = item->fullId(),
-		.sessionId = item->history()->session().uniqueId(),
+		.sessionId = Window::Notifications::SessionId(&item->history()->session()),
 	};
 	const auto now = crl::now();
 	const auto clearBefore = now - kReactionNotificationEach;
@@ -710,7 +739,7 @@ void System::showNext() {
 	const auto isSameGroup = [=](HistoryItem *item) {
 		if (!_lastHistorySessionId || !_lastHistoryItemId || !item) {
 			return false;
-		} else if (item->history()->session().uniqueId()
+		} else if (Window::Notifications::SessionId(&item->history()->session())
 			!= _lastHistorySessionId) {
 			return false;
 		}
@@ -918,7 +947,7 @@ void System::showNext() {
 		}
 
 		if (!_lastHistoryItemId && groupedItem) {
-			_lastHistorySessionId = groupedItem->history()->session().uniqueId();
+			_lastHistorySessionId = Window::Notifications::SessionId(&groupedItem->history()->session());
 			_lastHistoryItemId = groupedItem->fullId();
 			_lastSoundId = notifySilent ? std::nullopt : MaybeSoundFor(
 				notifyThread,
@@ -939,7 +968,7 @@ void System::showNext() {
 			}
 			// We have to wait until all the messages in this group are loaded.
 			_lastForwardedCount += forwardedCount;
-			_lastHistorySessionId = groupedItem->history()->session().uniqueId();
+			_lastHistorySessionId = Window::Notifications::SessionId(&groupedItem->history()->session());
 			_lastHistoryItemId = groupedItem->fullId();
 			_lastSoundId = notifySilent ? std::nullopt : MaybeSoundFor(
 				notifyThread,

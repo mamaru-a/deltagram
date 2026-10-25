@@ -48,6 +48,7 @@ This file is part of Delta Tel, a Telegram Desktop based Delta Chat client.
 #include "ui/image/image_location.h"
 #include "ui/image/image_prepare.h"
 #include "window/window_session_controller.h"
+#include "window/notifications_manager.h"
 
 #include <QBuffer>
 #include <QDateTime>
@@ -1177,6 +1178,7 @@ public:
 	}
 
 	void start() {
+		Core::App().notifications().resetSession(_session);
 		const auto guard = _alive;
 		_profileActivity->start();
 		_rpc->setEventHandler([=](QJsonObject event) {
@@ -1898,6 +1900,7 @@ public:
 	}
 
 	void resetAccountView() {
+		Core::App().notifications().resetSession(_session);
 		Core::App().closeMediaView();
 		Media::Player::instance()->resetForAccountChange();
 		// Detach the old account's chat and cancel its loading requests first.

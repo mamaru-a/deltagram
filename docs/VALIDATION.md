@@ -55,6 +55,26 @@ The source audit has zero blocking findings across 13,219 files. These are
 backend checks and source integration evidence: native compilation, fixed GUI
 replay, muted-chat behavior and desktop notification popups remain pending.
 
+### Notification action scope — native replay pending
+
+Source review found that desktop notification targets used the donor session's
+stable user ID, while Core profiles reuse that session and can overlap chat and
+message IDs. Native action callbacks resolve that ID against the current view;
+clearing a popup alone does not reject an already queued or persisted action.
+
+The follow-up assigns an opaque notification identity at backend startup and
+after each successful profile switch. It clears the prior profile's queued and
+displayed notifications and any delayed grouped notification before rotating
+the identity. Linux, Windows and both macOS adapters use the same identity for
+creation and clearing; custom popups retain their creation-time identity.
+Activation, reply and action lookup therefore reject targets from the old view.
+The identity is not persisted, so it also changes across app restarts.
+
+The source audit passes with zero blocking findings. This follow-up is not
+covered by the earlier 195 backend checks or the `71b644c` native build. Native
+compilation and disposable notification-action replay remain required; inactive
+profile popup delivery is still a separate open feature/check.
+
 ### Batch preparation storage checks
 
 The follow-up generic queue backend supports a text prefix, prepared files and
