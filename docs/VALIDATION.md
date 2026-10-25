@@ -116,6 +116,10 @@ Core accounts now omit these sections and the donor multi-account toggle.
 Global desktop/sound/attention controls, preview privacy and native integration
 remain available. The type and reaction subsections are unavailable in settings
 search and cannot initialize their donor controls through direct navigation.
+Legacy notification-type links open the supported Notifications panel. A
+baseline settings search also exposed Telegram Premium reaction features.
+Premium, Stars and Business search registrations now respect their existing
+unavailability in the main settings menu.
 Native compilation and rendered/search verification of this cleanup are pending.
 
 ### Inactive-profile delivery and unread tracking
