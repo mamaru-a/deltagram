@@ -2,6 +2,8 @@
 This file is part of Delta Tel, a Telegram Desktop based Delta Chat client.
 */
 #include "delta/delta_bridge.h"
+
+#include "apiwrap.h"
 #include "delta/account_scope.h"
 #include "delta/message_order.h"
 #include "delta/message_visibility.h"
