@@ -62,6 +62,15 @@ Direct creation-box entry is guarded. Opening privacy settings also no longer
 starts the unused Telegram auto-delete reload. Rendered verification and native
 compilation of this follow-up are pending.
 
+### Sender and chat identity lookups — 2026-10-26
+
+Review of the blocking profile action found that high sender-peer IDs could be
+narrowed to an unrelated chat ID during type/status lookup. The blocking action
+now resolves known sender contacts before checking chat-only system IDs, and
+the group/direct/channel/subtitle caches retain full-width peer IDs. Source
+inspection confirms these lookups no longer truncate sender identities; native
+compilation and group-member profile replay remain pending.
+
 ### Notification reply recovery — 2026-10-26
 
 On `94ad667`, the disposable native notification receiver emitted one inline

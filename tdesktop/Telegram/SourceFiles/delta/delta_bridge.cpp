@@ -115,12 +115,12 @@ struct PeerSubtitle {
 	QString line;
 };
 
-QHash<int, PeerSubtitle> PeerSubtitles;
-QHash<int, QJsonObject> ChannelInfos;
+QHash<uint64, PeerSubtitle> PeerSubtitles;
+QHash<uint64, QJsonObject> ChannelInfos;
 QHash<int, int> ChannelViews;
 QHash<int, QJsonObject> SharedContacts;
-QSet<int> GroupChats;
-QSet<int> DirectChats;
+QSet<uint64> GroupChats;
+QSet<uint64> DirectChats;
 QHash<uint64, ContactRow> SenderContacts;
 rpl::variable<int> ChannelRevision = 0;
 rpl::variable<int> AccountViewRevision = 0;
@@ -3820,11 +3820,11 @@ void RequestMessageData(int userId, int messageId, Fn<void()> done) {
 }
 
 bool IsGroup(uint64 userId) {
-	return GroupChats.contains(int(userId));
+	return GroupChats.contains(userId);
 }
 
 bool IsDirectChat(uint64 userId) {
-	return userId == kSelfUserId || DirectChats.contains(int(userId));
+	return userId == kSelfUserId || DirectChats.contains(userId);
 }
 
 std::optional<ContactRow> ContactForPeer(uint64 userId) {
@@ -3933,12 +3933,12 @@ void DeleteContact(int contactId, bool deleteChat, Fn<void(QString)> done) {
 }
 
 bool IsChannel(uint64 userId) {
-	const auto type = ChannelInfos.value(int(userId)).value(u"chatType"_q).toString();
+	const auto type = ChannelInfos.value(userId).value(u"chatType"_q).toString();
 	return Active() && (type == u"OutBroadcast"_q || type == u"InBroadcast"_q);
 }
 
 bool IsReadOnlyChannel(uint64 userId) {
-	return IsChannel(userId) && ChannelInfos.value(int(userId)).value(u"chatType"_q).toString() == u"InBroadcast"_q;
+	return IsChannel(userId) && ChannelInfos.value(userId).value(u"chatType"_q).toString() == u"InBroadcast"_q;
 }
 
 rpl::producer<bool> ChannelWriteAccess(uint64 userId) {
@@ -3961,13 +3961,13 @@ std::optional<QString> StatusSubtitle(uint64 userId) {
 	}
 	if (IsChannel(userId)) {
 		if (IsReadOnlyChannel(userId)) return u"channel"_q;
-		const auto info = ChannelInfos.value(int(userId));
+		const auto info = ChannelInfos.value(userId);
 		if (!info.contains(u"contactIds"_q)) return u"channel"_q;
 		const auto ids = info.value(u"contactIds"_q).toArray();
 		const auto count = std::count_if(ids.begin(), ids.end(), [](const QJsonValue &id) { return id.toInt() > 9; });
 		return count == 1 ? u"1 subscriber"_q : u"%1 subscribers"_q.arg(count);
 	}
-	const auto known = PeerSubtitles.constFind(int(userId));
+	const auto known = PeerSubtitles.constFind(userId);
 	if (known != PeerSubtitles.cend() && known->lastSeen > 0) {
 		return std::nullopt;
 	}
