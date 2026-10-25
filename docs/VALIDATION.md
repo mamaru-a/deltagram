@@ -455,6 +455,26 @@ input durable. A failed save before Core confirms ownership retains the local
 attachment and blocks normal quit/profile switching until explicit removal;
 its recovery UX still needs live validation.
 
+### Batch storage prerequisite — 2026-10-25
+
+An isolated offline probe of the pinned Core confirms a possible storage basis
+for multi-attachment recovery: `copy_to_blob_dir` owns the bytes, `ui.*` config
+stores client compose state, and a separate config value containing
+`$BLOBDIR/<basename>` retains the file during housekeeping. A JSON field alone
+is not a retention reference; housekeeping only recognizes a config value
+starting with that prefix. `batch_set_config` writes keys sequentially, so it
+must not be treated as an atomic transaction.
+
+The probe uses newly created offline accounts, a synthetic identity solely for
+backup-triggered housekeeping, and a process-local clock offset. It verifies
+account isolation, restart after deleting the original source, retention of the
+pinned blob while an unreferenced control is removed, and cleanup after explicit
+pin removal. It never starts network IO or changes the host clock. Private
+evidence: `queue-storage-evidence.json`; helpers: `queue_storage_probe.py` and
+`queue_clock.c`. This proves storage prerequisites only. Batch preparation,
+queue checkpoints, uncertain-send reconciliation and GUI recovery are not yet
+implemented or validated by this probe.
+
 ### Second-device dialog integrity — 2026-10-25
 
 On the disposable `be7b043` GUI, two rapid Continue clicks started two
