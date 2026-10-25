@@ -3223,6 +3223,11 @@ void Account::readMediaLastPlaybackPositions() {
 	}
 }
 
+void Account::useTransientSearchPeers() {
+	Expects(!_owner->sessionExists());
+	_transientSearchPeers = true;
+}
+
 void Account::writeSearchSuggestionsDelayed() {
 	Expects(_owner->sessionExists());
 
@@ -3241,12 +3246,17 @@ void Account::writeSearchSuggestionsIfNeeded() {
 void Account::writeSearchSuggestions() {
 	Expects(_owner->sessionExists());
 
-	const auto top = _owner->session().topPeers().serialize();
-	const auto recent = _owner->session().recentPeers().serialize();
+	const auto top = _transientSearchPeers
+		? QByteArray()
+		: _owner->session().topPeers().serialize();
+	const auto recent = _transientSearchPeers
+		? QByteArray()
+		: _owner->session().recentPeers().serialize();
 	const auto settingsSearches
 		= _owner->session().recentSettingsSearches().serialize();
-	const auto guestChatBots
-		= _owner->session().topGuestChatBots().serialize();
+	const auto guestChatBots = _transientSearchPeers
+		? QByteArray()
+		: _owner->session().topGuestChatBots().serialize();
 	if (top.isEmpty()
 		&& recent.isEmpty()
 		&& settingsSearches.isEmpty()
@@ -3304,11 +3314,13 @@ void Account::readSearchSuggestions() {
 		suggestions.stream >> guestChatBots;
 	}
 	if (CheckStreamStatus(suggestions.stream)) {
-		_owner->session().topPeers().applyLocal(top);
-		_owner->session().recentPeers().applyLocal(recent);
+		if (!_transientSearchPeers) {
+			_owner->session().topPeers().applyLocal(top);
+			_owner->session().recentPeers().applyLocal(recent);
+			_owner->session().topGuestChatBots().applyLocal(guestChatBots);
+		}
 		_owner->session().recentSettingsSearches().applyLocal(
 			settingsSearches);
-		_owner->session().topGuestChatBots().applyLocal(guestChatBots);
 	} else {
 		DEBUG_LOG(("Suggestions: Could not read content."));
 	}

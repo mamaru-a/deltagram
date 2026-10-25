@@ -184,6 +184,11 @@ loading saved recent peers. The serializer fix and unchanged-cache replay are
 pending native validation. Broader interruption
 checks and recent-search suggestion isolation across profiles remain open.
 
+A follow-up source change clears recent/ranked peers and open-chat navigation
+on profile switch and prevents importing unscoped donor suggestion records.
+Peer suggestions are currently session-local; settings-search history remains
+available. Native and live isolation validation of this change are pending.
+
 `ca039dc` adds Core-backed batch compose storage, and `8a2b78c` adds durable-send
 checkpoint continuation and verified-ID resume without replacing a Core draft.
 `47f5752` adds checkpointed advancement and recovery of known draft/outgoing IDs;

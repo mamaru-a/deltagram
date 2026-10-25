@@ -76,6 +76,13 @@ void RecentPeers::clear() {
 	_session->local().writeSearchSuggestionsDelayed();
 }
 
+void RecentPeers::resetForAccountChange() {
+	_list.clear();
+	_opens.clear();
+	_chatOpenUserpicsCache.clear();
+	_updates.fire({});
+}
+
 QByteArray RecentPeers::serialize() const {
 	_session->local().readSearchSuggestions();
 

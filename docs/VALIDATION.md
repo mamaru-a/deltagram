@@ -779,6 +779,16 @@ this GUI serializer. Private evidence: `retry-native-crash.trace`,
 search suggestion isolation across Core profiles also needs a dedicated review:
 these donor caches are owned by the reused desktop session.
 
+That review confirmed that recent peers, ranked peers, open-chat navigation and
+cached navigation avatars survive a Core profile switch. The follow-up source
+resets those collections before publishing the view reset. Core sessions select
+transient peer suggestions before desktop-session construction, so unscoped
+donor peer records are neither imported nor written; settings-search history
+remains separate. Recent/ranked peers therefore last only until profile switch
+or process restart. Core profiles no longer invoke donor top-peer requests.
+The publication audit passes, but this follow-up still needs native compilation
+and GUI profile-switch/restart checks; the active `490cadd` build predates it.
+
 ### Second-device dialog integrity — 2026-10-25
 
 On the disposable `be7b043` GUI, two rapid Continue clicks started two

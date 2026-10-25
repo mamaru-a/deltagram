@@ -158,6 +158,7 @@ public:
 	void writeSearchSuggestionsIfNeeded();
 	void writeSearchSuggestions();
 	void readSearchSuggestions();
+	void useTransientSearchPeers();
 
 	void writeSelf();
 
@@ -371,6 +372,7 @@ private:
 	bool _readingUserSettings = false;
 	bool _recentHashtagsAndBotsWereRead = false;
 	bool _searchSuggestionsRead = false;
+	bool _transientSearchPeers = false;
 	bool _inlineBotsDownloadsRead = false;
 	bool _mediaLastPlaybackPositionsRead = false;
 

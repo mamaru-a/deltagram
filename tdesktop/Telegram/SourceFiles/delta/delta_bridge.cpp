@@ -17,6 +17,8 @@ This file is part of Delta Tel, a Telegram Desktop based Delta Chat client.
 #include "base/weak_ptr.h"
 #include "core/application.h"
 #include "core/file_location.h"
+#include "data/components/recent_peers.h"
+#include "data/components/top_peers.h"
 #include "data/data_document.h"
 #include "data/data_drafts.h"
 #include "data/data_changes.h"
@@ -40,6 +42,7 @@ This file is part of Delta Tel, a Telegram Desktop based Delta Chat client.
 #include "mtproto/mtp_instance.h"
 #include "mtproto/mtproto_response.h"
 #include "rpl/variable.h"
+#include "storage/storage_account.h"
 #include "ui/image/image_location.h"
 #include "ui/image/image_prepare.h"
 #include "window/window_session_controller.h"
@@ -1777,6 +1780,10 @@ public:
 		++_dialogsEpoch;
 		_accountScope.invalidate();
 		_session->api().resetMediaForAccountChange();
+		_session->recentPeers().resetForAccountChange();
+		_session->topPeers().resetForAccountChange();
+		_session->topBotApps().resetForAccountChange();
+		_session->topGuestChatBots().resetForAccountChange();
 		AccountViewRevision = AccountViewRevision.current() + 1;
 		ComposerRevision = ComposerRevision.current() + 1;
 		_session->data().histories().resetBackendRequests();
@@ -4345,6 +4352,9 @@ void StartSession(
 		if (account->sessionExists()) {
 			return;
 		}
+		// WHY: The donor suggestion file has no Core account identity. Do not
+		// import or persist reused peer IDs across Core profiles.
+		account->local().useTransientSearchPeers();
 		account->createSession(
 			MakeUser(kSelfUserId, displayName, true),
 			std::make_unique<Main::SessionSettings>());
