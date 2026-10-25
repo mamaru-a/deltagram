@@ -67,14 +67,26 @@ optional sidebar and desktop-shell badge still need rendered verification.
 
 The same replay exposed a clipped collapsed-selector badge and a separate mute
 defect described below. The badge follow-up aligns its complete bounds and the
-toggle arrow with the profile-name line; its native visual replay is pending.
+toggle arrow with the profile-name line. Native replay on `132b994` confirms
+the complete badge is visible with the expected inactive-profile count.
 
-### Notification action scope — native replay pending
+### Notification action scope
 
 Source review found that desktop notification targets used the donor session's
 stable user ID, while Core profiles reuse that session and can overlap chat and
 message IDs. Native action callbacks resolve that ID against the current view;
 clearing a popup alone does not reject an already queued or persisted action.
+
+Disposable native replay on `71b644c` confirmed this collision. A private
+D-Bus notification receiver captured the real activation target for a message
+from **Delta Chat reference B** to **Deltagram integrity onboarding**. After
+switching to **Deltagram integrity alternate**, replaying that captured action
+opened **Deltagram integrity A** in the alternate profile: both conversations
+had the same numeric chat ID. The selected Core profile remained alternate,
+the original message stayed fresh in onboarding, and the alternate Saved
+Messages draft remained intact. The temporary chat-list delay was removed
+after the check. This verifies the native action protocol, not a desktop
+shell's rendered notification popup.
 
 The follow-up assigns an opaque notification identity at backend startup and
 after each successful profile switch. It clears the prior profile's queued and
@@ -84,12 +96,23 @@ creation and clearing; custom popups retain their creation-time identity.
 Activation, reply and action lookup therefore reject targets from the old view.
 The identity is not persisted, so it also changes across app restarts.
 
-The source audit passes with zero blocking findings. This follow-up is not
-covered by the earlier 195 backend checks or the `71b644c` native build. Native
-compilation and disposable notification-action replay remain required; inactive
-profile popup delivery is still a separate open feature/check.
+Native compilation, all 202 focused checks, portable runtime and package
+verification passed at `132b994` in
+[CI run 40225949053](https://github.com/mamaru-a/deltagram/actions/runs/40225949053).
+Its downloaded GUI/Core binaries were checksum verified. The new binary
+rejected the old captured activation after restart. A fresh notification used
+a different opaque identity; after switching profiles, replaying its activation
+and mark-as-read actions neither opened a conversation nor changed either
+profile's unread state. A current notification opened the correct conversation,
+and its mark-as-read action cleared that profile's fresh messages. After another
+restart, replaying the previously valid mark-as-read action left a new incoming
+message unread. The alternate profile's saved draft remained intact throughout.
 
-### Core chat mute persistence — native replay pending
+These checks cover Linux GNotification protocol/action handling on Xvfb.
+Desktop-shell popup rendering, inline reply durability, and inactive-profile
+popup delivery remain separate open checks/features.
+
+### Core chat mute persistence and expiry
 
 On `71b644c`, Core reported the reference conversation as unmuted while its
 context menu offered Unmute. After selecting Unmute and then Mute forever,
@@ -110,8 +133,27 @@ overlapping chat IDs in two isolated accounts, verify timed/forever settings
 across a server restart, and confirm unmuting one account leaves the other
 muted. Invalid arguments, malformed acknowledgements and stale callbacks are
 also covered. The source audit has zero blocking findings across 13,220 files.
-Native compilation, rejected-change GUI replay, muted incoming delivery and
-notification-action replay are still required for these latest changes.
+The `132b994` native build and disposable GUI replay also passed. Rejecting a
+Mute forever request displayed an error and left Core and the menu unmuted.
+An explicit subsequent mute changed Core and the menu, and remained muted after
+a complete GUI/Core restart. A message sent by official Desktop 2.62.0 arrived
+with a grey chat unread badge, stayed out of the profile fresh-message count,
+and produced no native notification. GUI Unmute restored the fresh-message
+count; the next incoming message produced a native notification. The GUI's
+15-minute mute action also set Core's muted state.
+
+A short timed-mute fixture exposed a further race: Core's mute expired without
+an event, leaving the cached chat state muted. With the chat-list reply delayed,
+the next real incoming message appeared and became fresh, but produced no
+notification even after the list refreshed. Core's own expiry-event regression
+is marked ignored in the pinned source. The follow-up reads `is_chat_muted`
+before applying a fresh incoming message to the notification path. Only an
+explicit boolean is accepted, and profile changes invalidate pending reads.
+An unreadable setting preserves the message without a popup and reports the
+failure. All 211 focused checks pass with no skips, including strict boolean
+parsing, invalid/stale requests and a real-Core read before and after expiry.
+Native compilation and fixed-expiry replay are pending for this follow-up.
+Idle mute-label/badge expiry without a new event remains open.
 
 ### Batch preparation storage checks
 

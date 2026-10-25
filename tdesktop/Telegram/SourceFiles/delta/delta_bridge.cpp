@@ -3170,17 +3170,35 @@ private:
 						ApplyMessageData(existing);
 						return;
 					}
-					_session->data().processUsers(MTP_vector<MTPUser>(
-						QVector<MTPUser>{ MakeUser(
-							userId,
-							userId == kSelfUserId
-								? _selfName
-								: _names.value(chatId),
-							userId == kSelfUserId,
-							_avatars.value(chatId)) }));
-					_session->data().processMessages(
-						QVector<MTPMessage>{ built },
-						::NewMessageType::Unread);
+					const auto apply = [=](bool notify) {
+						if (_deletedMessages.contains(msgId)) return;
+						_session->data().processUsers(MTP_vector<MTPUser>(
+							QVector<MTPUser>{ MakeUser(
+								userId,
+								userId == kSelfUserId
+									? _selfName
+									: _names.value(chatId),
+								userId == kSelfUserId,
+								_avatars.value(chatId)) }));
+						_session->data().processMessages(
+							QVector<MTPMessage>{ built },
+							notify ? ::NewMessageType::Unread : ::NewMessageType::Existing);
+					};
+					if (data.value(u"state"_q).toInt() != 10) {
+						apply(true);
+						return;
+					}
+					ReadCoreChatMute([rpc = _rpc](QString method, QJsonArray params, DeltaRpc::Callback done) {
+						rpc->call(method, params, std::move(done));
+					}, _accountScope, _accountId, chatId, [=](std::optional<bool> muted) {
+						if (muted) {
+							const auto history = _session->data().history(peerId);
+							history->owner().notifySettings().applyBackendMute(history->peer, *muted);
+						} else {
+							reportError(u"The message arrived, but its notification setting could not be checked."_q);
+						}
+						apply(muted.has_value());
+					});
 				});
 		};
 		if (_session->data().message(peerId, MsgId(msgId))) {

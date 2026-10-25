@@ -110,6 +110,86 @@ class IntegrityTests final : public QObject {
 	Q_OBJECT
 
 private slots:
+	void chatMuteReadsRequireExplicitBoolean_data() {
+		QTest::addColumn<QJsonObject>("reply");
+		QTest::addColumn<int>("expected");
+		QTest::newRow("muted") << QJsonObject{{u"result"_s, true}} << 1;
+		QTest::newRow("unmuted") << QJsonObject{{u"result"_s, false}} << 0;
+		QTest::newRow("missing") << QJsonObject() << -1;
+		QTest::newRow("null") << QJsonObject{{u"result"_s, QJsonValue(QJsonValue::Null)}} << -1;
+		QTest::newRow("number") << QJsonObject{{u"result"_s, 0}} << -1;
+		QTest::newRow("string") << QJsonObject{{u"result"_s, u"false"_s}} << -1;
+		QTest::newRow("error-and-false") << QJsonObject{{u"error"_s, QJsonValue(QJsonValue::Null)}, {u"result"_s, false}} << -1;
+	}
+
+	void chatMuteReadsRequireExplicitBoolean() {
+		QFETCH(QJsonObject, reply);
+		QFETCH(int, expected);
+		auto scope = Delta::AccountScope();
+		auto completed = 0;
+		Delta::ReadCoreChatMute([&](QString method, QJsonArray params, DeltaRpc::Callback done) {
+			QCOMPARE(method, u"is_chat_muted"_s);
+			QCOMPARE(params, (QJsonArray{2, 10}));
+			done(reply);
+		}, scope, 2, 10, [&](std::optional<bool> muted) {
+			QCOMPARE(muted ? int(*muted) : -1, expected);
+			++completed;
+		});
+		QCOMPARE(completed, 1);
+	}
+
+	void chatMuteReadsRejectInvalidAndStaleRequests() {
+		auto scope = Delta::AccountScope();
+		auto pending = DeltaRpc::Callback();
+		auto calls = 0;
+		auto completed = 0;
+		const auto request = [&](QString, QJsonArray, DeltaRpc::Callback done) {
+			++calls;
+			pending = std::move(done);
+		};
+		const auto done = [&](std::optional<bool> muted) { QVERIFY(!muted); ++completed; };
+		Delta::ReadCoreChatMute(request, scope, 0, 10, done);
+		Delta::ReadCoreChatMute(request, scope, 2, 0, done);
+		QCOMPARE(calls, 0);
+		QCOMPARE(completed, 2);
+		Delta::ReadCoreChatMute(request, scope, 2, 10, done);
+		QCOMPARE(calls, 1);
+		scope.invalidate();
+		pending({{u"result"_s, false}});
+		QCOMPARE(completed, 2);
+	}
+
+	void realCoreMuteReadAfterExpiry() {
+		const auto program = qEnvironmentVariable("DELTA_TEST_CORE_RPC");
+		if (program.isEmpty()) QSKIP("Set DELTA_TEST_CORE_RPC to test the real Core server.");
+		auto directory = QTemporaryDir();
+		QVERIFY(directory.isValid());
+		auto rpc = std::make_shared<DeltaRpc>();
+		rpc->start(program, directory.path());
+		const auto account = CoreCall(*rpc, u"add_account"_s, {})[u"result"_s].toInt();
+		const auto chat = CoreCall(*rpc, u"create_chat_by_contact_id"_s, {account, 1})[u"result"_s].toInt();
+		QVERIFY(account > 0 && chat > 0);
+		const auto set = CoreCall(*rpc, u"set_chat_mute_duration"_s,
+			{account, chat, QJsonObject{{u"kind"_s, u"Until"_s}, {u"duration"_s, 2}}});
+		QVERIFY(!set.contains(u"error"_s));
+		auto scope = Delta::AccountScope();
+		const auto read = [&](bool expected) {
+			auto completed = false;
+			Delta::ReadCoreChatMute([=](QString method, QJsonArray params, DeltaRpc::Callback done) {
+				rpc->call(method, params, std::move(done));
+			}, scope, account, chat, [&](std::optional<bool> muted) {
+				completed = true;
+				QVERIFY(muted.has_value());
+				QCOMPARE(*muted, expected);
+			});
+			QTRY_VERIFY_WITH_TIMEOUT(completed, 5000);
+		};
+		read(true);
+		QTest::qWait(2100);
+		read(false);
+		rpc->stop();
+	}
+
 	void chatMuteRejectsInvalidAndStaleRequests() {
 		auto scope = Delta::AccountScope();
 		auto calls = 0;
