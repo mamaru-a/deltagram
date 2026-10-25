@@ -63,7 +63,14 @@ message while the menu remained open. Selecting onboarding and opening the
 conversation displayed all three messages, changed their Core states to seen,
 and cleared its fresh-message list. The alternate profile's saved draft remained
 unchanged. These checks verify the profile menu and local read clearing; the
-optional sidebar and desktop-shell badge still need rendered verification.
+desktop-shell badge still needs rendered verification.
+
+The optional profile sidebar was also rendered on `132b994`. With the alternate
+profile selected, a real incoming message increased onboarding's sidebar badge
+from three to four. Clicking that profile switched to its conversation list;
+opening the conversation displayed the messages, cleared Core's fresh list and
+removed the sidebar badge. The alternate draft remained unchanged. The sidebar
+override was then removed from the disposable profile's configuration.
 
 The same replay exposed a clipped collapsed-selector badge and a separate mute
 defect described below. The badge follow-up aligns its complete bounds and the
@@ -152,8 +159,20 @@ explicit boolean is accepted, and profile changes invalidate pending reads.
 An unreadable setting preserves the message without a popup and reports the
 failure. All 211 focused checks pass with no skips, including strict boolean
 parsing, invalid/stale requests and a real-Core read before and after expiry.
-Native compilation and fixed-expiry replay are pending for this follow-up.
-Idle mute-label/badge expiry without a new event remains open.
+Native compilation, all 211 checks, portable runtime and package verification
+passed at `94ad667` in
+[CI run 40228978735](https://github.com/mamaru-a/deltagram/actions/runs/40228978735).
+The GUI/Core artifacts were checksum verified before replay. Repeating the
+short timed mute and delayed chat-list refresh now produced a native
+notification for the next real incoming message. Rejecting the mute-state read
+suppressed the notification while preserving the message, which was then opened
+and rendered in the correct conversation. Holding a mute-state reply across a
+profile switch produced no late notification; the original message stayed
+unread in its own profile and the alternate draft survived. Fault injection and
+the disposable experimental-option overrides were removed after the checks.
+
+Idle mute-label/badge expiry without a new event remains open. These replays
+do not establish inline-reply durability or inactive-profile popup delivery.
 
 ### Batch preparation storage checks
 
