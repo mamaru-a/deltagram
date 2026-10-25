@@ -203,9 +203,14 @@ after restart while the second queued file retains its bytes.
 Saved-queue review and serial Send remaining controls are wired through the
 attachment button in `99df1ac`. Confirmed Discard next in `8c41b45` removes only
 the reviewed entry and its matching Core draft, preserving newer drafts and
-already-sent messages. These UI changes await native compilation and disposable
-replay. New-batch preparation and restart discovery remain unfinished; backend
-checks do not establish batch GUI behavior or live delivery.
+already-sent messages. `490cadd` passes native/package checks and disposable
+recovery from a directly seeded two-file ledger: rejected send, normal restart,
+same-ID resume, ordered byte-identical delivery to both GUIs and queue/pin/draft
+cleanup. A separate GUI case preserves a newer draft through rejected queue
+advancement and both confirmed discards; the remaining file retains its bytes.
+New-batch preparation and restart discovery remain unfinished. Matching-draft
+discard and broader interruption/profile cases need live coverage. The review
+dialog's clipped Cancel button is fixed in source, pending native visual replay.
 
 ## Updating this tracker
 

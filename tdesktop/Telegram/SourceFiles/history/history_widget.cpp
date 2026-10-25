@@ -6364,7 +6364,7 @@ void HistoryWidget::chooseAttach(
 			box->setWidth(st::boxWideWidth);
 			const auto &first = queue.entries.front().draft;
 			box->addRow(object_ptr<Ui::FlatLabel>(box,
-				rpl::single(u"%1 attachments remain.\n\nNext: %2\n%3\n\nSend the remaining attachments in order. If a send cannot be confirmed, the queue will pause for review."_q
+				rpl::single(u"Attachments remaining: %1.\n\nNext: %2\n%3\n\nSend the remaining attachments in order. If a send cannot be confirmed, the queue will pause for review."_q
 					.arg(int(queue.entries.size())).arg(first.filename, first.text)) | rpl::map(tr::marked),
 				st::infoAboutGigagroup));
 			box->addButton(rpl::single(u"Send remaining"_q), crl::guard(this, [=] {

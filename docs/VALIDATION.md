@@ -823,6 +823,37 @@ newly selected chat/profile alone. This source fix awaits native/live replay.
 The initial queue-recovery dialog also clipped Cancel beside its other two
 buttons; it now uses the existing wide-box style, pending native visual replay.
 
+### Saved-queue GUI recovery and newer-draft discard — 2026-10-25
+
+The checksum-verified `490cadd` GUI passes recovery from a directly seeded Core
+compose ledger. The private helper writes two generated files through Core's
+blob/config APIs, confirms the ledger and pins, then removes the originals; it
+never sends. This setup exercises recovery controls, not new-batch selection or
+preparation, which remain unfinished.
+
+The attachment button reviews both files. With `misc_send_draft` rejected,
+Send remaining pauses with both files retained and the first Core draft ID 186
+checkpointed. Normal quit/restart preserves that same ID, captions and files.
+After removing the rejection, one explicit Send remaining sends IDs 186 and 187
+in order; the method audit records two send calls. Official Desktop 2.62.0 receives
+one copy of each (183 and 184), with matching bytes and filenames. Both GUIs show
+the files and captions. The ledger, pins and Core/composer draft clear; other
+profiles and the alternate draft remain unchanged. Private evidence:
+`queue-gui-restart1/{rejected,after-restart,delivered,audit}.json`,
+`media-queue-restart-{first,second}.json`, and `queue-*.png`.
+
+A second seeded ledger verifies the newer-draft boundary. Typing a newer caption
+creates draft 189. Send remaining preserves that ID/text and both queued files
+without sending. Each explicit, confirmed Discard next removes only the reviewed
+entry and its pin. After the first discard, the second file still matches its
+original bytes; after the second, the queue is empty. Draft 189 remains unchanged
+in Core and the composer. No send or `remove_draft` call is added during these
+actions. The test-only newer caption is then cleared through the GUI; fault
+injection is cleared. Evidence: `queue-gui-discard1/` JSON records and
+`queue-newer-draft-preserved.png`. Matching-draft discard and broader uncertain
+queue/profile interruptions still need live GUI coverage. The clipped-button
+fix and corrected one-item count wording also await native visual validation.
+
 ### Second-device dialog integrity — 2026-10-25
 
 On the disposable `be7b043` GUI, two rapid Continue clicks started two
