@@ -65,6 +65,7 @@ void SaveDraft(int userId, const QString &text, int quotedMessageId);
 void LoadDraft(int userId, Fn<void(ComposeDraft)> done);
 void LoadComposeQueue(int userId, Fn<void(ComposeQueue, QString)> done);
 void SendComposeQueue(int userId, ComposeQueue reviewed, Fn<void(bool)> done);
+void DiscardComposeQueueEntry(int userId, ComposeQueue reviewed, Fn<void(bool)> done);
 void RequestMessageData(int userId, int messageId, Fn<void()> done);
 enum class DeliveryState { Pending, Failed, Sent, Read };
 [[nodiscard]] std::optional<DeliveryState> MessageDelivery(int messageId);

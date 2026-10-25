@@ -44,6 +44,16 @@ void ComposeQueueSender::call(QString method, QJsonArray params,
 
 void ComposeQueueSender::sendNext(int account, int chat, const QString &queueId,
 		const QString &entryId, Done done) {
+	begin(account, chat, queueId, entryId, false, std::move(done));
+}
+
+void ComposeQueueSender::discardNext(int account, int chat, const QString &queueId,
+		const QString &entryId, Done done) {
+	begin(account, chat, queueId, entryId, true, std::move(done));
+}
+
+void ComposeQueueSender::begin(int account, int chat, const QString &queueId,
+		const QString &entryId, bool discard, Done done) {
 	if (account <= 0 || chat <= 0 || queueId.isEmpty() || entryId.isEmpty()
 		|| _drafts->busy(account, chat) || !_busy.insert({ account, chat }).second) {
 		if (done) done(0, {}, u"This compose queue is unavailable or already sending."_s);
@@ -58,7 +68,40 @@ void ComposeQueueSender::sendNext(int account, int chat, const QString &queueId,
 		else if (state->queue.id != queueId || state->queue.entries.empty()
 			|| state->queue.entries.front().id != entryId) {
 			finish(state, 0, u"The compose queue changed. Review it before continuing."_s);
-		} else inspect(state);
+		} else if (discard) this->discard(state);
+		else inspect(state);
+	});
+}
+
+void ComposeQueueSender::discard(std::shared_ptr<Sending> state) {
+	const auto valid = [=](const QJsonValue &value) {
+		if (value.isNull()) return true;
+		if (!value.isObject()) return false;
+		const auto draft = value.toObject();
+		return draft.isEmpty() || (draft[u"id"_s].toInt() > 0
+			&& draft[u"state"_s].toInt() == 19 && draft[u"chatId"_s].toInt() == state->chat);
+	};
+	call(u"get_draft"_s, { state->account, state->chat }, [=, this](QJsonObject reply) {
+		if (reply.contains(u"error"_s) || !reply.contains(u"result"_s) || !valid(reply[u"result"_s])) {
+			finish(state, 0, ReadError());
+			return;
+		}
+		const auto draft = reply[u"result"_s].toObject();
+		const auto entry = state->queue.entries.front();
+		const auto id = draft[u"id"_s].toInt();
+		const auto matches = id > 0 && SameDraft(draft, entry.draft)
+			&& (!entry.messageId || (id == entry.messageId
+				&& draft[u"fileName"_s].toString() == entry.draft.filename
+				&& draft[u"viewType"_s].toString() == entry.draft.viewType));
+		if (!matches) { advance(state, 0); return; }
+		call(u"remove_draft"_s, { state->account, state->chat }, [=, this](QJsonObject) {
+			call(u"get_draft"_s, { state->account, state->chat }, [=, this](QJsonObject read) {
+				if (read.contains(u"error"_s) || !read.contains(u"result"_s) || !valid(read[u"result"_s])
+					|| read[u"result"_s].toObject()[u"id"_s].toInt() == id) {
+					finish(state, 0, u"Could not confirm the draft was discarded. The queue was preserved; review it before continuing."_s);
+				} else advance(state, 0);
+			});
+		});
 	});
 }
 

@@ -6375,6 +6375,23 @@ void HistoryWidget::chooseAttach(
 					setInnerFocus();
 				}));
 			}));
+			box->addButton(rpl::single(u"Discard next"_q), crl::guard(this, [=] {
+				box->closeBox();
+				if (!currentAccount() || _history != history || deltaComposerLocked()) return;
+				controller()->show(Ui::MakeConfirmBox({
+					.text = u"Discard the next queued attachment and its saved caption? Newer drafts and already-sent messages will be kept."_q,
+					.confirmed = crl::guard(this, [=](Fn<void()> close) {
+						close();
+						if (!currentAccount() || _history != history || deltaComposerLocked()) return;
+						Delta::DiscardComposeQueueEntry(userId, queue, crl::guard(this, [=](bool) {
+							if (!currentAccount() || _history != history) return;
+							setInnerFocus();
+						}));
+					}),
+					.confirmText = tr::lng_record_lock_discard(),
+					.confirmStyle = &st::attentionBoxButton,
+				}));
+			}));
 			box->addButton(tr::lng_cancel(), [=] { box->closeBox(); });
 		}));
 	}));

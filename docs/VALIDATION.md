@@ -724,6 +724,20 @@ publication audit but awaits native compilation and disposable replay. New
 multi-file selection/preparation, queue discard controls and recovery discovery
 after restart still need integration; this is not completed batch support.
 
+Saved-queue review now also offers a confirmed Discard next action. It removes
+only the reviewed entry and, when it still matches, its current Core draft.
+Different/newer drafts and already-sent messages are preserved. Draft removal
+is read back even after an error reply; an unreadable result or rejected removal
+retains the queue for explicit review. Queue update failures are reconciled by
+a fresh load on the next explicit action. Stale actions cannot discard the next
+entry. The bridge restores the actual Core draft before unlocking the composer.
+All 116 focused checks pass with no failures or skips, including rejected/lost
+discard replies, unreadable readback, queue-write rejection, uncheckpointed
+drafts, stale/duplicate actions, and real-Core discard after restart while the
+second queued file retains its original bytes. The source audit passes; native
+and GUI validation remain pending. New-batch preparation and restart discovery
+are still unfinished.
+
 ### Second-device dialog integrity — 2026-10-25
 
 On the disposable `be7b043` GUI, two rapid Continue clicks started two

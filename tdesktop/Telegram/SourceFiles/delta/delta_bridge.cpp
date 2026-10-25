@@ -907,6 +907,20 @@ public:
 		advanceComposeQueue(_accountId, chat, userId, _accountScope.guard(), std::move(reviewed), std::move(done));
 	}
 
+	void discardComposeQueueEntry(int userId, ComposeQueue reviewed, Fn<void(bool)> done) {
+		if (!composerWritable(userId) || reviewed.entries.empty()) return;
+		const auto account = _accountId;
+		const auto chat = chatForPeerUser(userId);
+		const auto guard = _alive;
+		const auto current = _accountScope.guard();
+		_queueRuns.insert({ account, chat });
+		ComposerRevision = ComposerRevision.current() + 1;
+		_queueSender->discardNext(account, chat, reviewed.id, reviewed.entries.front().id,
+			[=](int, ComposeQueue, QString error) {
+				if (!guard.expired()) finishComposeQueue(account, chat, userId, current, std::move(error), done);
+			});
+	}
+
 	std::shared_ptr<PreparedSend> beginPreparedSend(int userId) {
 		if (!composerWritable(userId)) return {};
 		const auto chat = chatForPeerUser(userId);
@@ -3504,6 +3518,10 @@ void LoadComposeQueue(int userId, Fn<void(ComposeQueue, QString)> done) {
 
 void SendComposeQueue(int userId, ComposeQueue reviewed, Fn<void(bool)> done) {
 	if (GlobalBridge) GlobalBridge->sendComposeQueue(userId, std::move(reviewed), std::move(done));
+}
+
+void DiscardComposeQueueEntry(int userId, ComposeQueue reviewed, Fn<void(bool)> done) {
+	if (GlobalBridge) GlobalBridge->discardComposeQueueEntry(userId, std::move(reviewed), std::move(done));
 }
 
 void RequestMessageData(int userId, int messageId, Fn<void()> done) {

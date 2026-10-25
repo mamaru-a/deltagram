@@ -193,6 +193,11 @@ checks pass. These remain backend checks, not batch GUI or live delivery proof.
 Saved-queue review and serial Send remaining controls are now wired in source
 through the attachment button. Native compilation and disposable replay remain
 pending, as do new-batch preparation, discard controls and restart discovery.
+Confirmed Discard next is now wired in source and passes backend coverage for
+draft removal, uncertainty, stale actions and preserving newer/outgoing items.
+All 116 focused checks pass, including real-Core discard after restart with the
+second file retained. Native/UI replay, new-batch preparation and restart
+discovery remain open.
 
 ## Updating this tracker
 

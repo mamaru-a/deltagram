@@ -14,11 +14,16 @@ public:
 	// An explicit request advances one reviewed entry; failures never retry it.
 	void sendNext(int account, int chat, const QString &queueId,
 		const QString &entryId, Done done);
+	void discardNext(int account, int chat, const QString &queueId,
+		const QString &entryId, Done done);
 	[[nodiscard]] bool busy(int account, int chat) const;
 
 private:
 	struct Sending;
+	void begin(int account, int chat, const QString &queueId,
+		const QString &entryId, bool discard, Done done);
 	void inspect(std::shared_ptr<Sending> state);
+	void discard(std::shared_ptr<Sending> state);
 	void checkpoint(std::shared_ptr<Sending> state, int id, ComposeDraft draft,
 		std::function<void(QString)> done);
 	void send(std::shared_ptr<Sending> state);
