@@ -56,8 +56,40 @@ including real Core storage/restart and composer preservation. Fault tests
 cover rejected storage, unreadable confirmation, lost acknowledgements,
 interruption, duplicate actions, stale review, profile isolation, malformed
 entries and failed cleanup. The source audit checked 13,222 files with no
-blocking findings. Native compilation and disposable GUI replay of this fix
-are pending; these results do not establish production readiness.
+blocking findings. [Native/portable/package validation at `7dd38b7`](https://github.com/mamaru-a/deltagram/actions/runs/40232290686)
+passed all 226 checks. The GUI and Core checksums were verified before replay.
+
+On that native artifact, a rejected send with a delayed error survived normal
+quit and restart in Saved replies, with the original text and an uncertain
+status. The detail view withheld Send; Copy preserved the exact text, Open
+conversation preserved the composer, and confirmed dismissal removed only the
+recovery record. A separate committed send with a lost acknowledgement reached
+official Desktop 2.62.0 once. After restart it retained the same outgoing ID
+and uncertain record; dismissal kept that delivered message and both drafts.
+A storage rejection retained the reply in memory and visibly blocked normal
+quit. The Saved replies detail retained the exact text. After removing the
+storage fault, one explicit Send delivered one reply to official Desktop
+2.62.0, cleared recovery and preserved both composer drafts.
+
+The recovery-list status could be clipped next to a long chat name, so the
+follow-up places status on a separate wrapping row. It also preserves the
+existing read action and clears the consumed notification when replying.
+[Follow-up native validation](https://github.com/mamaru-a/deltagram/actions/runs/40233985890)
+passed for `a6d878d`, including compilation, all 226 checks and package
+verification. It includes removal of unsupported call settings. Its checksum-verified GUI
+loaded an unattempted reply whose initial storage acknowledgement had been
+lost, displayed the complete status on its own row, and sent it once on
+explicit review while preserving both drafts.
+
+Removing the artificial list delay exposed another notification defect on
+`a6d878d`: a normal incoming notification was closed after about 15 ms while
+the conversation remained unread. The chat-list adapter supplied an empty
+donor notification default for an unmuted chat. Applying it briefly inherited
+the donor's unknown/muted default and cleared the popup before Core's explicit
+mute state was restored. Core-account dialog refresh now leaves notification
+settings to the existing generic Core mute update. This fix still needs native
+compilation and a fault-free delivery/reply replay; production readiness is
+not established.
 
 ### Unsupported call settings — 2026-10-26
 
@@ -66,8 +98,9 @@ device" through Telegram authorization requests. Devices also exposed a
 separate set of call-only input/output preferences although this client does
 not support calls. Those controls, their settings-search entries and the
 authorization reload on opening Devices are removed. Ordinary microphone,
-speaker, camera and system-audio settings remain. Native compilation and
-rendered settings verification are pending.
+speaker, camera and system-audio settings remain. Native and package validation
+passed on `a6d878d`. The rendered Devices panel retains ordinary output/input
+and system sound preferences, without call acceptance or separate call devices.
 
 ### Inactive-profile delivery and unread tracking
 

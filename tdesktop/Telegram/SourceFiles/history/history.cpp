@@ -3489,9 +3489,11 @@ void History::applyDialog(
 		}
 		channel->setViewAsMessagesFlag(data.is_view_forum_as_messages());
 	}
-	owner().notifySettings().apply(
-		MTP_notifyPeer(data.vpeer()),
-		data.vnotify_settings());
+	if (!Delta::Active()) {
+		owner().notifySettings().apply(
+			MTP_notifyPeer(data.vpeer()),
+			data.vnotify_settings());
+	}
 
 	const auto draft = data.vdraft();
 	if (draft && draft->type() == mtpc_draftMessage) {
