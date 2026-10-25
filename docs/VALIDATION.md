@@ -129,6 +129,38 @@ instrumented crash replay and normal restart on this artifact, Core confirms
 the original unblocked contact, chat-list entry, message IDs and both drafts.
 The contact-picker fix is a later change and remains separately unverified.
 
+### Additional Core entry-point review — 2026-10-26
+
+The follow-up source review found Telegram cloud-password/login-email factories
+outside the settings registry and CodeBlock handlers that could run before
+standard settings navigation. Core profiles now reject those factories and
+redirect the affected cloud-password, login-email, privacy, gifts, peer-color,
+my-profile and call-list entry points to supported panels. The Main settings
+folder button is omitted as well as its section/search registration. Local
+passcode factories retain their existing behavior.
+
+The review also found remaining `IsSystemUser(int)` conversions and profile /
+contact-status blocking actions using donor APIs. System-user membership now
+keeps full-width peer IDs; direct-chat narrowing is range-checked before Core
+requests. Profile, peer-menu and contact-status blocking share the Core-backed
+predicate and operation. Reserved contact IDs are excluded. Device-chat type
+membership survives absence from the normal chat list, which excludes archived
+chats; absence is not interpreted as deletion or a type change. Deferred picker
+selection clears its busy state only while its controller remains alive.
+
+The serial focused Qt target passed **260 checks**, with no failures or skips,
+including the sender-ID / Core-ID numeric boundary case. The source audit
+checked 13,223 files with no blocking findings. This focused target does not
+compile the complete native UI. Full native compilation and rendered replay of
+these additional changes are pending. Required cases include cloud-password /
+login-email links, local passcode, the profile and contact-status blocking
+controls, group-member profiles, and archived device-chat protections.
+
+Two upstream builds were already active when this work was ready. Cancellation
+of the PR-triggered duplicate was refused with HTTP 403 because `mamaru-a`
+lacks upstream admin rights. Further build dispatches and source pushes are held
+until the upstream runs finish. No heavy local build was started.
+
 ### Sender and chat identity lookups — 2026-10-26
 
 Review of the blocking profile action found that high sender-peer IDs could be
