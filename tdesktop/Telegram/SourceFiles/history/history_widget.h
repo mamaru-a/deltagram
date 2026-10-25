@@ -27,6 +27,7 @@ struct InlineBotQuery;
 
 namespace Delta {
 struct ComposeDraft;
+struct ForwardSource;
 } // namespace Delta
 
 namespace MTP {
@@ -597,6 +598,7 @@ private:
 	[[nodiscard]] Data::ForumTopic *resolveReplyToTopic();
 	[[nodiscard]] bool canWriteMessage() const;
 	[[nodiscard]] bool deltaComposerLocked() const;
+	[[nodiscard]] std::optional<std::vector<Delta::ForwardSource>> deltaForwardSources() const;
 	void refreshDeltaComposeQueue();
 	[[nodiscard]] int deltaQueuedAttachmentCount() const;
 	[[nodiscard]] bool hasEnoughLinesForAi() const;

@@ -64,6 +64,30 @@ Its GUI/Core binaries were checksum verified for disposable replay. Later
 recoded-image recovery, discovery, recording and forwarding changes are not
 covered by that native build.
 
+Disposable GUI replay on `7074268` selected two generated files through the
+native file dialog, with one caption on the second item. Injected send rejection
+left both byte-identical files in the ordered queue, with the first Core draft
+ID checkpointed. Both original files were then removed, and normal quit/restart
+retained the queue, draft ID, caption and blob bytes. Opening the chat displayed
+the saved-queue hint; explicit Send remaining delivered both files once, in
+order, with matching bytes to official Delta Chat Desktop 2.62.0. Both GUIs
+displayed the files and caption. Queue, pins and draft cleared, the alternate
+profile draft remained unchanged, and the other profiles had no matching items.
+The audit recorded two imports, two draft saves and three send calls: one
+injected rejection followed by the two accepted sends. Fault injection is off.
+
+A subsequent source change connects composer text, prepared file batches,
+recordings and direct forwarding controls to the generic queue. It captures the
+forward selection before asynchronous preflight, keeps changed selections, and
+clears the donor forward panel only after the coordinator accepts ownership.
+The old MTProto-shaped forwarding adapter is removed. Queue review describes
+text/attachments/forwards and withholds Send remaining for an uncertain forward
+until explicit review/discard. All 184 focused checks and the Linux offline
+regressions pass; the additional cases cover file and voice prefixes before
+ordered forwards. This does not compile or exercise the new GUI wiring. Native
+and disposable forwarding replay are still required. The earlier native run for
+`49454ee` is in progress and does not include this subsequent UI change.
+
 The batch coordinator collects prepared files by selection index and retains
 their owners through Core storage. No file is queued before every preparation
 finishes, and the coordinator never sends. Rejected storage can be explicitly

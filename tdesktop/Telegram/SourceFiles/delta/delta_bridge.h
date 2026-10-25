@@ -39,7 +39,10 @@ class PreparedSend;
 // confirms ownership. Carries no protocol data into the preparation workers.
 [[nodiscard]] std::shared_ptr<PreparedSend> BeginPreparedSend(int userId);
 [[nodiscard]] std::shared_ptr<ComposeBatch> BeginPreparedBatch(int userId,
-	std::vector<ComposeDraft> selection, Fn<void(bool)> done);
+	std::vector<ComposeDraft> selection, Fn<void(bool)> done,
+	std::vector<ForwardSource> forwards = {});
+[[nodiscard]] std::optional<std::vector<ForwardSource>> CollectForwardSources(
+	const std::vector<not_null<HistoryItem*>> &items);
 [[nodiscard]] std::shared_ptr<ComposeBatch> PendingPreparedBatch(int userId);
 void CheckNewAttachmentBatch(int userId, Fn<void(QString)> done);
 

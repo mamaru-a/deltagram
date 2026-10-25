@@ -232,8 +232,11 @@ strict. A disposable Saved Messages probe confirms Core's recoding, and the
 153 focused checks include no-resend recovery, mismatched-message rejection and
 queue mutation during a held discovery read. Discovery uses a read-only snapshot
 so it cannot reserve the mutation lock, and rejects superseded UI replies.
-The batch GUI revision `7074268` passes native/portable/package validation;
-its disposable GUI replay remains pending. Subsequent recovery, discovery and
+The batch GUI revision `7074268` passes native/portable/package validation and
+disposable GUI selection/rejected-send/restart replay. With both original files
+removed, explicit recovery delivers them once in order to official Desktop
+2.62.0 with matching bytes and caption, then clears queue/pins/draft while
+preserving the alternate profile. Subsequent recovery, discovery and
 recording changes still require native compilation and disposable live replay. Broader
 interruption/profile cases need live coverage. The review
 dialog's clipped Cancel button and one-item count wording pass native visual
@@ -245,8 +248,11 @@ requires explicit review/discard after an uncertain result, and never resends a
 confirmed forward. All 182 focused checks pass, including source isolation,
 interrupted replies and exact publication reconciliation. A disposable Core
 probe confirms that a multi-source forward can partially commit before returning
-an error. The donor forwarding UI is not yet connected to this backend; native
-and cross-client forwarding replay remain open.
+an error. Follow-up source connects composer text, files, recordings and direct
+forwarding controls to this backend, removes the MTProto-shaped forwarding
+adapter, and exposes explicit review/discard for uncertain forwards. The 184
+focused checks pass, but native compilation of this UI wiring and cross-client
+forwarding replay remain open.
 
 ## Updating this tracker
 

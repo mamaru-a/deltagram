@@ -855,7 +855,7 @@ public:
 			[=](ComposeQueue queue, QString error) {
 				if (guard.expired() || !current() || !done) return;
 				if (revision != ComposerRevision.current()) {
-					done({}, u"The compose state changed. Review attachments again."_q);
+					done({}, u"The compose state changed. Review the queued messages again."_q);
 				} else done(std::move(queue), std::move(error));
 			});
 	}
@@ -955,7 +955,7 @@ public:
 		_queues->load(account, chat, [=](ComposeQueue queue, QString error) {
 			if (guard.expired() || !current()) return;
 			if (!error.isEmpty() || !queue.entries.empty()) {
-				finish(error.isEmpty() ? u"Review the saved attachment queue before adding another batch."_q : error);
+				finish(error.isEmpty() ? u"Review the saved message queue before adding another batch."_q : error);
 				return;
 			}
 			_drafts->settle(account, chat, [=](QString error) {
@@ -971,8 +971,14 @@ public:
 	}
 
 	std::shared_ptr<ComposeBatch> beginPreparedBatch(int userId,
-			std::vector<ComposeDraft> selection, Fn<void(bool)> done) {
+			std::vector<ComposeDraft> selection, Fn<void(bool)> done,
+			std::vector<ForwardSource> forwards) {
 		if (!composerWritable(userId)) return {};
+		const auto offset = selection.size();
+		for (const auto &source : forwards) {
+			if (source.chat <= 0 || source.message <= 0) return {};
+			selection.push_back({ u"Forwarded message"_q });
+		}
 		const auto chat = chatForPeerUser(userId);
 		const auto key = std::make_pair(_accountId, chat);
 		const auto guard = _alive;
@@ -1008,7 +1014,7 @@ public:
 				if (state == ComposeBatch::State::Discarded) _session->uploader().cancelComposeBatch(batch);
 				ComposerRevision = ComposerRevision.current() + 1;
 				if (current() && state == ComposeBatch::State::Saved) {
-					reportError(u"The attachments are saved. Use the attachment button to review and send them."_q);
+					reportError(u"The messages are saved. Use the attachment button to review and send them."_q);
 				}
 				if (done && current()) done(false);
 			} else {
@@ -1020,7 +1026,23 @@ public:
 		*identity = batch;
 		_batches.emplace(key, PendingComposeBatch{ batch });
 		ComposerRevision = ComposerRevision.current() + 1;
+		for (auto index = size_t(0); index != forwards.size(); ++index) {
+			batch->preparedForward(offset + index, forwards[index]);
+		}
 		return batch;
+	}
+
+	std::optional<std::vector<ForwardSource>> collectForwardSources(
+			const std::vector<not_null<HistoryItem*>> &items) const {
+		auto result = std::vector<ForwardSource>();
+		for (const auto item : items) {
+			if (&item->history()->session() != _session.get() || !item->history()->peer->isUser()
+				|| !IsServerMsgId(item->id) || _deletedMessages.contains(int(item->id.bare))) return std::nullopt;
+			const auto chat = chatForPeerUser(int(peerToUser(item->history()->peer->id).bare));
+			if (chat <= 0) return std::nullopt;
+			result.push_back({ chat, int(item->id.bare) });
+		}
+		return result;
 	}
 
 	std::shared_ptr<PreparedSend> beginPreparedSend(int userId) {
@@ -1340,8 +1362,6 @@ public:
 			return answerHistory(instance, requestId, reader);
 		case mtpc_messages_sendMessage:
 			return answerSend(instance, requestId, reader);
-		case mtpc_messages_forwardMessages:
-			return answerForward(instance, requestId, reader);
 		case mtpc_messages_readHistory:
 			return answerRead(instance, requestId, reader);
 		case mtpc_upload_getFile:
@@ -2932,73 +2952,6 @@ private:
 			});
 	}
 
-	void answerForward(
-			not_null<MTP::Instance*> instance,
-			mtpRequestId requestId,
-			WordReader &reader) {
-		reader.u32();
-		const auto fromUser = ReadInputPeerUser(reader);
-		auto count = reader.i32();
-		if (uint32(count) == mtpc_vector) {
-			count = reader.i32();
-		}
-		if (count < 1 || count > 100) {
-			return fail(instance, requestId, u"DELTA_BAD_REQUEST"_q);
-		}
-		auto ids = QJsonArray();
-		for (auto i = 0; i < count; ++i) {
-			const auto id = reader.i32();
-			if (!IsClientMsgId(MsgId(id))) {
-				ids.append(id);
-			}
-		}
-		auto randomCount = reader.i32();
-		if (uint32(randomCount) == mtpc_vector) {
-			randomCount = reader.i32();
-		}
-		if (randomCount < 0 || randomCount > 100) {
-			return fail(instance, requestId, u"DELTA_BAD_REQUEST"_q);
-		}
-		auto randomIds = QVector<uint64>();
-		randomIds.reserve(randomCount);
-		for (auto i = 0; i < randomCount; ++i) {
-			randomIds.push_back(uint64(reader.i64()));
-		}
-		const auto toUser = ReadInputPeerUser(reader);
-		if (!reader.ok() || !fromUser || !toUser || ids.isEmpty()) {
-			return fail(instance, requestId, u"DELTA_BAD_REQUEST"_q);
-		}
-		const auto guard = _alive;
-		const auto chatId = chatForPeerUser(toUser);
-		call(
-			u"forward_messages"_q,
-			{ _accountId, ids, chatId },
-			[=](QJsonObject result) {
-				if (guard.expired()) {
-					return;
-				}
-				if (HasError(result)) {
-					return fail(instance, requestId, ErrorText(result));
-				}
-				for (const auto randomId : randomIds) {
-					const auto localId = _session->data().messageIdByRandomId(randomId);
-					if (const auto local = localId ? _session->data().message(localId) : nullptr) {
-						local->destroy();
-					}
-					_session->data().unregisterMessageRandomId(randomId);
-				}
-				// Core emits MsgsChanged with the actual forwarded message IDs.
-				_reload.start();
-				const auto boxed = MTPUpdates(MTP_updates(
-					MTP_vector<MTPUpdate>(),
-					MTP_vector<MTPUser>(),
-					MTP_vector<MTPChat>(),
-					MTP_int(int(QDateTime::currentSecsSinceEpoch())),
-					MTP_int(0)));
-				this->reply(instance, requestId, [=](mtpBuffer &to) { boxed.write(to); });
-			});
-	}
-
 	void answerRead(
 			not_null<MTP::Instance*> instance,
 			mtpRequestId requestId,
@@ -3573,8 +3526,13 @@ std::shared_ptr<PreparedSend> BeginPreparedSend(int userId) {
 }
 
 std::shared_ptr<ComposeBatch> BeginPreparedBatch(int userId,
-		std::vector<ComposeDraft> selection, Fn<void(bool)> done) {
-	return GlobalBridge ? GlobalBridge->beginPreparedBatch(userId, std::move(selection), std::move(done)) : nullptr;
+		std::vector<ComposeDraft> selection, Fn<void(bool)> done, std::vector<ForwardSource> forwards) {
+	return GlobalBridge ? GlobalBridge->beginPreparedBatch(userId, std::move(selection), std::move(done), std::move(forwards)) : nullptr;
+}
+
+std::optional<std::vector<ForwardSource>> CollectForwardSources(
+		const std::vector<not_null<HistoryItem*>> &items) {
+	return GlobalBridge ? GlobalBridge->collectForwardSources(items) : std::nullopt;
 }
 
 std::shared_ptr<ComposeBatch> PendingPreparedBatch(int userId) {

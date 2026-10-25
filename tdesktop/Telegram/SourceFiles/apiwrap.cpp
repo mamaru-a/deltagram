@@ -3904,9 +3904,14 @@ void ApiWrap::finishForwarding(const SendAction &action) {
 	const auto history = action.history;
 	const auto topicRootId = action.replyTo.topicRootId;
 	const auto monoforumPeerId = action.replyTo.monoforumPeerId;
+	const auto requested = history->forwardDraft(topicRootId, monoforumPeerId);
 	auto toForward = history->resolveForwardDraft(
 		topicRootId,
 		monoforumPeerId);
+	if (Delta::Active() && requested.ids.size() != toForward.items.size()) {
+		if (const auto show = ShowForPeer(history->peer)) show->showToast(u"Some forwarded messages are no longer available. Review the selection before sending."_q);
+		return;
+	}
 	if (!toForward.items.empty()) {
 		const auto error = GetErrorForSending(
 			history->peer,
@@ -3918,6 +3923,10 @@ void ApiWrap::finishForwarding(const SendAction &action) {
 			return;
 		}
 
+		if (Delta::Active()) {
+			forwardMessages(std::move(toForward), action);
+			return;
+		}
 		history->setForwardDraft(topicRootId, monoforumPeerId, {});
 		forwardMessages(std::move(toForward), action);
 	}
@@ -3937,6 +3946,42 @@ void ApiWrap::forwardMessages(
 		SendAction action,
 		FnMut<void()> &&successCallback) {
 	Expects(!draft.items.empty());
+	if (Delta::Active()) {
+		const auto history = action.history;
+		const auto userId = int(peerToUser(history->peer->id).bare);
+		const auto report = [=](QString error) {
+			if (const auto show = ShowForPeer(history->peer)) show->showToast(error);
+		};
+		if (action.options.scheduled || draft.options == Data::ForwardOptions::NoNamesAndCaptions) {
+			report(u"Scheduled forwarding and removing forwarded captions are not supported. The selection was kept."_q);
+			return;
+		}
+		const auto sources = Delta::CollectForwardSources(draft.items);
+		if (!sources || sources->empty()) { report(u"The forwarded messages are no longer available."_q); return; }
+		const auto topic = action.replyTo.topicRootId;
+		const auto monoforum = action.replyTo.monoforumPeerId;
+		const auto selected = history->forwardDraft(topic, monoforum);
+		auto ids = MessageIdsList();
+		for (const auto item : draft.items) ids.push_back(item->fullId());
+		const auto fromComposer = selected.ids == ids;
+		const auto current = Delta::CaptureAccountGuard();
+		const auto weak = base::make_weak(_session);
+		struct Completion { FnMut<void()> callback; };
+		const auto completion = std::make_shared<Completion>(Completion{ std::move(successCallback) });
+		Delta::CheckNewAttachmentBatch(userId, [=](QString error) {
+			if (!weak || !current || !current()) return;
+			if (!error.isEmpty()) { report(error); return; }
+			if (fromComposer && history->forwardDraft(topic, monoforum) != selected) {
+				report(u"The forward selection changed. Review it before sending."_q);
+				return;
+			}
+			const auto batch = Delta::BeginPreparedBatch(userId, {}, [=](bool sent) {
+				if (weak && current() && sent && completion->callback) completion->callback();
+			}, *sources);
+			if (batch && fromComposer) history->setForwardDraft(topic, monoforum, {});
+		});
+		return;
+	}
 
 	auto &histories = _session->data().histories();
 

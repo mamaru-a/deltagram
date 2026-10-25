@@ -268,7 +268,21 @@ private slots:
 		QCOMPARE(CoreCall(*rpc, u"sends"_s, {})[u"result"_s].toInt(), 0);
 	}
 
+	void combinedTextAndForwardQueue_data() {
+		QTest::addColumn<QString>("type");
+		for (const auto type : { "Text", "File", "Voice" }) QTest::newRow(type) << QString::fromLatin1(type);
+	}
+
 	void combinedTextAndForwardQueue() {
+		QFETCH(QString, type);
+		QTemporaryDir temporary;
+		QFile file(temporary.filePath(type == u"Voice"_s ? u"recording.ogg"_s : u"attachment.bin"_s));
+		QVERIFY(file.open(QIODevice::WriteOnly));
+		QVERIFY(file.write("prepared attachment fixture") > 0);
+		file.close();
+		const auto prefix = Delta::ComposeDraft{u"Introduction"_s, 0,
+			type == u"Text"_s ? QString() : file.fileName(),
+			type == u"Text"_s ? QString() : QFileInfo(file).fileName(), type};
 		auto rpc = std::make_shared<DeltaRpc>();
 		rpc->start(RPC_FIXTURE_PATH, u"queue-normal"_s);
 		CoreCall(*rpc, u"set_source_message"_s, {2, ForwardFixtureSource(), true});
@@ -280,7 +294,7 @@ private slots:
 		auto saved = Delta::ComposeQueue();
 		auto completed = false;
 		queues->stagePlan(2, 10, {
-			{{u"Introduction"_s, 0, {}, {}, u"Text"_s}, {}},
+			{prefix, {}},
 			{{}, Delta::ForwardSource{11, 41}}, {{}, Delta::ForwardSource{12, 42}},
 		}, [&](Delta::ComposeQueue queue, QString error) {
 			QVERIFY(error.isEmpty()); saved = std::move(queue); completed = true;

@@ -4057,6 +4057,15 @@ bool HistoryWidget::deltaComposerLocked() const {
 		&& !Delta::ComposerWritable(int(peerToUser(_peer->id).bare));
 }
 
+std::optional<std::vector<Delta::ForwardSource>> HistoryWidget::deltaForwardSources() const {
+	if (!_history) return std::nullopt;
+	const auto &draft = _history->forwardDraft(MsgId(), PeerId());
+	const auto resolved = _history->resolveForwardDraft(draft);
+	if (draft.ids.size() != resolved.items.size()
+		|| draft.options == Data::ForwardOptions::NoNamesAndCaptions) return std::nullopt;
+	return Delta::CollectForwardSources(resolved.items);
+}
+
 int HistoryWidget::deltaQueuedAttachmentCount() const {
 	return Delta::Active() && _peer && _deltaQueuePeer == _peer->id
 		&& _deltaQueueGeneration == Delta::AccountGeneration() ? _deltaQueueCount : 0;
@@ -4096,7 +4105,7 @@ void HistoryWidget::refreshDeltaComposeQueue() {
 			updateFieldPlaceholder();
 			if (_deltaQueueCount && _deltaNotifiedQueue != queue.id) {
 				_deltaNotifiedQueue = queue.id;
-				controller()->showToast(u"%1 saved attachments. Use the attachment button to review them."_q.arg(_deltaQueueCount));
+				controller()->showToast(u"%1 queued messages. Use the attachment button to review them."_q.arg(_deltaQueueCount));
 			}
 		}));
 }
@@ -4111,7 +4120,7 @@ void HistoryWidget::updateControlsVisibility() {
 	const auto attachment = (Delta::Active() && _peer)
 		? Delta::DraftAttachmentName(int(peerToUser(_peer->id).bare)) : QString();
 	const auto attachmentHint = batch ? u"Attachment batch: click to review preparation or discard."_q
-		: deltaQueuedAttachmentCount() ? u"Saved attachments: %1. Click to review, send or discard."_q.arg(deltaQueuedAttachmentCount())
+		: deltaQueuedAttachmentCount() ? u"Queued messages: %1. Click to review, send or discard."_q.arg(deltaQueuedAttachmentCount())
 		: attachment.isEmpty() ? tr::lng_attach(tr::now)
 		: u"Saved attachment: "_q + attachment + u". Click to review, send or remove."_q;
 	_attachToggle->setToolTip(attachmentHint);
@@ -5718,15 +5727,19 @@ void HistoryWidget::sendVoice(const VoiceToSend &data) {
 		controller()->showToast(u"Scheduled and view-once recordings are not supported. The recording was kept."_q);
 		return;
 	}
-	if (Delta::Active() && !readyToForward()) {
+	if (Delta::Active()) {
 		const auto history = _history;
 		const auto current = Delta::CaptureAccountGuard();
 		const auto userId = int(peerToUser(_peer->id).bare);
 		const auto quote = int(replyTo().messageId.msg.bare);
+		const auto forwards = deltaForwardSources();
+		if (!forwards) { controller()->showToast(u"Review the forwarded messages and keep their captions before sending."_q); return; }
+		const auto forwardDraft = history->forwardDraft(MsgId(), PeerId());
 		saveDraftWithTextNow();
 		Delta::CheckNewAttachmentBatch(userId, crl::guard(this, [=](QString error) {
 			if (!current || !current() || _history != history
-				|| !_voiceRecordBar->hasRecording(data.bytes)) return;
+				|| !_voiceRecordBar->hasRecording(data.bytes)
+				|| history->forwardDraft(MsgId(), PeerId()) != forwardDraft) return;
 			if (!error.isEmpty()) { controller()->showToast(error); return; }
 			auto draft = Delta::ComposeDraft{ {}, quote, {},
 				data.video ? u"recording.mp4"_q : u"recording.ogg"_q,
@@ -5735,13 +5748,14 @@ void HistoryWidget::sendVoice(const VoiceToSend &data) {
 				if (!current() || _history != history) return;
 				if (sent) fastShowAtEnd(history);
 				setInnerFocus();
-			}));
+			}), *forwards);
 			if (!batch) return;
 			if (!batch->preparedBytes(0, std::move(draft), data.bytes)) {
 				batch->discard();
 				return;
 			}
 			_voiceRecordBar->clearListenState();
+			history->setForwardDraft(MsgId(), PeerId(), {});
 		}));
 		return;
 	}
@@ -5958,6 +5972,45 @@ void HistoryWidget::sendTextWithTags(
 
 	const auto nextLocalMessageId = session().data().nextLocalMessageId();
 	const auto hasText = !message.textWithTags.text.trimmed().isEmpty();
+	if (Delta::Active() && readyToForward()) {
+		if (options.scheduled) { controller()->showToast(u"Scheduled forwarding is not supported. The selection was kept."_q); return; }
+		const auto forwards = deltaForwardSources();
+		if (!forwards || forwards->empty()) { controller()->showToast(u"Review the forwarded messages and keep their captions before sending."_q); return; }
+		const auto userId = int(peerToUser(_peer->id).bare);
+		const auto history = _history;
+		const auto current = Delta::CaptureAccountGuard();
+		const auto forwardDraft = history->forwardDraft(MsgId(), PeerId());
+		const auto composer = _field->getTextWithTags();
+		const auto quote = replyTo().messageId;
+		saveDraftWithTextNow();
+		Delta::CheckNewAttachmentBatch(userId, crl::guard(this, [=](QString error) {
+			if (!current || !current() || _history != history) return;
+			if (!error.isEmpty()) { controller()->showToast(error); return; }
+			if (history->forwardDraft(MsgId(), PeerId()) != forwardDraft
+				|| _field->getTextWithTags() != composer || replyTo().messageId != quote) {
+				controller()->showToast(u"The selection changed. Review it before sending."_q);
+				return;
+			}
+			auto selection = std::vector<Delta::ComposeDraft>();
+			if (hasText) selection.push_back({ message.textWithTags.text,
+				int(message.action.replyTo.messageId.msg.bare), {}, {}, u"Text"_q });
+			const auto batch = Delta::BeginPreparedBatch(userId, selection, crl::guard(this, [=](bool sent) {
+				if (!current() || _history != history) return;
+				if (sent) fastShowAtEnd(history);
+				setInnerFocus();
+				if (sent && done) done();
+			}), *forwards);
+			if (!batch) return;
+			if (hasText && !batch->preparedText(0, selection.front())) { batch->discard(); return; }
+			history->setForwardDraft(MsgId(), PeerId(), {});
+			clearFieldText();
+			cancelReply();
+			if (_preview) _preview->apply({ .removed = true });
+			saveDraftWithTextNow();
+			hideSelectorControlsAnimated();
+		}));
+		return;
+	}
 	if (Delta::Active() && hasText && !readyToForward()) {
 		const auto userId = int(peerToUser(_peer->id).bare);
 		if (!Delta::ComposerWritable(userId)) return;
@@ -6436,14 +6489,14 @@ void HistoryWidget::chooseAttach(
 	const auto userId = int(peerToUser(_peer->id).bare);
 	if (const auto batch = Delta::PendingPreparedBatch(userId)) {
 		controller()->show(Box([=](not_null<Ui::GenericBox*> box) {
-			box->setTitle(rpl::single(u"Attachment batch"_q));
+			box->setTitle(rpl::single(u"Pending messages"_q));
 			box->setWidth(st::boxWideWidth);
 			const auto state = batch->state();
-			auto text = u"Attachments: %1\n\n"_q.arg(int(batch->selection().size()));
+			auto text = u"Messages: %1\n\n"_q.arg(int(batch->selection().size()));
 			if (state == Delta::ComposeBatch::State::Saving) text += u"Saving the batch. Please wait."_q;
 			else if (state == Delta::ComposeBatch::State::Saved) text += u"Finishing the send. Please wait."_q;
 			else if (state == Delta::ComposeBatch::State::Failed) text += batch->error();
-			else text += u"Preparing the attachments before sending. You can discard this selection."_q;
+			else text += u"Preparing the messages before sending. You can discard this selection."_q;
 			if (!batch->selection().empty()) {
 				const auto &first = batch->selection().front();
 				text += u"\n\nFirst: %1\n%2"_q.arg(first.filename, first.text);
@@ -6465,7 +6518,7 @@ void HistoryWidget::chooseAttach(
 					box->closeBox();
 					if (!current()) return;
 					controller()->show(Ui::MakeConfirmBox({
-						.text = u"Discard this attachment selection? No files from this batch have been sent. The composer text will be kept."_q,
+						.text = u"Discard this pending selection? No messages from this batch have been sent. Any saved composer draft will be kept."_q,
 						.confirmed = crl::guard(this, [=](Fn<void()> close) {
 							close();
 							if (current()) batch->discard();
@@ -6491,14 +6544,23 @@ void HistoryWidget::chooseAttach(
 			return;
 		}
 		controller()->show(Box([=](not_null<Ui::GenericBox*> box) {
-			box->setTitle(rpl::single(u"Saved attachments"_q));
+			box->setTitle(rpl::single(u"Saved messages to send"_q));
 			box->setWidth(st::boxWideWidth);
 			const auto &first = queue.entries.front().draft;
+			const auto uncertain = queue.entries.front().forward
+				&& queue.entries.front().forwardState == Delta::ForwardState::Attempted;
+			const auto kind = queue.entries.front().forward ? (first.filename.isEmpty()
+				? u"Forwarded message"_q : u"Forwarded: %1"_q.arg(first.filename.left(120)))
+				: first.file.isEmpty() ? u"Text message"_q : first.filename.left(120);
+			const auto preview = first.text.size() > 180 ? first.text.left(180) + u"…"_q : first.text;
+			const auto explanation = uncertain
+				? u"This forward may already have been sent. Review the chat before discarding this entry to continue. It will not be sent again automatically."_q
+				: u"Send the remaining messages in order. If a send cannot be confirmed, the queue will pause for review."_q;
 			box->addRow(object_ptr<Ui::FlatLabel>(box,
-				rpl::single(u"Attachments remaining: %1.\n\nNext: %2\n%3\n\nSend the remaining attachments in order. If a send cannot be confirmed, the queue will pause for review."_q
-					.arg(int(queue.entries.size())).arg(first.filename, first.text)) | rpl::map(tr::marked),
+				rpl::single(u"Messages remaining: %1.\n\nNext: %2\n%3\n\n%4"_q
+					.arg(int(queue.entries.size())).arg(kind, preview, explanation)) | rpl::map(tr::marked),
 				st::infoAboutGigagroup));
-			box->addButton(rpl::single(u"Send remaining"_q), crl::guard(this, [=] {
+			if (!uncertain) box->addButton(rpl::single(u"Send remaining"_q), crl::guard(this, [=] {
 				box->closeBox();
 				if (!currentAccount() || _history != history || deltaComposerLocked()) return;
 				Delta::SendComposeQueue(userId, queue, crl::guard(this, [=](bool sent) {
@@ -6511,7 +6573,9 @@ void HistoryWidget::chooseAttach(
 				box->closeBox();
 				if (!currentAccount() || _history != history || deltaComposerLocked()) return;
 				controller()->show(Ui::MakeConfirmBox({
-					.text = u"Discard the next queued attachment and its saved caption? Newer drafts and already-sent messages will be kept."_q,
+					.text = uncertain
+						? u"Remove this uncertain forward from the queue? It may already be in the chat. Existing messages will be kept and this entry will not be sent again."_q
+						: u"Discard the next queued message? Newer drafts and already-sent messages will be kept."_q,
 					.confirmed = crl::guard(this, [=](Fn<void()> close) {
 						close();
 						if (!currentAccount() || _history != history || deltaComposerLocked()) return;
@@ -7921,7 +7985,7 @@ void HistoryWidget::updateFieldPlaceholder() {
 		} else if (!peer) {
 			return tr::lng_message_ph();
 		} else if (const auto count = deltaQueuedAttachmentCount()) {
-			return rpl::single(u"%1 saved attachments — click the attachment button"_q.arg(count));
+			return rpl::single(u"%1 queued messages — click the attachment button"_q.arg(count));
 		} else if (const auto attachment = (Delta::Active() && peer->isUser())
 			? Delta::DraftAttachmentName(int(peerToUser(peer->id).bare)) : QString();
 			!attachment.isEmpty()) {
@@ -8226,16 +8290,18 @@ void HistoryWidget::sendingFilesConfirmed(
 	if (!_peer || showSendingFilesError(*bundle)) {
 		return;
 	}
-	if (Delta::Active() && bundle->totalCount > 1 && !batchChecked) {
+	if (Delta::Active() && (bundle->totalCount > 1 || readyToForward()) && !batchChecked) {
 		const auto history = _history;
 		const auto current = Delta::CaptureAccountGuard();
 		const auto text = _field->getTextWithTags().text;
 		const auto quote = replyTo().messageId;
+		const auto forwardDraft = history->forwardDraft(MsgId(), PeerId());
 		Delta::CheckNewAttachmentBatch(int(peerToUser(_peer->id).bare),
 			crl::guard(this, [=](QString error) {
 				if (!current || !current() || _history != history || deltaComposerLocked()) return;
 				if (!error.isEmpty()) { controller()->showToast(error); return; }
-				if (_field->getTextWithTags().text != text || replyTo().messageId != quote) {
+				if (_field->getTextWithTags().text != text || replyTo().messageId != quote
+					|| history->forwardDraft(MsgId(), PeerId()) != forwardDraft) {
 					controller()->showToast(u"The composer changed. Review the attachment selection again before sending."_q);
 					return;
 				}
@@ -8245,7 +8311,7 @@ void HistoryWidget::sendingFilesConfirmed(
 	}
 	// Ordinary single files can go directly to Core without the donor uploader.
 	// Media transforms and multi-file batches still need their preparation path.
-	if (Delta::Active() && bundle->totalCount == 1 && bundle->groups.size() == 1
+	if (Delta::Active() && !readyToForward() && bundle->totalCount == 1 && bundle->groups.size() == 1
 		&& bundle->groups.front().list.files.size() == 1) {
 		const auto &file = bundle->groups.front().list.files.front();
 		if (file.type == Ui::PreparedFile::Type::File && !file.path.isEmpty()
@@ -8287,13 +8353,15 @@ void HistoryWidget::sendingFilesConfirmed(
 		}
 	}
 
-	if (Delta::Active() && bundle->totalCount == 1 && bundle->groups.size() == 1
+	if (Delta::Active() && !readyToForward() && bundle->totalCount == 1 && bundle->groups.size() == 1
 		&& bundle->groups.front().list.files.size() == 1) {
 		_field->setTextWithTags(bundle->groups.front().list.files.front().caption);
 		saveDraftWithTextNow();
 		action.preparedSend = Delta::BeginPreparedSend(int(peerToUser(_peer->id).bare));
 		if (!action.preparedSend) return;
-	} else if (Delta::Active() && bundle->totalCount > 1) {
+	} else if (Delta::Active() && (bundle->totalCount > 1 || readyToForward())) {
+		const auto forwards = deltaForwardSources();
+		if (!forwards) { controller()->showToast(u"Review the forwarded messages and keep their captions before sending."_q); return; }
 		auto selection = std::vector<Delta::ComposeDraft>();
 		auto firstCaption = TextWithTags();
 		for (const auto &group : bundle->groups) {
@@ -8313,8 +8381,9 @@ void HistoryWidget::sendingFilesConfirmed(
 				if (!current || !current() || _history != history) return;
 				if (sent) fastShowAtEnd(history);
 				setInnerFocus();
-			}));
+			}), *forwards);
 		if (!action.composeBatch) return;
+		history->setForwardDraft(MsgId(), PeerId(), {});
 	}
 
 	auto &api = session().api();
