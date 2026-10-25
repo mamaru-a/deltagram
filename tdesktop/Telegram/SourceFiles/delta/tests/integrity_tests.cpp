@@ -1,6 +1,7 @@
 #include "delta_rpc.h"
 #include "backup_transfer.h"
 #include "draft_store.h"
+#include "compose_queue.h"
 #include "account_scope.h"
 #include "account_inventory.h"
 #include "message_order.h"
@@ -56,6 +57,260 @@ class IntegrityTests final : public QObject {
 	Q_OBJECT
 
 private slots:
+	void composeQueueStorage_data() {
+		QTest::addColumn<QString>("mode");
+		QTest::addColumn<bool>("success");
+		QTest::addColumn<int>("storedKeys");
+		QTest::addColumn<int>("writeCount");
+		QTest::newRow("accepted") << u"queue-normal"_s << true << 3 << 3;
+		QTest::newRow("lost-write-replies") << u"queue-lost-ack"_s << true << 3 << 3;
+		QTest::newRow("pin-rejected") << u"queue-reject-pin"_s << false << 0 << 2;
+		QTest::newRow("publication-rejected") << u"queue-reject-publish"_s << false << 0 << 5;
+		QTest::newRow("publication-uncertain") << u"queue-unknown-publish"_s << false << 3 << 3;
+	}
+
+	void composeQueueStorage() {
+		QFETCH(QString, mode);
+		QFETCH(bool, success);
+		QFETCH(int, storedKeys);
+		QFETCH(int, writeCount);
+		QTemporaryDir temporary;
+		QVERIFY(temporary.isValid());
+		auto sources = std::vector<Delta::ComposeDraft>();
+		for (auto i = 0; i != 2; ++i) {
+			const auto name = u"attachment-%1.bin"_s.arg(i);
+			QFile file(temporary.filePath(name));
+			QVERIFY(file.open(QIODevice::WriteOnly));
+			QVERIFY(file.write("queue fixture") > 0);
+			file.close();
+			sources.push_back({ u"caption %1"_s.arg(i), 41 + i, file.fileName(), name, u"File"_s });
+		}
+		auto rpc = std::make_shared<DeltaRpc>();
+		rpc->start(RPC_FIXTURE_PATH, mode);
+		Delta::ComposeQueueStore queues(rpc);
+		auto completed = false;
+		auto saved = Delta::ComposeQueue();
+		queues.stage(2, 10, sources, [&](Delta::ComposeQueue queue, QString error) {
+			QVERIFY2(error.isEmpty() == success, qPrintable(error));
+			saved = std::move(queue);
+			completed = true;
+		});
+		QVERIFY(queues.busy(2, 10));
+		auto duplicateRejected = false;
+		queues.stage(2, 10, sources, [&](Delta::ComposeQueue, QString error) {
+			duplicateRejected = !error.isEmpty();
+		});
+		QVERIFY(duplicateRejected);
+		QTRY_VERIFY(completed);
+		QVERIFY(!queues.busy(2, 10));
+		QCOMPARE(CoreCall(*rpc, u"queue_config"_s, {})[u"result"_s].toObject().size(), storedKeys);
+		QCOMPARE(CoreCall(*rpc, u"writes"_s, {})[u"result"_s].toInt(), writeCount);
+		QCOMPARE(CoreCall(*rpc, u"sends"_s, {})[u"result"_s].toInt(), 0);
+		if (!success) return;
+		QCOMPARE(saved.entries.size(), size_t(2));
+		QCOMPARE(saved.entries[0].draft.text, sources[0].text);
+		QCOMPARE(saved.entries[0].draft.quotedMessageId, 41);
+		QCOMPARE(saved.entries[1].draft.filename, sources[1].filename);
+		QVERIFY(saved.entries[0].draft.file != sources[0].file);
+		completed = false;
+		queues.load(3, 10, [&](Delta::ComposeQueue queue, QString error) {
+			QVERIFY(error.isEmpty());
+			QVERIFY(queue.entries.empty());
+			completed = true;
+		});
+		QTRY_VERIFY(completed);
+		completed = false;
+		queues.stage(2, 10, sources, [&](Delta::ComposeQueue queue, QString error) {
+			QVERIFY(!error.isEmpty());
+			QCOMPARE(queue.id, saved.id);
+			completed = true;
+		});
+		QTRY_VERIFY(completed);
+		completed = false;
+		queues.checkpoint(2, 10, saved.id, saved.entries[0].id, 300,
+			[&](Delta::ComposeQueue queue, QString error) {
+				QVERIFY(error.isEmpty());
+				QCOMPARE(queue.entries[0].messageId, 300);
+				completed = true;
+			});
+		QTRY_VERIFY(completed);
+		completed = false;
+		queues.checkpoint(2, 10, saved.id, saved.entries[0].id, 301,
+			[&](Delta::ComposeQueue queue, QString error) {
+				QVERIFY(!error.isEmpty());
+				QCOMPARE(queue.entries[0].messageId, 300);
+				completed = true;
+			});
+		QTRY_VERIFY(completed);
+		completed = false;
+		queues.removeFirst(2, 10, saved.id, saved.entries[1].id,
+			[&](Delta::ComposeQueue queue, QString error) {
+				QVERIFY(!error.isEmpty());
+				QCOMPARE(queue.entries.size(), size_t(2));
+				completed = true;
+			});
+		QTRY_VERIFY(completed);
+		for (const auto &entry : saved.entries) {
+			completed = false;
+			queues.removeFirst(2, 10, saved.id, entry.id, [&](Delta::ComposeQueue, QString error) {
+				QVERIFY(error.isEmpty());
+				completed = true;
+			});
+			QTRY_VERIFY(completed);
+		}
+		QVERIFY(CoreCall(*rpc, u"queue_config"_s, {})[u"result"_s].toObject().isEmpty());
+	}
+
+	void composeQueueRemovalRecovery_data() {
+		QTest::addColumn<QString>("mode");
+		QTest::addColumn<bool>("removed");
+		QTest::addColumn<bool>("confirmed");
+		QTest::newRow("rejected") << u"queue-reject-publish"_s << false << false;
+		QTest::newRow("reply-lost") << u"queue-lost-ack"_s << true << true;
+		QTest::newRow("readback-lost") << u"queue-unknown-publish"_s << true << false;
+	}
+
+	void composeQueueRemovalRecovery() {
+		QFETCH(QString, mode);
+		QFETCH(bool, removed);
+		QFETCH(bool, confirmed);
+		QTemporaryDir temporary;
+		QFile file(temporary.filePath(u"source.bin"_s));
+		QVERIFY(file.open(QIODevice::WriteOnly));
+		QVERIFY(file.write("queue fixture") > 0);
+		file.close();
+		auto rpc = std::make_shared<DeltaRpc>();
+		rpc->start(RPC_FIXTURE_PATH, u"queue-normal"_s);
+		Delta::ComposeQueueStore queues(rpc);
+		auto saved = Delta::ComposeQueue();
+		auto completed = false;
+		const auto source = Delta::ComposeDraft{ u"caption"_s, 0, file.fileName(), u"source.bin"_s, u"File"_s };
+		queues.stage(2, 10, { source, source }, [&](Delta::ComposeQueue queue, QString error) {
+			QVERIFY(error.isEmpty()); saved = std::move(queue); completed = true;
+		});
+		QTRY_VERIFY(completed);
+		CoreCall(*rpc, u"queue_fault"_s, { mode });
+		completed = false;
+		queues.removeFirst(2, 10, saved.id, saved.entries.front().id, [&](Delta::ComposeQueue, QString error) {
+			QCOMPARE(error.isEmpty(), confirmed); completed = true;
+		});
+		QTRY_VERIFY(completed);
+		if (!confirmed) {
+			const auto stored = CoreCall(*rpc, u"queue_config"_s, {})[u"result"_s].toObject();
+			QVERIFY(stored.contains(u"2:ui.deltagram.compose.blob."_s + saved.entries.front().id));
+		}
+		CoreCall(*rpc, u"queue_fault"_s, { u"queue-normal"_s });
+		completed = false;
+		queues.load(2, 10, [&](Delta::ComposeQueue queue, QString error) {
+			QVERIFY(error.isEmpty());
+			QCOMPARE(queue.entries.size(), removed ? size_t(1) : size_t(2));
+			completed = true;
+		});
+		QTRY_VERIFY(completed);
+		completed = false;
+		queues.cleanup(2, [&](QString error) { QVERIFY(error.isEmpty()); completed = true; });
+		QVERIFY(queues.busy(2, 10));
+		QTRY_VERIFY(completed);
+		const auto stored = CoreCall(*rpc, u"queue_config"_s, {})[u"result"_s].toObject();
+		QCOMPARE(stored.size(), removed ? 2 : 3);
+		QCOMPARE(stored.contains(u"2:ui.deltagram.compose.blob."_s + saved.entries.front().id), !removed);
+		QVERIFY(stored.contains(u"2:ui.deltagram.compose.blob."_s + saved.entries.back().id));
+	}
+
+	void composeQueueCleanupPreservesUnreadableQueues() {
+		auto rpc = std::make_shared<DeltaRpc>();
+		rpc->start(RPC_FIXTURE_PATH, u"queue-normal"_s);
+		const auto pin = u"ui.deltagram.compose.blob.0123456789abcdef0123456789abcdef"_s;
+		CoreCall(*rpc, u"set_config"_s, {2, pin, u"$BLOBDIR/keep.bin"_s});
+		CoreCall(*rpc, u"set_config"_s, {3, pin, u"$BLOBDIR/alternate.bin"_s});
+		CoreCall(*rpc, u"set_config"_s, {2, u"ui.deltagram.compose.queue.10"_s, u"unreadable"_s});
+		Delta::ComposeQueueStore queues(rpc);
+		auto completed = false;
+		queues.cleanup(2, [&](QString error) { QVERIFY(!error.isEmpty()); completed = true; });
+		QTRY_VERIFY(completed);
+		QCOMPARE(CoreCall(*rpc, u"queue_config"_s, {})[u"result"_s].toObject().size(), 3);
+		CoreCall(*rpc, u"set_config"_s, {2, u"ui.deltagram.compose.queue.10"_s, QJsonValue(QJsonValue::Null)});
+		completed = false;
+		queues.cleanup(2, [&](QString error) { QVERIFY(error.isEmpty()); completed = true; });
+		QTRY_VERIFY(completed);
+		const auto stored = CoreCall(*rpc, u"queue_config"_s, {})[u"result"_s].toObject();
+		QCOMPARE(stored.size(), 1);
+		QVERIFY(stored.contains(u"3:"_s + pin));
+	}
+
+	void realCoreComposeQueueRestart() {
+		const auto program = qEnvironmentVariable("DELTA_TEST_CORE_RPC");
+		if (program.isEmpty()) QSKIP("Set DELTA_TEST_CORE_RPC to test the real Core server.");
+		QTemporaryDir temporary;
+		QVERIFY(temporary.isValid());
+		auto sources = std::vector<Delta::ComposeDraft>();
+		for (auto i = 0; i != 2; ++i) {
+			const auto name = u"source-%1.bin"_s.arg(i);
+			QFile file(temporary.filePath(name));
+			QVERIFY(file.open(QIODevice::WriteOnly));
+			QVERIFY(file.write(QByteArray("durable batch ") + QByteArray::number(i)) > 0);
+			file.close();
+			sources.push_back({ u"caption %1"_s.arg(i), 0, file.fileName(), name, u"File"_s });
+		}
+		auto rpc = std::make_shared<DeltaRpc>();
+		const auto accounts = temporary.filePath(u"accounts"_s);
+		rpc->start(program, accounts);
+		const auto account = CoreCall(*rpc, u"add_account"_s, {})[u"result"_s].toInt();
+		const auto chat = CoreCall(*rpc, u"create_chat_by_contact_id"_s, {account, 1})[u"result"_s].toInt();
+		QVERIFY(account > 0 && chat > 0);
+		Delta::ComposeQueueStore queues(rpc);
+		auto saved = Delta::ComposeQueue();
+		auto completed = false;
+		queues.stage(account, chat, sources, [&](Delta::ComposeQueue queue, QString error) {
+			QVERIFY2(error.isEmpty(), qPrintable(error));
+			saved = std::move(queue);
+			completed = true;
+		});
+		QTRY_VERIFY(completed);
+		QCOMPARE(saved.entries.size(), size_t(2));
+		for (const auto &source : sources) QVERIFY(QFile::remove(source.file));
+		const auto &first = saved.entries.front().draft;
+		QVERIFY(!CoreCall(*rpc, u"misc_set_draft"_s, {account, chat, first.text, first.file,
+			first.filename, QJsonValue(), first.viewType}).contains(u"error"_s));
+		const auto id = CoreCall(*rpc, u"get_draft"_s, {account, chat})[u"result"_s].toObject()[u"id"_s].toInt();
+		QVERIFY(id > 0);
+		completed = false;
+		queues.checkpoint(account, chat, saved.id, saved.entries.front().id, id,
+			[&](Delta::ComposeQueue, QString error) { QVERIFY(error.isEmpty()); completed = true; });
+		QTRY_VERIFY(completed);
+		rpc->stop();
+		rpc->start(program, accounts);
+		Delta::ComposeQueueStore reopened(rpc);
+		completed = false;
+		reopened.load(account, chat, [&](Delta::ComposeQueue queue, QString error) {
+			QVERIFY(error.isEmpty());
+			QCOMPARE(queue.id, saved.id);
+			QCOMPARE(queue.entries.size(), size_t(2));
+			QCOMPARE(queue.entries.front().messageId, id);
+			for (auto i = 0; i != 2; ++i) {
+				const auto &entry = queue.entries[i];
+				QCOMPARE(entry.draft.text, sources[i].text);
+				QCOMPARE(entry.draft.filename, sources[i].filename);
+				QFile file(entry.draft.file);
+				QVERIFY(file.open(QIODevice::ReadOnly));
+				QCOMPARE(file.readAll(), QByteArray("durable batch ") + QByteArray::number(i));
+			}
+			completed = true;
+		});
+		QTRY_VERIFY(completed);
+		for (const auto &entry : saved.entries) {
+			completed = false;
+			reopened.removeFirst(account, chat, saved.id, entry.id,
+				[&](Delta::ComposeQueue, QString error) { QVERIFY(error.isEmpty()); completed = true; });
+			QTRY_VERIFY(completed);
+			QVERIFY(CoreCall(*rpc, u"get_config"_s,
+				{account, u"ui.deltagram.compose.blob."_s + entry.id})[u"result"_s].isNull());
+		}
+		QVERIFY(CoreCall(*rpc, u"get_config"_s,
+			{account, u"ui.deltagram.compose.queue.%1"_s.arg(chat)})[u"result"_s].isNull());
+		rpc->stop();
+	}
+
 	void preparedAttachmentPreservesChosenRepresentation() {
 		const auto original = QByteArray("original clipboard image with metadata");
 		const auto parts = std::vector<QByteArray>{ "resized ", "photo without metadata" };

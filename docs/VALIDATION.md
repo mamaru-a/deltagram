@@ -471,9 +471,27 @@ account isolation, restart after deleting the original source, retention of the
 pinned blob while an unreferenced control is removed, and cleanup after explicit
 pin removal. It never starts network IO or changes the host clock. Private
 evidence: `queue-storage-evidence.json`; helpers: `queue_storage_probe.py` and
-`queue_clock.c`. This proves storage prerequisites only. Batch preparation,
-queue checkpoints, uncertain-send reconciliation and GUI recovery are not yet
-implemented or validated by this probe.
+`queue_clock.c`. This probe proves storage prerequisites only; it does not
+validate batch preparation, send checkpoint coordination, uncertain-send
+reconciliation or GUI recovery.
+
+The new `ComposeQueueStore` implements these storage operations through Core
+RPC: stage all files with independent pins, publish one queue value only after
+pin confirmation, preserve an existing queue, record the first item's known
+Core message ID, remove items in order, and reconcile orphan pins after an
+interrupted stage or removal. Readback resolves lost write acknowledgements;
+uncertain publication retains every pin. Cleanup inspects all queues in the
+account before releasing any orphan and stops on malformed or unreadable state.
+
+The focused suite now passes 66 checks with zero failures or skips. New cases
+cover rejected pins/publication, committed writes with lost replies, uncertain
+publication/removal, stale item IDs, immutable known-message IDs, preservation
+of unreadable queues and other accounts, and real-Core two-file restart after
+deleting both originals. The source audit reports zero blocking findings across
+13,213 files. This is a storage layer, not completed batch sending: the GUI and
+send checkpoint continuation are not connected yet, and no native/live batch
+recovery proof is claimed. The prepared-single-attachment native run remains
+separate at `7f95cca`.
 
 ### Second-device dialog integrity — 2026-10-25
 

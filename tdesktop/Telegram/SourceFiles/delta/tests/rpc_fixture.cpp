@@ -3,6 +3,7 @@
 #include <QJsonObject>
 #include <QJsonArray>
 #include <QMap>
+#include <QFileInfo>
 
 #include <iostream>
 #include <optional>
@@ -28,7 +29,10 @@ int main(int argc, char **argv) {
 	auto backupCalls = QJsonArray();
 	auto backupProviders = QMap<int, QJsonObject>();
 	auto backupReads = QMap<int, QList<QJsonObject>>();
+	auto queueConfig = QMap<QString, QJsonValue>();
+	auto queuePublished = false;
 	const auto mode = qEnvironmentVariable("DC_ACCOUNTS_PATH");
+	auto queueFault = mode;
 	if (mode == u"history-large"_s) {
 		historyIds = {};
 		for (auto id = 1; id <= 205; ++id) historyIds.append(id);
@@ -37,6 +41,65 @@ int main(int argc, char **argv) {
 		const auto request = QJsonDocument::fromJson(QByteArray::fromStdString(line)).object();
 		const auto method = request[u"method"_s].toString();
 		const auto args = request[u"params"_s].toArray();
+		if (mode.startsWith(u"queue-"_s)) {
+			const auto reject = [&] {
+				std::cout << QJsonDocument(QJsonObject{
+					{u"id"_s, request[u"id"_s]},
+					{u"error"_s, QJsonObject{{u"message"_s, u"Queue storage fault"_s}}},
+				}).toJson(QJsonDocument::Compact).constData() << std::endl;
+			};
+			if (method == u"queue_fault"_s) {
+				queueFault = args[0].toString();
+				queuePublished = false;
+				Reply(request, true);
+				continue;
+			}
+			if (method == u"get_all_ui_config_keys"_s) {
+				auto keys = QJsonArray();
+				const auto prefix = QString::number(args[0].toInt()) + ':';
+				for (auto i = queueConfig.begin(); i != queueConfig.end(); ++i) {
+					if (i.key().startsWith(prefix)) keys.append(i.key().sliced(prefix.size()));
+				}
+				Reply(request, keys);
+				continue;
+			}
+			if (method == u"queue_config"_s) {
+				auto values = QJsonObject();
+				for (auto i = queueConfig.begin(); i != queueConfig.end(); ++i) values[i.key()] = i.value();
+				Reply(request, values);
+				continue;
+			}
+			if (method == u"get_blob_dir"_s) {
+				Reply(request, u"/fixture/blobs/%1"_s.arg(args[0].toInt()));
+				continue;
+			}
+			if (method == u"copy_to_blob_dir"_s) {
+				Reply(request, u"/fixture/blobs/%1/%2"_s.arg(args[0].toInt()).arg(QFileInfo(args[1].toString()).fileName()));
+				continue;
+			}
+			if (method == u"get_config"_s || method == u"set_config"_s) {
+				const auto key = QString::number(args[0].toInt()) + ':' + args[1].toString();
+				const auto pin = args[1].toString().contains(u".blob."_s);
+				if (method == u"get_config"_s) {
+					if (queueFault == u"queue-unknown-publish"_s && queuePublished && !pin) reject();
+					else Reply(request, queueConfig.value(key, QJsonValue(QJsonValue::Null)));
+				} else {
+					++writes;
+					const auto value = args[2];
+					if (!value.isNull() && ((pin && queueFault == u"queue-reject-pin"_s)
+						|| (!pin && queueFault == u"queue-reject-publish"_s))) {
+						reject();
+					} else {
+						if (value.isNull()) queueConfig.remove(key);
+						else queueConfig[key] = value;
+						if (!pin && !value.isNull()) queuePublished = true;
+						if (queueFault == u"queue-lost-ack"_s || queueFault == u"queue-unknown-publish"_s) reject();
+						else Reply(request, QJsonValue(QJsonValue::Null));
+					}
+				}
+				continue;
+			}
+		}
 		if (method == u"crash"_s) return 17;
 		if (method == u"backup_calls"_s) { Reply(request, backupCalls); continue; }
 		if (mode == u"backup"_s) {

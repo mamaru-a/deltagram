@@ -1432,6 +1432,8 @@ PRIVATE
     delta/delta_rpc.h
     delta/backup_transfer.cpp
     delta/backup_transfer.h
+    delta/compose_queue.cpp
+    delta/compose_queue.h
     delta/draft_store.cpp
     delta/draft_store.h
     delta/history_mutations.cpp
