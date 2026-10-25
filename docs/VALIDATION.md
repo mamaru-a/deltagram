@@ -49,8 +49,25 @@ rejected writes, lost acknowledgements, unreadable state, stale confirmations,
 profile switches at each RPC boundary, and isolated real-Core profiles across
 restart. The real-Core case confirms block/list/unblock and preserved drafts;
 it also caught and fixed handling of the nullable chat lookup for hidden chats.
-The source audit checked 13,223 files with no blocking findings. Native/package
-validation and disposable GUI compatibility replay for this change are pending.
+The source audit checked 13,223 files with no blocking findings.
+[Native/portable/package validation at `06ff824`](https://github.com/mamaru-a/deltagram/actions/runs/40239506691)
+passed all 259 checks with no skips. The GUI and Core checksums were verified
+before replay. A rejected blocked-list request displays an error rather than a
+false empty list. The first rejected block reached one write and a state
+readback, then the native GUI crashed. On restart, Core confirmed the contact
+was still unblocked, the chat remained listed, all baseline message IDs were
+present and both drafts were unchanged.
+
+Source review found that the contact-selection callback can destroy its own
+picker while executing. The existing ordinary contact-opening path already
+copies and defers its callback; selection now does the same, with picker and
+profile lifetime guards. A traced repeat retained the data but did not refresh
+the list after completion. A second traced replay with allocator poisoning reproduced a double-free while
+destroying the settings refresh callback retained by `ConfirmContactBlocking`.
+Matching checksum-verified symbols resolved the callback destruction through
+`Bridge::setContactBlocked` and `DeltaRpc::handleLine`. The callback fix still
+requires native replay; blocking is not considered release-ready from the
+passing backend suite alone.
 
 ### Unsupported passkey controls — 2026-10-26
 

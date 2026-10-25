@@ -254,7 +254,18 @@ public:
 		return menu;
 	}
 	void rowClicked(not_null<PeerListRow*> row) override {
-		if (_pick) { _pick(static_cast<ContactListRow*>(row.get())->data); return; }
+		if (_pick) {
+			if (_busy) return;
+			_busy = true;
+			auto pick = _pick;
+			const auto contact = static_cast<ContactListRow*>(row.get())->data;
+			const auto guard = std::weak_ptr<int>(_alive);
+			const auto current = CaptureAccountGuard();
+			QTimer::singleShot(0, [pick = std::move(pick), contact, guard, current] {
+				if (!guard.expired() && current && current()) pick(contact);
+			});
+			return;
+		}
 		if (_selectMembers) {
 			const auto checked = !row->checked();
 			delegate()->peerListSetRowChecked(row, checked);
