@@ -339,9 +339,44 @@ This used a private RPC shim to the existing Core owner, not a second process
 opening the same account database. Evidence: `backup-backend-evidence.json`.
 These are backend runtime checks, not the final GUI replay.
 
-Native/portable/package validation for `27656b4` is running remotely:
+Native/portable/package validation for `27656b4` passed:
 [run 40178483592](https://github.com/mamaru-a/deltagram/actions/runs/40178483592).
-Full GUI validation of this follow-up remains pending.
+This includes all 49 focused checks, zero failures/skips, Debian 13 and Ubuntu
+22.04 portable checks and distribution packages. The selected GUI/Core artifact
+checksums were verified; symbols were not downloaded.
+
+The verified GUI passed early cancellation with five-second provider dispatch
+delay, reopening before readiness (one provider, visible duplicate rejection),
+and switching to the alternate profile while preparation was pending. Each
+started one provider and stopped it once on the original profile after readiness.
+Both profiles returned to connectivity `4000`; the alternate draft stayed intact.
+A subsequent readiness read timed out, confirming no provider remained.
+Idle Cancel issued no backup/stop calls, and cancellation after QR rendering
+issued one stop. Private evidence: `backup-early-gui-fixed.json`,
+`backup-reopened-profile-switch-fixed.json`, `backup-profile-switch-no-provider.json`,
+`backup-idle-276-fixed.json` and `backup-ready-276-fixed.json`.
+
+A repeated complete transfer to official Desktop 2.62.0 also passed on this exact
+GUI. The provider dialog closed without issuing stop, mail IO resumed, restored
+image bytes matched, and a message from the restored profile reached the reference
+account and synchronized to the original Qt client. A reply reached the original
+and both restored profiles. The unrelated draft remained unchanged. QR files were
+deleted afterward. Private evidence: `backup-transfer-276-evidence.json`,
+`qt-transfer-276-final.png` and `reference-transfer-276-reply.png`.
+Camera/mobile receive paths remain unverified.
+
+### Clipboard-image restart loss — 2026-10-25
+
+On the verified `a1cbe2a` GUI, a rejected clipboard-image send remained visible
+with its caption and private staging file, but Core had neither a message nor a
+draft. Normal quit/restart removed the local bubble and caption; no recovery
+attachment or draft appeared. Other profiles had no matching message, and the
+alternate draft remained intact. Staging-file deletion after quit was not
+measured in this replay. Private evidence: `media-durability-rejected.json`,
+`media-durability-restarted.json`, `handoff-image-durability-rejected.json`,
+`handoff-image-durability-restarted.json` and the two image-durability screenshots.
+This confirms a remaining data-loss path for transformed media; it is not repaired
+by either the staging-lifetime fix or the failed-status presentation change.
 
 ### Failed-send status display — 2026-10-25
 
@@ -355,8 +390,23 @@ The follow-up separates failed status from pending status, renders the existing
 localized “Failed” label in the bubble footer and chat row, and uses Core's
 pending/failed/read state in accessibility descriptions. It changes presentation
 only; it does not retry an ambiguous send. The source publication audit passes.
-Native compilation, GUI rendering of local/Core failures and assistive-technology
-runtime checks remain pending.
+The `2e051d8` native/package validation passed after `27656b4` completed:
+[run 40179984156](https://github.com/mamaru-a/deltagram/actions/runs/40179984156).
+All 49 focused checks pass with zero failures/skips, alongside Debian 13 and
+Ubuntu 22.04 portable checks and distribution-package checks. The downloaded
+GUI/Core checksums were verified; symbols were not downloaded.
+
+The verified GUI shows “Failed” for a read-only Core reply fixture in state `24`,
+the sending clock for state `20`, and read ticks after removing the fixture and
+reloading the actual state `28`. These are display fixtures, not simulated SMTP
+failures or database edits. A genuinely rejected local clipboard-image send
+shows “Failed” in both the bubble and chat row. Explicit deletion removes that
+local bubble and its private staging file without creating a Core/reference
+message. The alternate draft remains intact, and injection policy was cleared.
+Private evidence: `delivery-presentation-evidence.json`,
+`delivery-core-failed-2e.png`, `delivery-core-pending-2e.png`,
+`delivery-core-restored-2e.png` and `delivery-local-failed-2e.png`.
+Assistive-technology runtime checks and broader RTL/keyboard coverage remain open.
 
 The focused suite covers partial multi-stage deletion failure, but the tested
 group delete dialog does not expose that combined path. Broader operational and
@@ -365,7 +415,7 @@ feature coverage below remains open. Native, package and the additional Ubuntu
 
 `docs/COMPATIBILITY.md` records wider feature gaps: inactive-profile
 notifications, attachment staging/media navigation, member management,
-keyboard/RTL and screen-reader coverage, second-device transfer, webxdc, camera
+keyboard/RTL and screen-reader coverage, webxdc, camera
 workflows and advanced email presentation. Unsupported donor export, sharing
 restrictions and auto-delete controls are disabled rather than routed to
 Telegram. Calls remain unavailable before device permissions.

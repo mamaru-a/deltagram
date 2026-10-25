@@ -1,6 +1,6 @@
 # Experimental compatibility tracker
 
-Last reviewed: 2026-10-24. Deltagram is experimental and is not yet a complete
+Last reviewed: 2026-10-25. Deltagram is experimental and is not yet a complete
 Delta Chat client. Core provides messaging protocols and encryption; retaining
 a Telegram widget does not establish that its action works with Core.
 
@@ -48,7 +48,7 @@ are not copied here. Deltagram evidence comes from [PROGRESS.md](PROGRESS.md),
 | Profile and group photos | 🟡 Partial | Settings image selection/crop/save and account avatar colors checked locally with Core; group checks recorded. Complete camera workflows and live photo distribution need checking. |
 | Onboarding and relay settings | 🟡 Partial | Fresh GUI creation, repeated-submit protection, fail-closed discovery, QR-image join and live exchange passed on `3c2def3`. Configured-account recovery without duplicate provisioning passed on `a8c544f`; backup restore remains unverified. |
 | Invite QR scanning | 🟡 Partial | Camera capture, QR image files and clipboard screenshots feed Core invites for an explicit Join. Image decoding is checked locally; physical camera capture needs hardware validation. |
-| Second-device setup | 🟡 Partial | Full transfer to official Desktop 2.62.0, restored history/media and bidirectional message synchronization passed on `a1cbe2a`. Early preparation cancellation has a confirmed race; its ownership fix awaits native/live validation. |
+| Second-device setup | 🟡 Partial | Full transfer, restored image bytes and bidirectional synchronization passed on `27656b4` against official Desktop 2.62.0. Early/ready cancellation, duplicate starts and a profile switch during preparation passed. Camera/mobile receive paths remain unverified. |
 | Contact status and biographies | 🟡 Partial | Available Core contact status displayed; imported vCard biographies are unsupported by the current Core snapshot. |
 | Search | 🟡 Partial | Core result IDs now feed paged global/in-chat search, with canceled-query/account guards and visible failures. Saved Messages self-peer loading no longer requires a Telegram phone number. `3c2def3` passed all 60 global/in-chat matches, final-page navigation, delayed replacement/cancellation and visible rejection. Help/HTML searches need separate checks. |
 | App picker and webxdc | 🟡 Partial | Embedded app store exists; host rendering, draft preparation and synchronized webxdc updates are unverified. |
@@ -120,8 +120,14 @@ and retention followed by explicit deletion after rejection. Background media
 preparation guards have focused tests; live interruption of preparation itself
 remains unverified. Byte-backed staging cleanup, private permissions, second-device dialog
 start/cancel guards and a full transfer passed native/live validation on `a1cbe2a`.
-A further early-cancellation race is repaired in source with six new focused test
-cases; native/live validation of that repair is pending.
+The `27656b4` early-cancellation fix passes native/package checks, all 49 focused
+checks and disposable GUI replay, including a repeated complete transfer and
+mail exchange. A rejected clipboard image still disappears after quit/restart
+with no Core draft, as reproduced on `a1cbe2a`. Failed/pending status display is
+corrected in `2e051d8`, which passes native/package checks and GUI display
+fixtures for Core failure/pending/read states plus local image rejection.
+Assistive-technology runtime coverage remains open. The presentation fix does
+not repair transformed-media durability.
 
 ## Updating this tracker
 
