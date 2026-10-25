@@ -19,6 +19,7 @@
 #include "reply_store.h"
 
 #include <QtTest/QtTest>
+#include <limits>
 
 using namespace Qt::StringLiterals;
 
@@ -3174,6 +3175,17 @@ private slots:
 		QVERIFY(Delta::MediaIdentity(INT32_MAX, INT32_MAX) <= INT64_MAX);
 		QCOMPARE(Delta::MediaIdentity(0, 12), std::uint64_t(0));
 		QCOMPARE(Delta::MediaIdentity(1, -1), std::uint64_t(0));
+	}
+
+	void senderPeerIdentityDoesNotFitCoreIntIds() {
+		const auto sender = (std::uint64_t(1) << 40) + 12;
+		QVERIFY(Delta::CoreIdFitsInt(12));
+		QVERIFY(Delta::CoreIdFitsInt(std::numeric_limits<std::int32_t>::max()));
+		QVERIFY(!Delta::CoreIdFitsInt(0));
+		QVERIFY(!Delta::CoreIdFitsInt(
+			std::uint64_t(std::numeric_limits<std::int32_t>::max()) + 1));
+		QVERIFY(!Delta::CoreIdFitsInt(sender));
+		QCOMPARE(static_cast<std::int32_t>(sender), std::int32_t(12));
 	}
 
 	void realCoreHistoryDeletion() {

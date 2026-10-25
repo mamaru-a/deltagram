@@ -7062,7 +7062,7 @@ bool HistoryWidget::isChoosingTheme() const {
 
 bool HistoryWidget::isMuteUnmute() const {
 	return _peer
-		&& ((Delta::IsSystemUser(int(peerToUser(_peer->id).bare)))
+		&& ((Delta::IsSystemUser(peerToUser(_peer->id).bare))
 			|| (_peer->isUser() && Delta::IsReadOnlyChannel(peerToUser(_peer->id).bare))
 			|| (_peer->isBroadcast() && !_peer->asChannel()->canPostMessages())
 			|| (_peer->isGigagroup() && !Data::CanSendAnything(_peer))

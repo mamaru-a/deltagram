@@ -21,6 +21,7 @@ This file is part of Delta Tel, a Telegram Desktop based Delta Chat client.
 #include "styles/style_dialogs.h"
 #include <QtGui/QPainterPath>
 #include "delta/delta_bridge.h"
+#include "delta/media_identity.h"
 #include "rpl/variable.h"
 #include "core/ui_integration.h"
 #include "main/main_session.h"
@@ -261,8 +262,10 @@ public:
 			const auto contact = static_cast<ContactListRow*>(row.get())->data;
 			const auto guard = std::weak_ptr<int>(_alive);
 			const auto current = CaptureAccountGuard();
-			QTimer::singleShot(0, [pick = std::move(pick), contact, guard, current] {
-				if (!guard.expired() && current && current()) pick(contact);
+			QTimer::singleShot(0, [this, pick = std::move(pick), contact, guard, current] {
+				if (guard.expired()) return;
+				_busy = false;
+				if (current && current()) pick(contact);
 			});
 			return;
 		}
@@ -2116,6 +2119,13 @@ void ChooseContactToBlock(not_null<Window::SessionController*> controller, Fn<vo
 	}), Ui::LayerOption::KeepOther);
 }
 
+bool CanManageContactBlocking(uint64 userId) {
+	if (const auto contact = ContactForPeer(userId)) {
+		return contact->id > 9;
+	}
+	return CoreIdFitsInt(userId) && IsDirectChat(userId) && !IsSystemUser(userId);
+}
+
 void ManageContactBlocking(not_null<Window::SessionController*> controller, uint64 userId) {
 	const auto current = CaptureAccountGuard();
 	const auto inspect = crl::guard(controller, [=](int id) {
@@ -2133,7 +2143,7 @@ void ManageContactBlocking(not_null<Window::SessionController*> controller, uint
 	});
 	if (const auto contact = ContactForPeer(userId)) {
 		inspect(contact->id);
-	} else if (IsDirectChat(userId) && !IsSystemUser(int(userId))) {
+	} else if (CoreIdFitsInt(userId) && IsDirectChat(userId) && !IsSystemUser(userId)) {
 		ChannelRequest(int(userId), u"get_full_chat_by_id"_q, {},
 			crl::guard(controller, [=](QJsonValue value, QString error) {
 				if (!current || !current()) return;

@@ -569,7 +569,7 @@ bool BottomControls::isMuteUnmute() const {
 		return false;
 	}
 	if (_peer->isUser()
-		&& Delta::IsSystemUser(int(peerToUser(_peer->id).bare))) {
+		&& Delta::IsSystemUser(peerToUser(_peer->id).bare)) {
 		return true;
 	}
 	return (_peer->isBroadcast() && !_peer->asChannel()->canPostMessages())

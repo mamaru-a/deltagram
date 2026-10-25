@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <limits>
 
 namespace Delta {
 
@@ -14,6 +15,13 @@ namespace Delta {
 			| (std::uint64_t(accountId) << 31)
 			| std::uint64_t(messageId)
 		: 0;
+}
+
+// Device-talk membership and ChannelRequest still use 32-bit Core chat IDs.
+// Sender identities (1<<40)+contact must not be truncated into that set.
+[[nodiscard]] constexpr bool CoreIdFitsInt(std::uint64_t id) {
+	return id > 0
+		&& id <= std::uint64_t(std::numeric_limits<std::int32_t>::max());
 }
 
 } // namespace Delta

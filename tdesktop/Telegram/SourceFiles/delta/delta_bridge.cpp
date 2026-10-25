@@ -758,7 +758,7 @@ class Bridge;
 Bridge *GlobalBridge = nullptr;
 QString GlobalSelfAddress;
 QColor GlobalSelfAvatarColor;
-QSet<int> GlobalSystemUsers;
+QSet<uint64> GlobalSystemUsers;
 
 class Bridge final {
 public:
@@ -3985,7 +3985,7 @@ QString SelfAddress() {
 	return GlobalSelfAddress;
 }
 
-bool IsSystemUser(int userId) {
+bool IsSystemUser(uint64 userId) {
 	return GlobalSystemUsers.contains(userId);
 }
 

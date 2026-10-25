@@ -8,6 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "info/profile/info_profile_actions.h"
 
 #include "delta/delta_bridge.h"
+#include "delta/delta_boxes.h"
 #include "api/api_blocked_peers.h"
 #include "api/api_chat_participants.h"
 #include "api/api_credits.h"
@@ -3090,6 +3091,20 @@ void ActionsFiller::addReportAction() {
 
 void ActionsFiller::addBlockAction(not_null<UserData*> user) {
 	const auto controller = _controller->parentController();
+	if (Delta::Active()) {
+		const auto id = peerToUser(user->id).bare;
+		if (!Delta::CanManageContactBlocking(id)) {
+			return;
+		}
+		AddActionButton(
+			_wrap,
+			rpl::single(u"Contact blocking"_q),
+			rpl::single(true),
+			[=] { Delta::ManageContactBlocking(controller, id); },
+			&st::infoIconBlock,
+			st::infoBlockButton);
+		return;
+	}
 	const auto window = &controller->window();
 
 	auto text = user->session().changes().peerFlagsValue(
@@ -3185,7 +3200,7 @@ void ActionsFiller::fillUserActions(not_null<UserData*> user) {
 		addBalanceActions(user);
 		addInviteToGroupAction(user);
 	}
-	const auto system = Delta::IsSystemUser(int(user->id.value));
+	const auto system = Delta::IsSystemUser(peerToUser(user->id).bare);
 	if (!user->isSelf() && !system) {
 		addEditContactAction(user);
 		addDeleteContactAction(user);

@@ -108,7 +108,7 @@ void AccountRequest(const QString &method, const QJsonArray &args,
 void JoinInviteChat(const QString &qr, Fn<void(int chatId, QString error)> done);
 [[nodiscard]] std::shared_ptr<DeltaRpc> SharedRpc();
 [[nodiscard]] QString SelfAddress();
-[[nodiscard]] bool IsSystemUser(int userId);
+[[nodiscard]] bool IsSystemUser(uint64 userId);
 [[nodiscard]] rpl::producer<int> Connectivity();
 void FetchConnectivityHtml(Fn<void(QString html)> done);
 void FetchUrl(const QString &url, Fn<void(QByteArray body, QString error)> done);

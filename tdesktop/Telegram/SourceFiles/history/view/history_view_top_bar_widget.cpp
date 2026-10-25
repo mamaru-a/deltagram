@@ -1424,7 +1424,7 @@ void TopBarWidget::updateControlsVisibility() {
 		if (Delta::Active()) return false;
 		if (const auto peer = _activeChat.key.peer()) {
 			if (const auto user = peer->asUser()) {
-				if (Delta::IsSystemUser(int(peerToUser(user->id).bare))
+				if (Delta::IsSystemUser(peerToUser(user->id).bare)
 					|| Delta::IsChannel(peerToUser(user->id).bare)) {
 					return false;
 				}

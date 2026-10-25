@@ -936,8 +936,7 @@ void Filler::addBlockUser() {
 	}
 	if (Delta::Active()) {
 		const auto id = peerToUser(user->id).bare;
-		if (!Delta::ContactForPeer(id)
-			&& (!Delta::IsDirectChat(id) || Delta::IsSystemUser(int(id)))) return;
+		if (!Delta::CanManageContactBlocking(id)) return;
 		const auto controller = _controller;
 		_addAction(u"Contact blocking"_q, [=] {
 			Delta::ManageContactBlocking(controller, id);
