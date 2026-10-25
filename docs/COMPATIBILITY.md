@@ -113,6 +113,14 @@ Core-process failure recovery. Official Desktop 2.62.0 received the accepted
 attachments and caption-only text. Multi-file batches and transformed-media
 durability remain open; this does not establish complete media compatibility.
 
+`8e37b6c` passes native/portable/package CI and disposable generated-ZIP replay:
+delayed Core reads, a profile switch while the request is pending, matching
+filename/content/bytes in official Desktop 2.62.0, cleanup after acceptance,
+and retention followed by explicit deletion after rejection. Background media
+preparation guards have focused tests; live interruption of preparation itself
+remains unverified. Byte-backed staging cleanup and second-device dialog
+start/cancel guards are implemented in `a1cbe2a` and await native/live validation.
+
 ## Updating this tracker
 
 Record the source revision, client versions, environment and test scope before

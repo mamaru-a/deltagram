@@ -237,10 +237,30 @@ that earlier path has not been demonstrated in a live test.
 All 41 focused tests still pass, including expanded guard invalidation and
 scope-destruction assertions. The first native run caught a missing `ApiWrap`
 definition at the reset call; `8e37b6c` adds the required include. `3d21bc1`
-also clears retained media owners when the UI session ends. The first run is
-terminal, and replacement native/portable/package CI is running for `8e37b6c`:
+also clears retained media owners when the UI session ends. Replacement
+native/portable/package CI passed for `8e37b6c`:
 [run 40174035329](https://github.com/mamaru-a/deltagram/actions/runs/40174035329).
-The generated-file and profile-change GUI replays of this revision are pending.
+This includes 43 Qt checks including setup/cleanup, with no failures or skips,
+Debian 13 and Ubuntu 22.04 portable checks, and distribution-package checks.
+The downloaded GUI and Core checksums were verified; symbols were not downloaded.
+
+The verified GUI passed these disposable live checks against official Desktop
+2.62.0:
+
+- A three-second delayed archive send retained its temporary file until Core
+  accepted it, then removed the staging copy. The original filename, ZIP entry
+  and bytes matched in both clients.
+- Switching profiles during a 30-second delayed send retained the file until
+  acceptance in the original profile. No matching message appeared in the
+  other three profiles, and the alternate draft stayed unchanged.
+- A rejected archive retained its staging file. Explicit deletion removed the
+  local message and file without creating a Core or reference-client message.
+
+Private evidence: `archive-evidence.json`, `archive-final-reference.png`,
+`archive-profile-pending.png` and `archive-discarded.png`. This replay covers
+already-prepared media crossing a profile switch; the earlier guard tests cover
+invalidating background preparation callbacks. Background preparation itself
+has not been deterministically interrupted in a live GUI check.
 These fixes do not establish batch/media send durability across shutdown.
 
 A separate byte-backed media check on `be7b043` found image staging files left
@@ -254,7 +274,25 @@ another user. Private evidence: `staging-clipboard-baseline.json`,
 and transfers deletion responsibility to the retained preparation owner. Failed
 writes are removed automatically. The source publication audit passes; native
 compilation and the cleanup/permissions GUI replay of this follow-up are pending.
-It will be built after the running `8e37b6c` validation finishes.
+It is included in the serialized `a1cbe2a` validation described below.
+
+### Second-device dialog integrity — 2026-10-25
+
+On the disposable `be7b043` GUI, two rapid Continue clicks started two
+`provide_backup` requests and two QR requests. Canceling a newly opened dialog
+without starting a transfer sent `stop_ongoing_process` twice, even though that
+dialog had no operation to cancel. A started transfer canceled with Escape
+returned to Core connectivity `4000`. Private method-count evidence is in
+`backup-repeat-baseline.json` and `backup-idle-baseline.json`.
+
+`a1cbe2a` disables and guards Continue while a transfer is active, ignores stale
+QR callbacks from a completed attempt, and cancels only an active attempt once
+when its dialog closes. The destruction fallback cannot issue a second stop.
+Native/portable/package validation is running for `a1cbe2a`, after `8e37b6c`
+completed: [run 40176649206](https://github.com/mamaru-a/deltagram/actions/runs/40176649206).
+GUI replay of the backup and image-cleanup follow-ups is pending. Completed
+cross-client backup transfer and cancellation during early Core preparation
+remain unverified.
 
 The focused suite covers partial multi-stage deletion failure, but the tested
 group delete dialog does not expose that combined path. Broader operational and
