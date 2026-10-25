@@ -1351,6 +1351,11 @@ void ShowInviteQr() {
 
 void ShowSecondDevice() {
 	Ui::show(Box([=](not_null<Ui::GenericBox*> box) {
+		struct State {
+			rpl::variable<bool> busy = false;
+			int generation = 0;
+		};
+		const auto state = box->lifetime().make_state<State>();
 		box->setTitle(rpl::single(u"Add Second Device"_q));
 		const auto status = box->addRow(
 			object_ptr<Ui::FlatLabel>(
@@ -1383,11 +1388,14 @@ void ShowSecondDevice() {
 			}
 		}, canvas->lifetime());
 		const auto weak = base::make_weak(box);
-		box->addButton(rpl::single(u"Continue"_q), [=] {
+		const auto start = box->addButton(rpl::single(u"Continue"_q), [=] {
+			if (state->busy.current()) return;
+			state->busy = true;
+			const auto generation = ++state->generation;
 			status->setText(u"Preparing account…"_q);
 			StartSecondDevice(
 				[=](QString svg, QString error) {
-					if (!weak) {
+					if (!weak || generation != state->generation) {
 						return;
 					}
 					if (!error.isEmpty() || svg.isEmpty()) {
@@ -1411,9 +1419,12 @@ void ShowSecondDevice() {
 						u"Install Delta Chat on the other device, use the same network, then tap Scan QR Code."_q);
 				},
 				[=](QString error) {
-					if (!weak) {
+					if (!weak || generation != state->generation) {
 						return;
 					}
+					++state->generation;
+					state->busy = false;
+					qrWrap->toggle(false, anim::type::instant);
 					if (error.isEmpty()) {
 						box->closeBox();
 						return;
@@ -1421,11 +1432,20 @@ void ShowSecondDevice() {
 					status->setText(error);
 				});
 		});
+		state->busy.value() | rpl::on_next([=](bool busy) {
+			if (start) start->setEnabled(!busy);
+		}, box->lifetime());
 		box->addButton(rpl::single(u"Cancel"_q), [=] {
-			StopSecondDevice();
 			box->closeBox();
 		});
-		box->lifetime().add([] { StopSecondDevice(); });
+		const auto cancel = [=] {
+			++state->generation;
+			if (!state->busy.current()) return;
+			state->busy = false;
+			StopSecondDevice();
+		};
+		box->boxClosing() | rpl::on_next(cancel, box->lifetime());
+		box->lifetime().add(cancel);
 	}));
 }
 
