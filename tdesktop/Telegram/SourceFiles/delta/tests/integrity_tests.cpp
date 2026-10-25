@@ -59,6 +59,141 @@ class IntegrityTests final : public QObject {
 	Q_OBJECT
 
 private slots:
+	void recordingBytesSurviveStorageFailure_data() {
+		QTest::addColumn<QString>("fault");
+		for (const auto fault : { "queue-reject-copy", "queue-reject-pin",
+			"queue-reject-publish", "queue-unknown-publish" }) {
+			QTest::newRow(fault) << QString::fromLatin1(fault);
+		}
+	}
+
+	void recordingBytesSurviveStorageFailure() {
+		QFETCH(QString, fault);
+		auto rpc = std::make_shared<DeltaRpc>();
+		rpc->start(RPC_FIXTURE_PATH, fault);
+		auto queues = std::make_shared<Delta::ComposeQueueStore>(rpc);
+		auto batch = Delta::ComposeBatch::Create(queues, 2, 10, 1, {});
+		const auto expected = QByteArray("encoded recording bytes");
+		auto recorded = expected;
+		QVERIFY(batch->preparedBytes(0, {{}, 41, {}, u"recording.ogg"_s, u"Voice"_s}, recorded));
+		recorded.clear();
+		QVERIFY(!batch->preparedBytes(0, {{}, 0, {}, u"replacement.ogg"_s, u"Voice"_s}, "other"));
+		QTRY_COMPARE(batch->state(), Delta::ComposeBatch::State::Failed);
+		QVERIFY(batch->canRetrySave());
+		const auto path = batch->selection().front().file;
+		QFile retained(path);
+		QVERIFY(retained.open(QIODevice::ReadOnly));
+		QCOMPARE(retained.readAll(), expected);
+		retained.close();
+		const auto publicAccess = QFileDevice::ReadGroup | QFileDevice::WriteGroup | QFileDevice::ExeGroup
+			| QFileDevice::ReadOther | QFileDevice::WriteOther | QFileDevice::ExeOther;
+		QCOMPARE(int(QFileInfo(path).permissions()) & int(publicAccess), 0);
+		QCOMPARE(int(QFileInfo(QFileInfo(path).absolutePath()).permissions()) & int(publicAccess), 0);
+		CoreCall(*rpc, u"queue_fault"_s, {u"queue-normal"_s});
+		QVERIFY(batch->retrySave());
+		QTRY_COMPARE(batch->state(), Delta::ComposeBatch::State::Saved);
+		QCOMPARE(batch->reconciled(), fault == u"queue-unknown-publish"_s);
+		QVERIFY(!QFileInfo::exists(path));
+		QVERIFY(!QFileInfo::exists(QFileInfo(path).absolutePath()));
+		QCOMPARE(batch->queue().entries.front().draft.viewType, u"Voice"_s);
+		QCOMPARE(batch->queue().entries.front().draft.quotedMessageId, 41);
+		QCOMPARE(CoreCall(*rpc, u"sends"_s, {})[u"result"_s].toInt(), 0);
+	}
+
+	void recordingBytesRetryLocalWrite() {
+		auto rpc = std::make_shared<DeltaRpc>();
+		rpc->start(RPC_FIXTURE_PATH, u"queue-reject-copy"_s);
+		auto queues = std::make_shared<Delta::ComposeQueueStore>(rpc);
+		auto batch = Delta::ComposeBatch::Create(queues, 2, 10, 1, {});
+		QTemporaryDir temporary;
+		const auto directory = temporary.filePath(u"missing"_s);
+		QVERIFY(batch->preparedBytes(0, {{}, 0, {}, u"recording.mp4"_s, u"Video"_s}, "encoded video", directory));
+		QTRY_COMPARE(batch->state(), Delta::ComposeBatch::State::Failed);
+		QVERIFY(batch->selection().front().file.isEmpty());
+		QVERIFY(batch->canRetrySave());
+		QCOMPARE(CoreCall(*rpc, u"writes"_s, {})[u"result"_s].toInt(), 0);
+		QVERIFY(QDir().mkdir(directory));
+		QVERIFY(batch->retrySave());
+		QTRY_COMPARE(batch->state(), Delta::ComposeBatch::State::Failed);
+		const auto path = batch->selection().front().file;
+		QFile retained(path);
+		QVERIFY(retained.open(QIODevice::ReadOnly));
+		QCOMPARE(retained.readAll(), QByteArray("encoded video"));
+		retained.close();
+		QVERIFY(batch->discard());
+		QVERIFY(!QFileInfo::exists(path));
+		QCOMPARE(CoreCall(*rpc, u"sends"_s, {})[u"result"_s].toInt(), 0);
+	}
+
+	void recordingBytesDiscardBeforeWriteCompletes() {
+		auto rpc = std::make_shared<DeltaRpc>();
+		rpc->start(RPC_FIXTURE_PATH, u"queue-normal"_s);
+		auto queues = std::make_shared<Delta::ComposeQueueStore>(rpc);
+		auto batch = Delta::ComposeBatch::Create(queues, 2, 10, 1, {});
+		const auto weak = std::weak_ptr<Delta::ComposeBatch>(batch);
+		QVERIFY(batch->preparedBytes(0, {{}, 0, {}, u"recording.ogg"_s, u"Voice"_s}, "encoded voice"));
+		QVERIFY(batch->discard());
+		batch.reset();
+		QTRY_VERIFY(weak.expired());
+		QCOMPARE(CoreCall(*rpc, u"writes"_s, {})[u"result"_s].toInt(), 0);
+		QCOMPARE(CoreCall(*rpc, u"sends"_s, {})[u"result"_s].toInt(), 0);
+	}
+
+	void realCoreRecordingBytesSurviveRestart() {
+		const auto program = qEnvironmentVariable("DELTA_TEST_CORE_RPC");
+		if (program.isEmpty()) QSKIP("Set DELTA_TEST_CORE_RPC to test the real Core server.");
+		QTemporaryDir temporary;
+		const auto accounts = temporary.filePath(u"accounts"_s);
+		auto rpc = std::make_shared<DeltaRpc>();
+		rpc->start(program, accounts);
+		const auto account = CoreCall(*rpc, u"add_account"_s, {})[u"result"_s].toInt();
+		const auto chat = CoreCall(*rpc, u"create_chat_by_contact_id"_s, {account, 1})[u"result"_s].toInt();
+		QVERIFY(account > 0 && chat > 0);
+		auto queues = std::make_shared<Delta::ComposeQueueStore>(rpc);
+		auto batch = Delta::ComposeBatch::Create(queues, account, chat, 1, {});
+		const auto bytes = QByteArray("recording storage fixture, not a codec test");
+		QVERIFY(batch->preparedBytes(0, {{}, 0, {}, u"recording.ogg"_s, u"Voice"_s}, bytes));
+		QTRY_COMPARE(batch->state(), Delta::ComposeBatch::State::Saved);
+		auto saved = batch->queue();
+		QVERIFY(!QFileInfo::exists(batch->selection().front().file));
+		batch.reset();
+		auto drafts = std::make_shared<Delta::DraftStore>(rpc, [](QString) {});
+		auto sender = std::make_unique<Delta::ComposeQueueSender>(rpc, queues, drafts);
+		auto completed = false;
+		sender->sendNext(account, chat, saved.id, saved.entries.front().id,
+			[&](int id, Delta::ComposeQueue queue, QString error) {
+				QCOMPARE(id, 0); QVERIFY(!error.isEmpty());
+				QCOMPARE(queue.entries.size(), size_t(1));
+				QVERIFY(queue.entries.front().messageId > 0);
+				saved = std::move(queue); completed = true;
+			});
+		QTRY_VERIFY(completed);
+		sender.reset(); drafts.reset(); queues.reset(); rpc->stop();
+		rpc->start(program, accounts);
+		queues = std::make_shared<Delta::ComposeQueueStore>(rpc);
+		completed = false;
+		queues->load(account, chat, [&](Delta::ComposeQueue queue, QString error) {
+			QVERIFY(error.isEmpty());
+			QCOMPARE(queue.id, saved.id);
+			QCOMPARE(queue.entries.size(), size_t(1));
+			QCOMPARE(queue.entries.front().messageId, saved.entries.front().messageId);
+			QCOMPARE(queue.entries.front().draft.viewType, u"Voice"_s);
+			QFile file(queue.entries.front().draft.file);
+			QVERIFY(file.open(QIODevice::ReadOnly));
+			QCOMPARE(file.readAll(), bytes);
+			completed = true;
+		});
+		QTRY_VERIFY(completed);
+		const auto draft = CoreCall(*rpc, u"get_draft"_s, {account, chat})[u"result"_s].toObject();
+		QCOMPARE(draft[u"id"_s].toInt(), saved.entries.front().messageId);
+		QCOMPARE(draft[u"state"_s].toInt(), 19);
+		QCOMPARE(draft[u"viewType"_s].toString(), u"Voice"_s);
+		QCOMPARE(draft[u"fileName"_s].toString(), u"recording.ogg"_s);
+		QFile file(draft[u"file"_s].toString());
+		QVERIFY(file.open(QIODevice::ReadOnly));
+		QCOMPARE(file.readAll(), bytes);
+	}
+
 	void queueInspectionDoesNotBlockMutation() {
 		QTemporaryDir temporary;
 		QFile file(temporary.filePath(u"source.txt"_s));

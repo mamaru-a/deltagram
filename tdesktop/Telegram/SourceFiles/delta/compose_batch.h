@@ -15,6 +15,8 @@ public:
 		std::shared_ptr<ComposeQueueStore> queues,
 		int account, int chat, std::vector<ComposeDraft> selection, Changed changed);
 	bool prepared(size_t index, ComposeDraft draft, std::shared_ptr<void> owner);
+	bool preparedBytes(size_t index, ComposeDraft draft, QByteArray bytes,
+		QString temporaryDirectory = {});
 	bool failed(size_t index, QString error);
 	bool retrySave();
 	bool discard();
@@ -23,7 +25,7 @@ public:
 	[[nodiscard]] const ComposeQueue &queue() const { return _queue; }
 	[[nodiscard]] bool reconciled() const { return _reconciled; }
 	[[nodiscard]] const std::vector<ComposeDraft> &selection() const { return _selection; }
-	[[nodiscard]] bool canRetrySave() const { return _state == State::Failed && ready(); }
+	[[nodiscard]] bool canRetrySave() const;
 	[[nodiscard]] bool canDiscard() const {
 		return (_state == State::Preparing || _state == State::Failed) && _queue.id.isEmpty();
 	}
@@ -33,11 +35,15 @@ private:
 		std::optional<ComposeDraft> draft;
 		std::shared_ptr<void> owner;
 		QString error;
+		QByteArray bytes;
+		QString temporaryDirectory;
+		bool writing = false;
 	};
 	ComposeBatch(std::shared_ptr<ComposeQueueStore> queues,
 		int account, int chat, size_t count, Changed changed);
 	bool accepting(size_t index) const;
 	bool ready() const;
+	void writeBytes(size_t index);
 	void save();
 	void update(State state, QString error = {});
 	void releaseOwners();

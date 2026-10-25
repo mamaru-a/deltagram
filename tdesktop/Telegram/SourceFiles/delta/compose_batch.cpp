@@ -1,6 +1,11 @@
 #include "compose_batch.h"
 
 #include <QFileInfo>
+#include <QCoreApplication>
+#include <QDir>
+#include <QFile>
+#include <QTemporaryDir>
+#include <QThreadPool>
 
 #include <algorithm>
 
@@ -53,7 +58,61 @@ ComposeBatch::ComposeBatch(std::shared_ptr<ComposeQueueStore> queues,
 bool ComposeBatch::accepting(size_t index) const {
 	return (_state == State::Preparing || _state == State::Failed)
 		&& index < _slots.size() && !_slots[index].draft
+		&& !_slots[index].writing
 		&& _slots[index].error.isEmpty();
+}
+
+bool ComposeBatch::preparedBytes(size_t index, ComposeDraft draft, QByteArray bytes,
+		QString temporaryDirectory) {
+	if (!accepting(index)) return false;
+	if (temporaryDirectory.isEmpty()) temporaryDirectory = QDir::tempPath();
+	if (bytes.isEmpty() || draft.quotedMessageId < 0 || draft.filename.isEmpty()
+		|| draft.filename == u"."_s || draft.filename == u".."_s
+		|| draft.filename.contains(u'/') || draft.filename.contains(u'\\')
+		|| draft.filename.contains(QChar(0)) || !QDir::isAbsolutePath(temporaryDirectory)) {
+		failed(index, u"The recording could not be prepared. Nothing was sent."_s);
+		return false;
+	}
+	draft.file.clear();
+	_selection[index] = std::move(draft);
+	_slots[index].bytes = std::move(bytes);
+	_slots[index].temporaryDirectory = std::move(temporaryDirectory);
+	writeBytes(index);
+	return true;
+}
+
+void ComposeBatch::writeBytes(size_t index) {
+	const auto self = shared_from_this();
+	auto &slot = _slots[index];
+	slot.writing = true;
+	slot.error.clear();
+	const auto bytes = slot.bytes;
+	const auto name = _selection[index].filename;
+	const auto root = slot.temporaryDirectory;
+	static auto pool = QThreadPool();
+	pool.setMaxThreadCount(1);
+	pool.start([=] {
+		auto directory = std::make_shared<QTemporaryDir>(QDir(root).filePath(u"delta-recording-XXXXXX"_s));
+		auto path = directory->isValid() ? directory->filePath(name) : QString();
+		if (!path.isEmpty()) {
+			auto file = QFile(path);
+			if (!file.open(QIODevice::WriteOnly)
+				|| !file.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner)
+				|| file.write(bytes) != bytes.size() || !file.flush()) path.clear();
+		}
+		QMetaObject::invokeMethod(QCoreApplication::instance(), [=] {
+			self->_slots[index].writing = false;
+			if (self->_state == State::Discarded) return;
+			if (path.isEmpty()) {
+				self->failed(index, u"The recording could not be saved locally. Free some space and retry, or discard it. Nothing was sent."_s);
+				return;
+			}
+			auto draft = self->_selection[index];
+			draft.file = path;
+			self->prepared(index, std::move(draft), directory);
+			if (self->_slots[index].draft) self->_slots[index].bytes.clear();
+		});
+	});
 }
 
 bool ComposeBatch::prepared(size_t index, ComposeDraft draft,
@@ -101,6 +160,14 @@ void ComposeBatch::save() {
 
 bool ComposeBatch::retrySave() {
 	if (!canRetrySave()) return false;
+	if (!ready()) {
+		update(State::Preparing);
+		if (_state != State::Preparing) return true;
+		for (size_t index = 0; index != _slots.size(); ++index) {
+			if (!_slots[index].draft) writeBytes(index);
+		}
+		return true;
+	}
 	if (_queue.id.isEmpty()) {
 		save();
 		return true;
@@ -122,6 +189,13 @@ bool ComposeBatch::retrySave() {
 	return true;
 }
 
+bool ComposeBatch::canRetrySave() const {
+	return _state == State::Failed
+		&& std::all_of(_slots.begin(), _slots.end(), [](const Slot &slot) {
+			return !slot.writing && (slot.draft.has_value() || !slot.bytes.isEmpty());
+		});
+}
+
 bool ComposeBatch::discard() {
 	if (!canDiscard()) return false;
 	const auto self = shared_from_this();
@@ -131,7 +205,10 @@ bool ComposeBatch::discard() {
 }
 
 void ComposeBatch::releaseOwners() {
-	for (auto &slot : _slots) slot.owner.reset();
+	for (auto &slot : _slots) {
+		slot.owner.reset();
+		slot.bytes.clear();
+	}
 }
 
 void ComposeBatch::update(State state, QString error) {

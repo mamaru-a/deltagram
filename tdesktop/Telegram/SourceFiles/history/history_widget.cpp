@@ -1306,6 +1306,7 @@ void HistoryWidget::refreshTabbedPanel() {
 
 void HistoryWidget::initVoiceRecordBar() {
 	_voiceRecordBar->setStartRecordingFilter([=] {
+		if (deltaComposerLocked()) return true;
 		const auto error = [&]() -> Data::SendError {
 			if (_peer) {
 				if (const auto error = Data::RestrictionError(
@@ -1325,7 +1326,7 @@ void HistoryWidget::initVoiceRecordBar() {
 		return false;
 	});
 	_voiceRecordBar->setTTLFilter([=] {
-		if (_editMsgId) {
+		if (Delta::Active() || _editMsgId) {
 			return false;
 		} else if (const auto peer = _history ? _history->peer.get() : nullptr) {
 			if (const auto user = peer->asUser()) {
@@ -5710,7 +5711,38 @@ Api::SendAction HistoryWidget::prepareSendAction(
 }
 
 void HistoryWidget::sendVoice(const VoiceToSend &data) {
-	if (!canWriteMessage() || data.bytes.isEmpty() || !_history) {
+	if (!canWriteMessage() || deltaComposerLocked() || data.bytes.isEmpty() || !_history) {
+		return;
+	}
+	if (Delta::Active() && (data.options.scheduled || data.options.ttlSeconds)) {
+		controller()->showToast(u"Scheduled and view-once recordings are not supported. The recording was kept."_q);
+		return;
+	}
+	if (Delta::Active() && !readyToForward()) {
+		const auto history = _history;
+		const auto current = Delta::CaptureAccountGuard();
+		const auto userId = int(peerToUser(_peer->id).bare);
+		const auto quote = int(replyTo().messageId.msg.bare);
+		saveDraftWithTextNow();
+		Delta::CheckNewAttachmentBatch(userId, crl::guard(this, [=](QString error) {
+			if (!current || !current() || _history != history
+				|| !_voiceRecordBar->hasRecording(data.bytes)) return;
+			if (!error.isEmpty()) { controller()->showToast(error); return; }
+			auto draft = Delta::ComposeDraft{ {}, quote, {},
+				data.video ? u"recording.mp4"_q : u"recording.ogg"_q,
+				data.video ? u"Video"_q : u"Voice"_q };
+			const auto batch = Delta::BeginPreparedBatch(userId, { draft }, crl::guard(this, [=](bool sent) {
+				if (!current() || _history != history) return;
+				if (sent) fastShowAtEnd(history);
+				setInnerFocus();
+			}));
+			if (!batch) return;
+			if (!batch->preparedBytes(0, std::move(draft), data.bytes)) {
+				batch->discard();
+				return;
+			}
+			_voiceRecordBar->clearListenState();
+		}));
 		return;
 	}
 
@@ -7870,8 +7902,8 @@ void HistoryWidget::fieldFocused() {
 }
 
 void HistoryWidget::updateFieldPlaceholder() {
-	_voiceRecordBar->setPauseInsteadSend(_history
-		&& _history->peer->starsPerMessageChecked() > 0);
+	_voiceRecordBar->setPauseInsteadSend(Delta::Active() || (_history
+		&& _history->peer->starsPerMessageChecked() > 0));
 
 	if (!_editMsgId && _inlineBot && !_inlineLookingUpBot) {
 		_field->setPlaceholder(

@@ -113,6 +113,36 @@ prove native GUI queue recovery. The serial native build of the preceding batch
 GUI revision remains in progress, and this follow-up still needs native/live
 validation.
 
+### Recording handoff and storage recovery
+
+Ordinary voice/video recording now pauses for preview before Send. A preflight
+preserves existing queues/drafts and ignores a recording discarded or trimmed
+while the check was pending. The batch coordinator takes ownership of encoded
+bytes before the preview clears; one worker writes a private temporary file and
+Core imports it into a durable queue before sending. No sendable donor placeholder
+is created. Normal quit and profile switching remain guarded during this handoff.
+
+A rejected local write keeps the bytes for Retry or explicit Discard. Rejected
+Core storage keeps the private file; an uncertain publication is read back
+without automatically sending. Discard during the worker write prevents late
+publication and releases the temporary owner. Recording cannot start during an
+active compose operation. The unsupported view-once control is disabled, and
+scheduled/view-once recording requests are rejected with the preview retained.
+
+All 160 focused checks pass with no skips. Coverage includes local-write failure
+followed by recovery, rejected copy/pin/publication, uncertain publication,
+private permissions/cleanup, and discard before worker completion. A real-Core
+test removes the in-memory/private-file owners, checkpoints a rejected send,
+restarts Core, and verifies the same recording bytes/type/name/draft ID. This is
+a storage test, not codec or playback proof.
+
+The disposable GUI container now has an isolated virtual microphone backed only
+by a generated tone. Its loopback check captured 1.08 seconds with nonzero signal;
+no hardware microphone was used. Native compilation and actual GUI recording,
+cross-client playback, duration/quote rendering, interruption and restart replay
+remain pending. Recordings combined with forwarding still use the donor path and
+remain part of the unfinished forwarding work.
+
 ### Recent live regressions and fixes
 
 An additional shutdown regression was reproduced on `8323369`: a text draft
