@@ -59,6 +59,16 @@ entries and failed cleanup. The source audit checked 13,222 files with no
 blocking findings. Native compilation and disposable GUI replay of this fix
 are pending; these results do not establish production readiness.
 
+### Unsupported call settings — 2026-10-26
+
+Notifications and Sounds and Devices still offered "Accept calls on this
+device" through Telegram authorization requests. Devices also exposed a
+separate set of call-only input/output preferences although this client does
+not support calls. Those controls, their settings-search entries and the
+authorization reload on opening Devices are removed. Ordinary microphone,
+speaker, camera and system-audio settings remain. Native compilation and
+rendered settings verification are pending.
+
 ### Inactive-profile delivery and unread tracking
 
 Cold-start replay on `5182d5e` selected **Deltagram integrity alternate** while

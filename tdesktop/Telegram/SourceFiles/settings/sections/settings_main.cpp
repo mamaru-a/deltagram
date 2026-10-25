@@ -522,7 +522,7 @@ void BuildSectionButtons(SectionBuilder &builder) {
 		.title = tr::lng_settings_section_devices(),
 		.targetSection = CallsId(),
 		.icon = { &st::menuIconUnmute },
-		.keywords = { u"sessions"_q, u"calls"_q },
+		.keywords = { u"microphone"_q, u"speakers"_q, u"camera"_q },
 	});
 
 	builder.addButton({
