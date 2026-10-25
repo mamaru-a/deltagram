@@ -337,13 +337,101 @@ unchanged. Evidence: `prepared-message-original-large-703.json`,
 `media-original-large-703-delivered.json`, `media-normal-photo-703-delivered.json`
 and `prepared-normal-photo-703-final.json`. `f751489` changes the
 English option to “Send without compression” instead of promising document
-rendering; its native/live label checks are pending in
+rendering. Native/portable/package checks and all 50 focused checks passed in
 [CI run](https://github.com/mamaru-a/deltagram/actions/runs/40184912481).
+The checksum-verified GUI shows the corrected label for both single-image and
+multi-image selections. Those label checks cancelled without sending; byte
+delivery was verified on `703ae5b` as recorded above. Private captures:
+`uncompressed-label-f751.png` and `uncompressed-label-multiple-f751.png`.
 
-Source review also found that `Storage::WriteArchiveFile` skips a selected file
-that disappears between gathering entries and reading them. The archive can
-then finish without reporting that omission. A deterministic preparation-race
-replay and a fail-closed correction remain open; this has not been live-tested.
+### Archive omission and stale failure row — 2026-10-25
+
+A deterministic `f751489` replay confirms that `Storage::WriteArchiveFile`
+silently skips a selected file that disappears after gathering entries. An
+inotify watcher removed the second disposable file only after archive creation
+opened the first (32 MiB) fixture. The GUI completed a ZIP containing only the
+first file and invoked `send_msg`. The test proxy rejected that request, so no
+archive was delivered. Explicit deletion removed its private staging copy.
+Other profiles had no matching messages and the alternate draft remained intact.
+`a2b2b61` removes the skip; failure to open any selected file must now fail the
+archive instead of sending an incomplete result.
+
+The same replay exposed a stale chat-list indicator: the bubble displayed
+Failed while the row retained a clock. Switching chats repainted it correctly.
+`1a3017c` invalidates the dialog row as soon as `HistoryItem::sendFailed` updates
+the message state. Both changes pass native/portable/package validation and all
+50 focused checks in
+[CI run](https://github.com/mamaru-a/deltagram/actions/runs/40185835831).
+Baseline evidence: `archive-race-baseline.json`,
+`archive-race-baseline-result.json`, `archive-race-baseline.png`,
+`archive-race-row-refreshed.png` and `media-archive-race-baseline-discarded.json`.
+
+On the checksum-verified `1a3017c` GUI, the same inotify race aborts preparation:
+zero `send_msg` calls, no remaining staging ZIP, and no matching Core/reference
+message. A healthy small archive still sends successfully: Core and official
+Desktop 2.62.0 contain the expected fixture and identical SHA-256
+`77727a57f007d7d1dc1220df7f5fee2a70aaf561d0278b1bf0a80cab0079d7fd`.
+Its staging file is gone after acceptance. A separately rejected image send
+updates both the bubble and chat row to Failed without hovering or switching
+chats. Other profiles have no matching messages and the alternate draft is
+preserved. Private evidence: `archive-race-fixed.json`,
+`archive-staging-fixed.json`, `media-archive-race-fixed.json`,
+`media-archive-control-1a3017c.json`, `media-failed-row-immediate.json`, and
+`failed-row-immediate-1a3017c.png`.
+
+The failed archive preparation exposed another state bug: the thumbnail said
+Failed, but the message itself remained Sending and did not offer Delete.
+`10cd8fe` marks photo/document preparation failures as failed messages, reusing
+the row invalidation above. Native/portable/package validation and all 50 focused
+checks pass in
+[CI run](https://github.com/mamaru-a/deltagram/actions/runs/40186867983).
+Its verified GUI repeats the archive race with no send or staging ZIP and shows
+Failed immediately in both bubble and row. The stale upload object still makes
+the menu say Cancel Upload; confirming that action removes the failed bubble.
+`c9962d2` clears that stopped upload state for photo/document preparation failures;
+its native/portable/package validation and all 50 focused checks pass in
+[CI run](https://github.com/mamaru-a/deltagram/actions/runs/40187692127). Private evidence
+from the intermediate `10cd8fe` replay:
+`archive-race-failure-state-10cd.json`, `archive-staging-failure-state-10cd.json`,
+`media-archive-failure-10cd.json`, `archive-failure-10cd.png`,
+`archive-failure-10cd-menu.png`, and `archive-failure-10cd-removed.png`.
+
+A separate staging-write failure is reproduced on `1a3017c` by launching only
+the disposable GUI with `TMPDIR` pointing to an owned regular-file fixture.
+The prepared clipboard image cannot create its temporary file. No `send_msg`
+call or Core/reference message occurs, but the bubble and row remain Sending
+and the menu offers only Copy Text. Account databases and build-cache paths
+are unchanged by this injection. `deliverDelta` calls the queue-based failure
+handler even though this path never entered the upload queue. `d25dcee`
+notifies the existing failure handler directly using the preparation result;
+it is included in the verified `c9962d2` build above. Baseline evidence:
+`temp-failure-baseline.png`, `temp-failure-baseline-menu.png`, and
+`media-temp-failure-baseline.json`.
+
+The checksum-verified `c9962d2` GUI passes both failure replays. The unwritable
+image-staging path and missing archive input produce Failed in the bubble and
+chat row, stop showing an active upload, and offer Delete. Explicit deletion
+removes each failed message. Neither attempt reaches `send_msg`, creates a
+Core/reference message, or leaves a staging file. The failed image still has a
+placeholder preview; this check establishes failure/removal behavior, not
+attachment recovery.
+
+After restoring the owned temporary fixture to a writable directory, the same
+GUI session sends a newly selected image normally. Core and official Desktop
+2.62.0 display the image and caption, with identical prepared JPEG bytes
+(1280×995, SHA-256
+`fb6f1dbd5258f4579cd08469d636bd9952cdd655a3b45d6b7213dad59c1a6bf3`).
+The staging file is removed after acceptance. Other profiles have no matching
+messages, the alternate draft stays intact, and fault injection is cleared.
+Private evidence: `media-temp-failure-c996.json`, `temp-failure-c996.png`,
+`temp-failure-c996-menu.png`, `temp-failure-c996-removed.png`,
+`archive-race-failure-state-c996.json`, `archive-staging-failure-state-c996.json`,
+`media-archive-failure-c996.json`, `archive-failure-c996-menu.png`,
+`archive-failure-c996-removed.png`, `prepared-staging-recovered-c996.json`,
+`prepared-message-staging-recovered-c996.json`,
+`media-staging-recovered-c996-delivered.json`, and
+`staging-recovered-reference-c996.png`.
+Prepared-media restart recovery and batch durability remain open.
 
 ### Second-device dialog integrity — 2026-10-25
 

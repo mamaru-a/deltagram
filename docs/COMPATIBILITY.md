@@ -67,7 +67,7 @@ They are **unverified**, rather than assumed to work because the donor UI has th
 | Media browser | ❓ Unverified | Combined media list, previous/next, delete and return to message. |
 | Chat management | ❓ Unverified | Clear history rejection/success and date-range deletion have targeted GUI checks; bulk read state and last-read positioning still need coverage. |
 | Member profiles | ❓ Unverified | Opening a profile from a group member list. |
-| Attachments | ❓ Unverified | Staging, multiple files/images/videos and image editing before send. |
+| Attachments | 🟡 Partial | Ordinary single-file recovery, prepared/resized/rotated image delivery, uncompressed bytes, private staging cleanup and generated archives have revision-specific checks below. Multiple-file/video paths and prepared-media restart recovery remain open. |
 | Notifications | ❓ Unverified | Background delivery and unread indicators for inactive profiles. |
 | Accessibility and localization | ❓ Unverified | Screen readers, keyboard navigation and RTL layouts. |
 | Appearance | 🟡 Partial | General wallpaper: local gallery and custom images in Settings → Chat Settings. Custom-image persistence checked across chats, profiles and restart; per-chat wallpaper is unavailable and removed from the chat menu. Full day/night combinations remain unverified. |
@@ -138,8 +138,20 @@ images in official Desktop 2.62.0. `703ae5b` also passes native/package checks
 and preserves a 5 MB JPEG through the explicit uncompressed path. Core accepts
 `File` to skip recompression, then classifies recognized images as `Image`;
 document rendering is not guaranteed. `f751489` clarifies the English option
-label, with native/live label verification pending. Prepared-media restart
-recovery remains open.
+label and passes native/package validation plus single/multi-image label checks.
+A deterministic archive race reproduced silent omission of a deleted selected
+file, and its rejected send exposed a chat row that kept a pending clock until
+repaint. Fixes `a2b2b61` and `1a3017c` pass native/package checks and live replay:
+the missing-file race aborts before any send, a healthy archive arrives intact,
+and a rejected image updates the row immediately. `10cd8fe` marks preparation
+failures explicitly; `d25dcee` reports staging-write failures for items that
+bypass the upload queue; `c9962d2` clears stopped upload state. The combined
+`c9962d2` build passes native/portable/package checks and all 50 focused checks.
+Its verified GUI shows Failed and supports explicit Delete for both the archive
+race and an unwritable image-staging path, without sending either. After staging
+is restored, a newly selected image arrives intact in official Desktop 2.62.0
+through the same GUI session. Failed-image preview/recovery is not established.
+Prepared-media restart recovery remains open.
 
 ## Updating this tracker
 
