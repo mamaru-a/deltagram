@@ -6,6 +6,7 @@ This file is part of Delta Tel, a Telegram Desktop based Delta Chat client.
 #include "delta/delta_rpc.h"
 #include "delta/draft_store.h"
 #include "delta/compose_queue.h"
+#include "delta/compose_batch.h"
 #include "delta/history_mutations.h"
 #include "mtproto/core_types.h"
 #include "rpl/producer.h"
@@ -37,6 +38,10 @@ class PreparedSend;
 // Holds the composer/quit reservation until preparation is abandoned or Core
 // confirms ownership. Carries no protocol data into the preparation workers.
 [[nodiscard]] std::shared_ptr<PreparedSend> BeginPreparedSend(int userId);
+[[nodiscard]] std::shared_ptr<ComposeBatch> BeginPreparedBatch(int userId,
+	std::vector<ComposeDraft> selection, Fn<void(bool)> done);
+[[nodiscard]] std::shared_ptr<ComposeBatch> PendingPreparedBatch(int userId);
+void CheckNewAttachmentBatch(int userId, Fn<void(QString)> done);
 
 void AnswerRequest(
 	not_null<MTP::Instance*> instance,

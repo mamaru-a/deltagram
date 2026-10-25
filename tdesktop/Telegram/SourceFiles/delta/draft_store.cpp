@@ -1,5 +1,7 @@
 #include "draft_store.h"
 
+#include <QCoreApplication>
+
 #include <utility>
 
 using namespace Qt::StringLiterals;
@@ -47,6 +49,17 @@ void DraftStore::save(int accountId, int chatId, const QString &text, int quoted
 	ensureLoaded(key);
 }
 
+void DraftStore::settle(int accountId, int chatId, std::function<void(QString)> done) {
+	auto &entry = _entries[Key(accountId, chatId)];
+	if (entry.send) {
+		if (done) done(u"Another message is using this draft."_s);
+	} else if (entry.loading || entry.saving) {
+		entry.settlers.push_back(std::move(done));
+	} else if (done) {
+		done(entry.pending ? u"The composer could not be saved. Its text was preserved."_s : QString());
+	}
+}
+
 void DraftStore::recoverText(
 		int accountId,
 		int chatId,
@@ -88,6 +101,7 @@ void DraftStore::ensureLoaded(Key key) {
 		if (reply.contains(u"error"_s)) {
 			const auto error = Failure(reply);
 			notifyReaders(loaded, error);
+			notifySettled(loaded, error);
 			if (loaded.send) finishSend(key, 0, error);
 			if (_error) _error(error);
 			return;
@@ -111,6 +125,7 @@ void DraftStore::flush(Key key) {
 	if (entry.saving || (entry.send && entry.send->started)) return;
 	if (!entry.pending) {
 		if (entry.send) startSend(key);
+		else notifySettled(entry, {});
 		return;
 	}
 	entry.value.text = entry.pending->first;
@@ -134,6 +149,7 @@ void DraftStore::flush(Key key) {
 			saved.saving = false;
 			if (reply.contains(u"error"_s)) {
 				if (!saved.pending) saved.pending = std::make_pair(value.text, value.quotedMessageId);
+				notifySettled(saved, Failure(reply));
 				if (saved.send) finishSend(key, 0, Failure(reply));
 				if (_error) _error(Failure(reply));
 				return;
@@ -370,7 +386,19 @@ void DraftStore::finishSend(Key key, int messageId, QString error) {
 	// An error response does not prove that Core rejected the mutation. Reload
 	// its draft before another operation, including the managed attachment path.
 	if (!error.isEmpty()) entry.loaded = false;
+	notifySettled(entry, error);
 	if (done) done(messageId, std::move(error));
+}
+
+void DraftStore::notifySettled(Entry &entry, const QString &error) {
+	if (error.isEmpty() && (entry.loading || entry.saving || entry.pending || entry.send)) return;
+	const auto settlers = std::exchange(entry.settlers, {});
+	if (settlers.empty()) return;
+	const auto guard = std::weak_ptr<bool>(_alive);
+	QMetaObject::invokeMethod(QCoreApplication::instance(), [=] {
+		if (guard.expired()) return;
+		for (const auto &done : settlers) if (done) done(error);
+	}, Qt::QueuedConnection);
 }
 
 void DraftStore::notifyReaders(Entry &entry, const QString &error) {

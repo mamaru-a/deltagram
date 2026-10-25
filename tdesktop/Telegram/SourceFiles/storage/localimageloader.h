@@ -176,6 +176,8 @@ struct FileLoadTo {
 	FullReplyTo replyTo;
 	MsgId replaceMediaOf;
 	std::shared_ptr<Delta::PreparedSend> preparedSend;
+	std::shared_ptr<Delta::ComposeBatch> composeBatch;
+	size_t composeBatchIndex = 0;
 };
 
 using UploadFileParts = std::vector<QByteArray>;

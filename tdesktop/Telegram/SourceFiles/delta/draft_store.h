@@ -26,6 +26,7 @@ public:
 	DraftStore(std::shared_ptr<DeltaRpc> rpc, std::function<void(QString)> error);
 	void load(int accountId, int chatId, Callback done);
 	void reload(int accountId, int chatId, Callback done);
+	void settle(int accountId, int chatId, std::function<void(QString)> done);
 	void save(int accountId, int chatId, const QString &text, int quotedMessageId);
 	void recoverText(int accountId, int chatId, const QString &text, int quotedMessageId,
 		std::function<void(ComposeDraft)> recovered = {});
@@ -67,6 +68,7 @@ private:
 		std::optional<Send> send;
 		std::optional<std::pair<QString, int>> pending;
 		std::vector<Callback> readers;
+		std::vector<std::function<void(QString)>> settlers;
 		bool loaded = false;
 		bool loading = false;
 		bool saving = false;
@@ -81,6 +83,7 @@ private:
 	void startDiscard(Key key);
 	void finishSend(Key key, int messageId, QString error);
 	void notifyReaders(Entry &entry, const QString &error);
+	void notifySettled(Entry &entry, const QString &error);
 	std::shared_ptr<DeltaRpc> _rpc;
 	std::function<void(QString)> _error;
 	std::map<Key, Entry> _entries;

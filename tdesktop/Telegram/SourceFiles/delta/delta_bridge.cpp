@@ -43,6 +43,7 @@ This file is part of Delta Tel, a Telegram Desktop based Delta Chat client.
 #include "mtproto/mtproto_response.h"
 #include "rpl/variable.h"
 #include "storage/storage_account.h"
+#include "storage/file_upload.h"
 #include "ui/image/image_location.h"
 #include "ui/image/image_prepare.h"
 #include "window/window_session_controller.h"
@@ -206,6 +207,10 @@ struct PendingUpload {
 	std::shared_ptr<void> owner;
 	bool forceFile = false;
 	std::shared_ptr<PreparedSend> preparation;
+};
+struct PendingComposeBatch {
+	std::shared_ptr<ComposeBatch> batch;
+	ComposeBatch::State lastState = ComposeBatch::State::Preparing;
 };
 QHash<QString, PendingUpload> PendingUploads;
 
@@ -817,7 +822,7 @@ public:
 
 	void saveDraft(int userId, const QString &text, int quotedMessageId) {
 		const auto chatId = chatForPeerUser(userId);
-		if (_queueRuns.contains({ _accountId, chatId })) return;
+		if (_queueRuns.contains({ _accountId, chatId }) || _batches.contains({ _accountId, chatId })) return;
 		if (chatId > 0) _drafts->save(_accountId, chatId, text, quotedMessageId);
 	}
 
@@ -837,6 +842,7 @@ public:
 		const auto preparation = (i != _preparations.end()) ? i->second.lock() : nullptr;
 		return !_switching && _rpc->running()
 			&& (!preparation || preparation->finished)
+			&& !_batches.contains({ _accountId, chat })
 			&& !_queueRuns.contains({ _accountId, chat })
 			&& !_drafts->sending(_accountId, chatForPeerUser(userId));
 	}
@@ -924,6 +930,95 @@ public:
 			});
 	}
 
+	std::shared_ptr<ComposeBatch> pendingPreparedBatch(int userId) const {
+		const auto i = _batches.find({ _accountId, chatForPeerUser(userId) });
+		return (i != _batches.end()) ? i->second.batch : nullptr;
+	}
+
+	void checkNewAttachmentBatch(int userId, Fn<void(QString)> done) {
+		const auto preparation = beginPreparedSend(userId);
+		if (!preparation) { done(u"Wait for the current compose operation before adding a batch."_q); return; }
+		const auto account = _accountId;
+		const auto chat = chatForPeerUser(userId);
+		const auto guard = _alive;
+		const auto current = _accountScope.guard();
+		const auto finish = [=](QString error) {
+			preparation->owned = true;
+			preparation->finished = true;
+			done(std::move(error));
+			ComposerRevision = ComposerRevision.current() + 1;
+		};
+		_queues->load(account, chat, [=](ComposeQueue queue, QString error) {
+			if (guard.expired() || !current()) return;
+			if (!error.isEmpty() || !queue.entries.empty()) {
+				finish(error.isEmpty() ? u"Review the saved attachment queue before adding another batch."_q : error);
+				return;
+			}
+			_drafts->settle(account, chat, [=](QString error) {
+				if (guard.expired() || !current()) return;
+				if (!error.isEmpty()) { finish(error); return; }
+				_drafts->reload(account, chat, [=](ComposeDraft draft, QString error) {
+					if (guard.expired() || !current()) return;
+					finish(!error.isEmpty() ? error : !draft.file.isEmpty()
+						? u"Review the saved attachment before adding another batch."_q : QString());
+				});
+			});
+		});
+	}
+
+	std::shared_ptr<ComposeBatch> beginPreparedBatch(int userId,
+			std::vector<ComposeDraft> selection, Fn<void(bool)> done) {
+		if (!composerWritable(userId)) return {};
+		const auto chat = chatForPeerUser(userId);
+		const auto key = std::make_pair(_accountId, chat);
+		const auto guard = _alive;
+		const auto current = _accountScope.guard();
+		const auto identity = std::make_shared<std::weak_ptr<ComposeBatch>>();
+		auto batch = ComposeBatch::Create(_queues, _accountId, chat, std::move(selection), [=] {
+			if (guard.expired()) return;
+			const auto batch = identity->lock();
+			const auto i = _batches.find(key);
+			if (!batch || i == _batches.end() || i->second.batch != batch) return;
+			const auto state = batch->state();
+			const auto changed = i->second.lastState != state;
+			i->second.lastState = state;
+			if (state == ComposeBatch::State::Saved && current() && !batch->reconciled()) {
+				_drafts->settle(key.first, key.second, [=](QString error) {
+					if (guard.expired()) return;
+					const auto i = _batches.find(key);
+					if (i == _batches.end() || i->second.batch != batch) return;
+					_batches.erase(i);
+					if (current() && error.isEmpty()) sendComposeQueue(userId, batch->queue(), done);
+					else {
+						ComposerRevision = ComposerRevision.current() + 1;
+						if (current()) {
+							reportError(error);
+							if (done) done(false);
+						}
+					}
+				});
+				return;
+			}
+			if (state == ComposeBatch::State::Saved || state == ComposeBatch::State::Discarded) {
+				_batches.erase(i);
+				if (state == ComposeBatch::State::Discarded) _session->uploader().cancelComposeBatch(batch);
+				ComposerRevision = ComposerRevision.current() + 1;
+				if (current() && state == ComposeBatch::State::Saved) {
+					reportError(u"The attachments are saved. Use the attachment button to review and send them."_q);
+				}
+				if (done && current()) done(false);
+			} else {
+				ComposerRevision = ComposerRevision.current() + 1;
+				if (changed && current() && state == ComposeBatch::State::Failed) reportError(batch->error());
+			}
+		});
+		if (!batch) return {};
+		*identity = batch;
+		_batches.emplace(key, PendingComposeBatch{ batch });
+		ComposerRevision = ComposerRevision.current() + 1;
+		return batch;
+	}
+
 	std::shared_ptr<PreparedSend> beginPreparedSend(int userId) {
 		if (!composerWritable(userId)) return {};
 		const auto chat = chatForPeerUser(userId);
@@ -945,6 +1040,7 @@ public:
 	}
 
 	bool hasUnsavedPreparation() const {
+		if (!_batches.empty()) return true;
 		for (const auto &[key, weak] : _preparations) {
 			const auto preparation = weak.lock();
 			if (preparation && !preparation->owned) return true;
@@ -3406,6 +3502,7 @@ public:
 	std::shared_ptr<ComposeQueueStore> _queues;
 	std::unique_ptr<ComposeQueueSender> _queueSender;
 	std::set<std::pair<int, int>> _queueRuns;
+	std::map<std::pair<int, int>, PendingComposeBatch> _batches;
 	std::map<std::pair<int, int>, std::weak_ptr<PreparedSend>> _preparations;
 	std::unique_ptr<BackupTransfers> _backups;
 	int _accountId = 0;
@@ -3469,6 +3566,19 @@ bool Active() {
 
 std::shared_ptr<PreparedSend> BeginPreparedSend(int userId) {
 	return GlobalBridge ? GlobalBridge->beginPreparedSend(userId) : nullptr;
+}
+
+std::shared_ptr<ComposeBatch> BeginPreparedBatch(int userId,
+		std::vector<ComposeDraft> selection, Fn<void(bool)> done) {
+	return GlobalBridge ? GlobalBridge->beginPreparedBatch(userId, std::move(selection), std::move(done)) : nullptr;
+}
+
+std::shared_ptr<ComposeBatch> PendingPreparedBatch(int userId) {
+	return GlobalBridge ? GlobalBridge->pendingPreparedBatch(userId) : nullptr;
+}
+
+void CheckNewAttachmentBatch(int userId, Fn<void(QString)> done) {
+	if (GlobalBridge) GlobalBridge->checkNewAttachmentBatch(userId, std::move(done));
 }
 
 int AccountGeneration() {

@@ -68,6 +68,7 @@ public:
 
 	void pause(FullMsgId itemId);
 	void cancel(FullMsgId itemId);
+	void cancelComposeBatch(const std::shared_ptr<Delta::ComposeBatch> &batch);
 	void cancelAll();
 	void resetForAccountChange();
 

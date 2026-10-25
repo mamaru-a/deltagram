@@ -4405,6 +4405,7 @@ void ApiWrap::sendFiles(
 	}
 	auto tasks = std::vector<std::unique_ptr<Task>>();
 	tasks.reserve(list.files.size());
+	auto batchIndex = action.composeBatchOffset;
 	for (auto &file : list.files) {
 		const auto uploadWithType = !album
 			? type
@@ -4416,6 +4417,8 @@ void ApiWrap::sendFiles(
 			&& (file.type == Ui::PreparedFile::Type::Video
 				|| file.type == Ui::PreparedFile::Type::Photo);
 		auto fileTo = to;
+		fileTo.composeBatch = action.composeBatch;
+		fileTo.composeBatchIndex = batchIndex++;
 		if (file.ttlSeconds && !fileTo.options.scheduled) {
 			fileTo.options.ttlSeconds = file.ttlSeconds;
 		}

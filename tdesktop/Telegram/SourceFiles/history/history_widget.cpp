@@ -467,6 +467,7 @@ HistoryWidget::HistoryWidget(
 		sendWithModifiers(modifiers);
 	}, _field->lifetime());
 	Delta::ComposerChanges() | rpl::on_next([=] {
+		refreshDeltaComposeQueue();
 		updateControlsVisibility();
 		updateSendButtonType();
 		updateFieldPlaceholder();
@@ -3434,6 +3435,7 @@ void HistoryWidget::showHistory(
 		if (!applyDraft()) {
 			clearFieldText();
 		}
+		refreshDeltaComposeQueue();
 		checkCharsCount();
 		_send->finishAnimating();
 
@@ -4054,14 +4056,54 @@ bool HistoryWidget::deltaComposerLocked() const {
 		&& !Delta::ComposerWritable(int(peerToUser(_peer->id).bare));
 }
 
+int HistoryWidget::deltaQueuedAttachmentCount() const {
+	return Delta::Active() && _peer && _deltaQueuePeer == _peer->id
+		&& _deltaQueueGeneration == Delta::AccountGeneration() ? _deltaQueueCount : 0;
+}
+
+void HistoryWidget::refreshDeltaComposeQueue() {
+	if (!Delta::Active() || !_peer || !_history) return;
+	const auto generation = Delta::AccountGeneration();
+	const auto peer = _peer->id;
+	if (_deltaQueueGeneration != generation || _deltaQueuePeer != peer) {
+		_deltaQueueGeneration = generation;
+		_deltaQueuePeer = peer;
+		_deltaQueueCount = 0;
+		_deltaQueueLoading = false;
+		_deltaNotifiedQueue.clear();
+	}
+	if (_deltaQueueLoading || deltaComposerLocked()) return;
+	_deltaQueueLoading = true;
+	const auto history = _history;
+	const auto current = Delta::CaptureAccountGuard();
+	Delta::LoadComposeQueue(int(peerToUser(peer).bare), crl::guard(this,
+		[=](Delta::ComposeQueue queue, QString error) {
+			if (!current || !current() || _history != history
+				|| _deltaQueueGeneration != generation || _deltaQueuePeer != peer) return;
+			_deltaQueueLoading = false;
+			if (!error.isEmpty()) return;
+			_deltaQueueCount = int(queue.entries.size());
+			updateControlsVisibility();
+			updateFieldPlaceholder();
+			if (_deltaQueueCount && _deltaNotifiedQueue != queue.id) {
+				_deltaNotifiedQueue = queue.id;
+				controller()->showToast(u"%1 saved attachments. Use the attachment button to review them."_q.arg(_deltaQueueCount));
+			}
+		}));
+}
+
 void HistoryWidget::updateControlsVisibility() {
 	const auto writable = !Delta::Active() || !_peer
 		|| Delta::ComposerWritable(int(peerToUser(_peer->id).bare));
+	const auto batch = (Delta::Active() && _peer)
+		? Delta::PendingPreparedBatch(int(peerToUser(_peer->id).bare)) : nullptr;
 	_field->rawTextEdit()->setReadOnly(!writable);
-	_attachToggle->setDisabled(!writable);
+	_attachToggle->setDisabled(!writable && !batch);
 	const auto attachment = (Delta::Active() && _peer)
 		? Delta::DraftAttachmentName(int(peerToUser(_peer->id).bare)) : QString();
-	const auto attachmentHint = attachment.isEmpty() ? tr::lng_attach(tr::now)
+	const auto attachmentHint = batch ? u"Attachment batch: click to review preparation or discard."_q
+		: deltaQueuedAttachmentCount() ? u"Saved attachments: %1. Click to review, send or discard."_q.arg(deltaQueuedAttachmentCount())
+		: attachment.isEmpty() ? tr::lng_attach(tr::now)
 		: u"Saved attachment: "_q + attachment + u". Click to review, send or remove."_q;
 	_attachToggle->setToolTip(attachmentHint);
 	_attachToggle->setAccessibleName(attachmentHint);
@@ -6348,10 +6390,59 @@ void HistoryWidget::chooseAttach(
 		chooseNewAttachment(overrideSendImagesAsPhotos);
 		return;
 	}
-	if (deltaComposerLocked() || !_peer || !_canSendMessages) return;
+	if (!_peer || !_canSendMessages) return;
 	const auto history = _history;
 	const auto currentAccount = Delta::CaptureAccountGuard();
 	const auto userId = int(peerToUser(_peer->id).bare);
+	if (const auto batch = Delta::PendingPreparedBatch(userId)) {
+		controller()->show(Box([=](not_null<Ui::GenericBox*> box) {
+			box->setTitle(rpl::single(u"Attachment batch"_q));
+			box->setWidth(st::boxWideWidth);
+			const auto state = batch->state();
+			auto text = u"Attachments: %1\n\n"_q.arg(int(batch->selection().size()));
+			if (state == Delta::ComposeBatch::State::Saving) text += u"Saving the batch. Please wait."_q;
+			else if (state == Delta::ComposeBatch::State::Saved) text += u"Finishing the send. Please wait."_q;
+			else if (state == Delta::ComposeBatch::State::Failed) text += batch->error();
+			else text += u"Preparing the attachments before sending. You can discard this selection."_q;
+			if (!batch->selection().empty()) {
+				const auto &first = batch->selection().front();
+				text += u"\n\nFirst: %1\n%2"_q.arg(first.filename, first.text);
+			}
+			box->addRow(object_ptr<Ui::FlatLabel>(box,
+				rpl::single(text) | rpl::map(tr::marked), st::infoAboutGigagroup));
+			const auto current = [=] {
+				return currentAccount && currentAccount() && _history == history
+					&& Delta::PendingPreparedBatch(userId) == batch;
+			};
+			if (batch->canRetrySave()) {
+				box->addButton(rpl::single(u"Retry"_q), crl::guard(this, [=] {
+					box->closeBox();
+					if (current()) batch->retrySave();
+				}));
+			}
+			if (batch->canDiscard()) {
+				box->addButton(rpl::single(u"Discard batch"_q), crl::guard(this, [=] {
+					box->closeBox();
+					if (!current()) return;
+					controller()->show(Ui::MakeConfirmBox({
+						.text = u"Discard this attachment selection? No files from this batch have been sent. The composer text will be kept."_q,
+						.confirmed = crl::guard(this, [=](Fn<void()> close) {
+							close();
+							if (current()) batch->discard();
+						}),
+						.confirmText = tr::lng_record_lock_discard(),
+						.confirmStyle = &st::attentionBoxButton,
+					}));
+				}));
+			}
+			box->addButton(tr::lng_close(), [=] { box->closeBox(); });
+			Delta::ComposerChanges() | rpl::on_next([=] {
+				if (batch->state() != state) box->closeBox();
+			}, box->lifetime());
+		}));
+		return;
+	}
+	if (deltaComposerLocked()) return;
 	Delta::LoadComposeQueue(userId, crl::guard(this, [=](Delta::ComposeQueue queue, QString error) {
 		if (!currentAccount || !currentAccount() || _history != history || deltaComposerLocked()) return;
 		if (!error.isEmpty()) { controller()->showToast(error); return; }
@@ -7789,6 +7880,8 @@ void HistoryWidget::updateFieldPlaceholder() {
 			return tr::lng_edit_message_text();
 		} else if (!peer) {
 			return tr::lng_message_ph();
+		} else if (const auto count = deltaQueuedAttachmentCount()) {
+			return rpl::single(u"%1 saved attachments — click the attachment button"_q.arg(count));
 		} else if (const auto attachment = (Delta::Active() && peer->isUser())
 			? Delta::DraftAttachmentName(int(peerToUser(peer->id).bare)) : QString();
 			!attachment.isEmpty()) {
@@ -8087,9 +8180,27 @@ void HistoryWidget::sendDeltaAttachment(Delta::ComposeDraft draft) {
 
 void HistoryWidget::sendingFilesConfirmed(
 		std::shared_ptr<Ui::PreparedBundle> bundle,
-		Api::SendOptions options) {
+		Api::SendOptions options,
+		bool batchChecked) {
 	if (deltaComposerLocked()) return;
 	if (!_peer || showSendingFilesError(*bundle)) {
+		return;
+	}
+	if (Delta::Active() && bundle->totalCount > 1 && !batchChecked) {
+		const auto history = _history;
+		const auto current = Delta::CaptureAccountGuard();
+		const auto text = _field->getTextWithTags().text;
+		const auto quote = replyTo().messageId;
+		Delta::CheckNewAttachmentBatch(int(peerToUser(_peer->id).bare),
+			crl::guard(this, [=](QString error) {
+				if (!current || !current() || _history != history || deltaComposerLocked()) return;
+				if (!error.isEmpty()) { controller()->showToast(error); return; }
+				if (_field->getTextWithTags().text != text || replyTo().messageId != quote) {
+					controller()->showToast(u"The composer changed. Review the attachment selection again before sending."_q);
+					return;
+				}
+				sendingFilesConfirmed(bundle, options, true);
+			}));
 		return;
 	}
 	// Ordinary single files can go directly to Core without the donor uploader.
@@ -8142,14 +8253,38 @@ void HistoryWidget::sendingFilesConfirmed(
 		saveDraftWithTextNow();
 		action.preparedSend = Delta::BeginPreparedSend(int(peerToUser(_peer->id).bare));
 		if (!action.preparedSend) return;
+	} else if (Delta::Active() && bundle->totalCount > 1) {
+		auto selection = std::vector<Delta::ComposeDraft>();
+		auto firstCaption = TextWithTags();
+		for (const auto &group : bundle->groups) {
+			for (const auto &file : group.list.files) {
+				if (selection.empty()) firstCaption = file.caption;
+				selection.push_back({ file.caption.text, int(replyTo().messageId.msg.bare), file.path,
+					file.displayName.isEmpty() ? QFileInfo(file.path).fileName() : file.displayName, u"File"_q });
+			}
+		}
+		if (selection.empty()) return;
+		_field->setTextWithTags(std::move(firstCaption));
+		saveDraftWithTextNow();
+		const auto history = _history;
+		const auto current = Delta::CaptureAccountGuard();
+		action.composeBatch = Delta::BeginPreparedBatch(int(peerToUser(_peer->id).bare),
+			std::move(selection), crl::guard(this, [=](bool sent) {
+				if (!current || !current() || _history != history) return;
+				if (sent) fastShowAtEnd(history);
+				setInnerFocus();
+			}));
+		if (!action.composeBatch) return;
 	}
 
 	auto &api = session().api();
 	for (auto &group : bundle->groups) {
-		const auto album = (group.type != Ui::AlbumType::None)
+		const auto album = (!action.composeBatch && group.type != Ui::AlbumType::None)
 			? std::make_shared<SendingAlbum>()
 			: nullptr;
+		const auto count = group.list.files.size();
 		api.sendFiles(std::move(group.list), type, album, action);
+		action.composeBatchOffset += count;
 	}
 }
 

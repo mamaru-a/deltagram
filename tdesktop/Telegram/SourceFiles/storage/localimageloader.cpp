@@ -8,6 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "storage/localimageloader.h"
 
 #include "delta/delta_bridge.h"
+#include "delta/compose_batch.h"
 
 #include "api/api_text_entities.h"
 #include "api/api_sending.h"
@@ -1261,12 +1262,15 @@ void FileLoadTask::process(ProcessArgs &&args) {
 
 void FileLoadTask::finish() {
 	if (_accountGuard && !_accountGuard()) return;
+	if (_to.composeBatch && _to.composeBatch->state() == Delta::ComposeBatch::State::Discarded) return;
 	const auto session = _session.get();
 	if (!session) {
 		return;
 	}
 	const auto premium = session->user()->isPremium();
 	if (!_result || !_result->filesize || _result->filesize < 0) {
+		if (_to.composeBatch) _to.composeBatch->failed(_to.composeBatchIndex,
+			u"An attachment could not be prepared. Review the batch using the attachment button."_q);
 		Ui::show(
 			Ui::MakeInformBox((_result && _result->archive)
 				? tr::lng_folder_archive_failed(tr::now)
@@ -1275,6 +1279,8 @@ void FileLoadTask::finish() {
 		removeFromAlbum();
 	} else if (_result->filesize > kFileSizePremiumLimit
 		|| (_result->filesize > kFileSizeLimit && !premium)) {
+		if (_to.composeBatch) _to.composeBatch->failed(_to.composeBatchIndex,
+			u"An attachment exceeds the file size limit. No files were sent."_q);
 		Ui::show(
 			Box(FileSizeLimitBox, session, _result->filesize, nullptr),
 			Ui::LayerOption::KeepOther);

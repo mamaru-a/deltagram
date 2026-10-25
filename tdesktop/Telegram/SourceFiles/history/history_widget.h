@@ -556,7 +556,8 @@ private:
 
 	void sendingFilesConfirmed(
 		std::shared_ptr<Ui::PreparedBundle> bundle,
-		Api::SendOptions options);
+		Api::SendOptions options,
+		bool batchChecked = false);
 
 	void sendBotCommand(
 		const Bot::SendCommandRequest &request,
@@ -596,6 +597,8 @@ private:
 	[[nodiscard]] Data::ForumTopic *resolveReplyToTopic();
 	[[nodiscard]] bool canWriteMessage() const;
 	[[nodiscard]] bool deltaComposerLocked() const;
+	void refreshDeltaComposeQueue();
+	[[nodiscard]] int deltaQueuedAttachmentCount() const;
 	[[nodiscard]] bool hasEnoughLinesForAi() const;
 	[[nodiscard]] bool hasEnoughLinesForExpand() const;
 	[[nodiscard]] bool textExceedsMaxSize() const;
@@ -883,6 +886,11 @@ private:
 	QPointer<HistoryInner> _list;
 	History *_migrated = nullptr;
 	History *_history = nullptr;
+	PeerId _deltaQueuePeer;
+	int _deltaQueueGeneration = -1;
+	int _deltaQueueCount = 0;
+	bool _deltaQueueLoading = false;
+	QString _deltaNotifiedQueue;
 	mutable Data::ForumTopic *_creatingBotTopic = nullptr;
 	rpl::lifetime _historySponsoredPreloading;
 

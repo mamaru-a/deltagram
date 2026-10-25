@@ -220,9 +220,13 @@ The new batch coordinator preserves preparation order and source owners, waits
 for the entire selection, and reconciles uncertain publication without sending.
 Real-Core testing exposed blob renaming when a temporary path and display name
 have different extensions; staging now privately copies under the intended name
-before Core import. The coordinator and this storage fix have focused coverage,
-including restart after original-file removal and private-copy cleanup. New-batch
-GUI wiring and restart discovery remain unfinished. Broader
+before Core import. The coordinator and this storage fix pass native/package
+validation on `8268add`, including restart after original-file removal and
+private-copy cleanup. Follow-up source wires new batch selections, preparation
+failure review, explicit retry/discard, and saved-queue discovery on chat open.
+It waits for prior composer writes, checks for existing attachment drafts, and
+retains pending selection metadata. All 141 focused checks pass; the new GUI
+paths still require native compilation and disposable live replay. Broader
 interruption/profile cases need live coverage. The review
 dialog's clipped Cancel button and one-item count wording pass native visual
 replay on `b5c4e9e`.

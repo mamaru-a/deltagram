@@ -33,6 +33,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "apiwrap.h"
 #include "delta/delta_bridge.h"
 #include "delta/prepared_attachment.h"
+#include "delta/compose_batch.h"
 
 #include <QtCore/QDir>
 #include <QtCore/QFileInfo>
@@ -607,6 +608,10 @@ void Uploader::deliverDelta(
 		FullMsgId itemId,
 		const std::shared_ptr<FilePrepareResult> &file) {
 	if (file->accountGuard && !file->accountGuard()) return;
+	if (file->to.composeBatch && file->to.composeBatch->state() == Delta::ComposeBatch::State::Discarded) {
+		notifyFailed(Entry(itemId, file));
+		return;
+	}
 	auto path = file->filepath;
 	if (!path.isEmpty() && QFileInfo(path).size() <= 0) {
 		path.clear();
@@ -667,8 +672,10 @@ void Uploader::deliverDelta(
 		notifyFailed(Entry(itemId, file));
 		return;
 	}
-	Delta::RememberPendingFile(itemId.peer.value, itemId.msg.bare,
-		path, file->filename, file, file->forceFile, file->to.preparedSend);
+	if (!file->to.composeBatch) {
+		Delta::RememberPendingFile(itemId.peer.value, itemId.msg.bare,
+			path, file->filename, file, file->forceFile, file->to.preparedSend);
+	}
 	if (file->type == SendMediaType::Photo) {
 		session().data().photo(file->id)->uploadingData = nullptr;
 	} else if (file->type == SendMediaType::File
@@ -681,6 +688,24 @@ void Uploader::deliverDelta(
 				document->setLocation(Core::FileLocation(path));
 			}
 		}
+	}
+	if (const auto batch = std::exchange(file->to.composeBatch, nullptr)) {
+		auto kind = u"File"_q;
+		if (!file->forceFile) {
+			if (file->type == SendMediaType::Photo) kind = u"Image"_q;
+			else if (file->type == SendMediaType::Audio) kind = u"Voice"_q;
+			else if (const auto document = session().data().document(file->id)) {
+				if (document->isVoiceMessage()) kind = u"Voice"_q;
+				else if (document->isVideoFile() || document->isVideoMessage()
+					|| file->filemime.startsWith(u"video/"_q)) kind = u"Video"_q;
+				else if (file->filemime.startsWith(u"image/"_q)) kind = u"Image"_q;
+			}
+		}
+		batch->prepared(file->to.composeBatchIndex, Delta::ComposeDraft{
+			file->caption.text, int(file->to.replyTo.messageId.msg.bare),
+			path, file->filename, kind,
+		}, file);
+		return;
 	}
 	const auto options = file->to.options;
 	const auto edit = (file->to.replaceMediaOf != MsgId());
@@ -752,6 +777,10 @@ void Uploader::failed(FullMsgId itemId) {
 }
 
 void Uploader::notifyFailed(const Entry &entry) {
+	if (entry.file->to.composeBatch) {
+		entry.file->to.composeBatch->failed(entry.file->to.composeBatchIndex,
+			u"An attachment could not be prepared. Review the batch using the attachment button."_q);
+	}
 	const auto type = entry.file->type;
 	if (type == SendMediaType::Photo) {
 		if (Delta::Active()) {
@@ -1048,6 +1077,16 @@ void Uploader::maybeSend() {
 
 void Uploader::cancel(FullMsgId itemId) {
 	failed(itemId);
+}
+
+void Uploader::cancelComposeBatch(const std::shared_ptr<Delta::ComposeBatch> &batch) {
+	while (true) {
+		const auto i = ranges::find_if(_queue, [&](const Entry &entry) {
+			return entry.file->to.composeBatch == batch;
+		});
+		if (i == end(_queue)) break;
+		failed(i->itemId);
+	}
 }
 
 void Uploader::resetForAccountChange() {

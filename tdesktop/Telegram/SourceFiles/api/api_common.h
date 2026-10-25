@@ -16,6 +16,7 @@ class PhotoData;
 
 namespace Delta {
 class PreparedSend;
+class ComposeBatch;
 } // namespace Delta
 
 namespace Data {
@@ -71,6 +72,8 @@ struct SendAction {
 	bool generateLocal = true;
 	MsgId replaceMediaOf = 0;
 	std::shared_ptr<Delta::PreparedSend> preparedSend;
+	std::shared_ptr<Delta::ComposeBatch> composeBatch;
+	size_t composeBatchOffset = 0;
 
 	[[nodiscard]] MTPInputReplyTo mtpReplyTo() const;
 

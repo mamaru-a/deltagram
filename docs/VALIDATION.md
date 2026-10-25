@@ -54,10 +54,31 @@ held publication, rejected copy/pin/publication, uncertain publication, changed
 queue contents, conflicting selections, invalid preparations, and private-copy
 cleanup. Real-Core restart cases remove both original temporary files and check
 caption/order/bytes with distinct content, duplicate content, and duplicate
-content under different extensions. All 137 focused checks pass with no skips,
-using the pinned Core server; the source audit has zero blocking findings across
-13,217 files. Native compilation and GUI wiring of this coordinator remain
-pending; these checks do not establish new-batch GUI recovery.
+content under different extensions. `8268add` passes all 137 focused checks,
+native compilation and portable/package validation in
+[the serial CI run](https://github.com/mamaru-a/deltagram/actions/runs/40209803349).
+
+The next source revision wires multi-file selections through the coordinator.
+Existing workers prepare photos, video and archives without creating sendable
+placeholders; all outputs enter one queue before ordered sending starts. The
+attachment button reviews a pending batch, retries storage or explicitly
+discards it, including cancellation of active conversions. Preparation failure
+retains every selection's caption and quote. Composer edits, profile switching
+and normal quit remain guarded until ownership is resolved. A preflight checks
+for existing queues and attachment drafts before changing the composer.
+
+Batch sending waits for earlier composer writes to finish. Settled callbacks
+run after the current draft callback returns, preventing a fresh reload from
+being satisfied by an older read. Focused cases hold both draft writes and
+fresh reads, exercise rejection without automatic retry, and verify selection
+metadata after preparation failure. All 141 focused checks pass with no skips,
+and the source audit has zero blocking findings across 13,217 files.
+
+Opening a chat now discovers saved queues and offers a visible notice plus
+attachment-button/composer hints. Discovery is account/view guarded and skips
+active compose operations. Native compilation and disposable GUI replay of
+these new UI paths remain pending; backend tests alone do not establish
+new-batch recovery or visual correctness.
 
 ### Recent live regressions and fixes
 

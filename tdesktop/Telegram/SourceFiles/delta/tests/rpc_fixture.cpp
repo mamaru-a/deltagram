@@ -25,6 +25,7 @@ int main(int argc, char **argv) {
 	auto sends = 0;
 	auto removals = 0;
 	auto discarded = false;
+	auto draftReads = 0;
 	auto sentMessages = QMap<int, QJsonObject>();
 	auto historyIds = QJsonArray{10, 80, 12};
 	auto historyCalls = QJsonArray();
@@ -203,7 +204,13 @@ int main(int argc, char **argv) {
 			continue;
 		}
 		if (method == u"release"_s) {
-			if (held) { Reply(*held, u"released"_s); held.reset(); }
+			if (held) {
+				const auto params = (*held)[u"params"_s].toArray();
+				Reply(*held, (*held)[u"method"_s] == u"get_draft"_s
+					? QJsonValue(drafts[QString::number(params[0].toInt()) + ':' + QString::number(params[1].toInt())])
+					: QJsonValue(u"released"_s));
+				held.reset();
+			}
 			Reply(request, true);
 			continue;
 		}
@@ -320,6 +327,10 @@ int main(int argc, char **argv) {
 				{u"viewType"_s, u"File"_s},
 			};
 			if (method == u"get_draft"_s || method == u"inspect_draft"_s) {
+				if (method == u"get_draft"_s && ++draftReads == 2 && mode == u"hold-second-draft"_s) {
+					held = request;
+					continue;
+				}
 				auto value = drafts[key];
 				if (method == u"get_draft"_s && ((writes > 0
 					&& handoffFault == u"handoff-save-unreadable"_s)

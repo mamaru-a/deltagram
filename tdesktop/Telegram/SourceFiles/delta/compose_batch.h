@@ -11,6 +11,9 @@ public:
 	static std::shared_ptr<ComposeBatch> Create(
 		std::shared_ptr<ComposeQueueStore> queues,
 		int account, int chat, size_t count, Changed changed);
+	static std::shared_ptr<ComposeBatch> Create(
+		std::shared_ptr<ComposeQueueStore> queues,
+		int account, int chat, std::vector<ComposeDraft> selection, Changed changed);
 	bool prepared(size_t index, ComposeDraft draft, std::shared_ptr<void> owner);
 	bool failed(size_t index, QString error);
 	bool retrySave();
@@ -19,6 +22,11 @@ public:
 	[[nodiscard]] const QString &error() const { return _error; }
 	[[nodiscard]] const ComposeQueue &queue() const { return _queue; }
 	[[nodiscard]] bool reconciled() const { return _reconciled; }
+	[[nodiscard]] const std::vector<ComposeDraft> &selection() const { return _selection; }
+	[[nodiscard]] bool canRetrySave() const { return _state == State::Failed && ready(); }
+	[[nodiscard]] bool canDiscard() const {
+		return (_state == State::Preparing || _state == State::Failed) && _queue.id.isEmpty();
+	}
 
 private:
 	struct Slot {
@@ -37,6 +45,7 @@ private:
 	const int _account;
 	const int _chat;
 	std::vector<Slot> _slots;
+	std::vector<ComposeDraft> _selection;
 	Changed _changed;
 	State _state = State::Preparing;
 	QString _error;

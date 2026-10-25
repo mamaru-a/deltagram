@@ -59,6 +59,101 @@ class IntegrityTests final : public QObject {
 	Q_OBJECT
 
 private slots:
+	void settledDraftReloadWaitsForFreshRead() {
+		auto rpc = std::make_shared<DeltaRpc>();
+		rpc->start(RPC_FIXTURE_PATH, u"hold-second-draft"_s);
+		Delta::DraftStore drafts(rpc, [](QString) {});
+		auto initialRead = false;
+		drafts.load(2, 10, [&](Delta::ComposeDraft, QString error) {
+			QVERIFY(error.isEmpty()); initialRead = true;
+		});
+		auto reloaded = false;
+		drafts.settle(2, 10, [&](QString error) {
+			QVERIFY(error.isEmpty());
+			drafts.reload(2, 10, [&](Delta::ComposeDraft draft, QString error) {
+				QVERIFY(error.isEmpty());
+				QCOMPARE(draft.text, u"Fresh draft"_s);
+				reloaded = true;
+			});
+		});
+		QTRY_VERIFY(CoreCall(*rpc, u"is_held"_s, {})[u"result"_s].toBool());
+		QVERIFY(initialRead);
+		QVERIFY(!reloaded);
+		CoreCall(*rpc, u"misc_set_draft"_s, {2, 10, u"Fresh draft"_s,
+			QJsonValue(), QJsonValue(), 0, u"Text"_s});
+		CoreCall(*rpc, u"release"_s, {});
+		QTRY_VERIFY(reloaded);
+	}
+
+	void batchSelectionSurvivesPreparationFailure() {
+		auto rpc = std::make_shared<DeltaRpc>();
+		rpc->start(RPC_FIXTURE_PATH, u"queue-normal"_s);
+		auto queues = std::make_shared<Delta::ComposeQueueStore>(rpc);
+		auto file = std::make_shared<QTemporaryFile>();
+		QVERIFY(file->open());
+		QVERIFY(file->write("prepared first image") > 0);
+		QVERIFY(file->flush());
+		const auto selected = std::vector<Delta::ComposeDraft>{
+			{u"First caption"_s, 41, u"/original/first.png"_s, u"first.png"_s, u"Image"_s},
+			{u"Second caption"_s, 42, u"/original/second.mp4"_s, u"second.mp4"_s, u"Video"_s},
+		};
+		auto batch = Delta::ComposeBatch::Create(queues, 2, 10, selected, {});
+		QVERIFY(batch->canDiscard());
+		QVERIFY(!batch->canRetrySave());
+		QVERIFY(batch->prepared(0, {u"First caption"_s, 41, file->fileName(), u"first.jpg"_s, u"Image"_s}, file));
+		QVERIFY(batch->failed(1, u"Video conversion failed"_s));
+		QCOMPARE(batch->selection().size(), size_t(2));
+		QCOMPARE(batch->selection()[0].text, selected[0].text);
+		QCOMPARE(batch->selection()[0].filename, u"first.jpg"_s);
+		QCOMPARE(batch->selection()[1].text, selected[1].text);
+		QCOMPARE(batch->selection()[1].quotedMessageId, 42);
+		QCOMPARE(batch->selection()[1].file, selected[1].file);
+		QVERIFY(batch->canDiscard());
+		QVERIFY(!batch->canRetrySave());
+		QVERIFY(batch->discard());
+		QVERIFY(!batch->canDiscard());
+		QVERIFY(!batch->prepared(1, selected[1], file));
+		QCOMPARE(CoreCall(*rpc, u"writes"_s, {})[u"result"_s].toInt(), 0);
+		QCOMPARE(CoreCall(*rpc, u"sends"_s, {})[u"result"_s].toInt(), 0);
+	}
+
+	void draftSettlesAfterPendingWrites_data() {
+		QTest::addColumn<bool>("rejected");
+		QTest::newRow("accepted") << false;
+		QTest::newRow("rejected") << true;
+	}
+
+	void draftSettlesAfterPendingWrites() {
+		QFETCH(bool, rejected);
+		auto rpc = std::make_shared<DeltaRpc>();
+		rpc->start(RPC_FIXTURE_PATH, u"hold-first-save"_s);
+		Delta::DraftStore drafts(rpc, [](QString) {});
+		drafts.save(2, 10, u"First caption"_s, 41);
+		QTRY_VERIFY(CoreCall(*rpc, u"is_held"_s, {})[u"result"_s].toBool());
+		drafts.save(2, 10, u"Updated caption"_s, 42);
+		auto completed = false;
+		drafts.settle(2, 10, [&](QString error) {
+			QCOMPARE(error.isEmpty(), !rejected);
+			QCOMPARE(drafts.busy(2, 10), rejected);
+			completed = true;
+		});
+		auto otherCompleted = false;
+		drafts.settle(3, 10, [&](QString error) { QVERIFY(error.isEmpty()); otherCompleted = true; });
+		QVERIFY(otherCompleted);
+		QVERIFY(!completed);
+		if (rejected) CoreCall(*rpc, u"handoff_fault"_s, {u"handoff-reject-save"_s});
+		CoreCall(*rpc, u"release"_s, {});
+		QTRY_VERIFY(completed);
+		const auto draft = CoreCall(*rpc, u"inspect_draft"_s, {2, 10})[u"result"_s].toObject();
+		QCOMPARE(draft[u"text"_s].toString(), rejected ? u"First caption"_s : u"Updated caption"_s);
+		QCOMPARE(draft[u"quote"_s].toObject()[u"messageId"_s].toInt(), rejected ? 41 : 42);
+		completed = false;
+		drafts.settle(2, 10, [&](QString error) { QCOMPARE(error.isEmpty(), !rejected); completed = true; });
+		QVERIFY(completed);
+		QCOMPARE(CoreCall(*rpc, u"writes"_s, {})[u"result"_s].toInt(), 2);
+		QCOMPARE(CoreCall(*rpc, u"sends"_s, {})[u"result"_s].toInt(), 0);
+	}
+
 	void batchPreparationOrderingAndLifetime() {
 		auto rpc = std::make_shared<DeltaRpc>();
 		rpc->start(RPC_FIXTURE_PATH, u"queue-hold-checkpoint"_s);

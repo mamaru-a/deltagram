@@ -32,12 +32,21 @@ std::shared_ptr<ComposeBatch> ComposeBatch::Create(
 		std::move(queues), account, chat, count, std::move(changed)));
 }
 
+std::shared_ptr<ComposeBatch> ComposeBatch::Create(
+		std::shared_ptr<ComposeQueueStore> queues,
+		int account, int chat, std::vector<ComposeDraft> selection, Changed changed) {
+	auto result = Create(std::move(queues), account, chat, selection.size(), std::move(changed));
+	if (result) result->_selection = std::move(selection);
+	return result;
+}
+
 ComposeBatch::ComposeBatch(std::shared_ptr<ComposeQueueStore> queues,
 		int account, int chat, size_t count, Changed changed)
 : _queues(std::move(queues))
 , _account(account)
 , _chat(chat)
 , _slots(count)
+, _selection(count)
 , _changed(std::move(changed)) {
 }
 
@@ -54,6 +63,7 @@ bool ComposeBatch::prepared(size_t index, ComposeDraft draft,
 		|| !QFileInfo(draft.file).isFile() || QFileInfo(draft.file).size() <= 0) {
 		return failed(index, u"An attachment could not be prepared. No files were sent."_s);
 	}
+	_selection[index] = draft;
 	_slots[index].draft = std::move(draft);
 	_slots[index].owner = std::move(owner);
 	if (ready()) save();
@@ -90,7 +100,7 @@ void ComposeBatch::save() {
 }
 
 bool ComposeBatch::retrySave() {
-	if (_state != State::Failed || !ready()) return false;
+	if (!canRetrySave()) return false;
 	if (_queue.id.isEmpty()) {
 		save();
 		return true;
@@ -113,8 +123,7 @@ bool ComposeBatch::retrySave() {
 }
 
 bool ComposeBatch::discard() {
-	if ((_state != State::Preparing && _state != State::Failed)
-		|| !_queue.id.isEmpty()) return false;
+	if (!canDiscard()) return false;
 	const auto self = shared_from_this();
 	releaseOwners();
 	update(State::Discarded);
