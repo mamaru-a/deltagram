@@ -216,6 +216,30 @@ attachment. Evidence is in `data/integrity-live/attachment-evidence.json` and
 batches, transformed media and combined forwarding retain their old send paths
 and remain release gates.
 
+### Media preparation defects — 2026-10-25
+
+A generated-folder ZIP on `be7b043` failed before Core could read it: the
+preparation object's destructor removed its temporary file after queuing the
+asynchronous send. A disposable 205-byte archive reproduced Core's missing-file
+error; the proxy confirmed the file was absent on request arrival and after a
+three-second dispatch delay. No outgoing message or Core draft existed.
+Evidence: `archive-baseline-result.png`, `archive-baseline-lifetime.jsonl` and
+`attachment-archive-baseline.json` under `data/integrity-live/`.
+
+`b7e7522` retains the preparation owner through Core's reply and retains rejected
+uploads for explicit retry or removal. It also passes the intended filename to
+Core. Source review found that background file preparation checked only the
+shared UI session, which survives profile changes. The change captures an
+account guard at task creation, checks it before dispatch/cache mutation, and
+cancels active media preparation on profile reset. Cross-profile disclosure from
+that earlier path has not been demonstrated in a live test.
+
+All 41 focused tests still pass, including expanded guard invalidation and
+scope-destruction assertions. Native/portable/package CI is running at
+[run 40173619262](https://github.com/mamaru-a/deltagram/actions/runs/40173619262).
+The generated-file and profile-change GUI replays of this revision are pending.
+These fixes do not establish batch/media send durability across shutdown.
+
 The focused suite covers partial multi-stage deletion failure, but the tested
 group delete dialog does not expose that combined path. Broader operational and
 feature coverage below remains open. Native, package and the additional Ubuntu
