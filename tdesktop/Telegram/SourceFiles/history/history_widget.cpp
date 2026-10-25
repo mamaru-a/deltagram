@@ -2853,7 +2853,9 @@ void HistoryWidget::fastShowAtEnd(not_null<History*> history) {
 	}
 
 	clearAllLoadRequests();
-	setMsgId(ShowAtUnreadMsgId);
+	// Direct Core sends do not run the donor send action's unread preparation.
+	// Select the actual end so attachment recovery cannot jump to old history.
+	setMsgId(Delta::Active() ? ShowAtTheEndMsgId : ShowAtUnreadMsgId);
 	_pinnedClickedId = FullMsgId();
 	_minPinnedId = std::nullopt;
 	if (_history->isReadyFor(_showAtMsgId)) {

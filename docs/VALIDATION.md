@@ -464,6 +464,8 @@ the alternate draft is unchanged. Private evidence: `attachment-prepared-rejecte
 This replay also exposes a navigation defect: after retry, the Qt chat jumps to
 old history instead of the new attachment. `fastShowAtEnd` selects the unread
 position on this path. Private evidence: `prepared-retried-position-7f95.png`.
+The follow-up fix selects the actual end for Delta sends; its native/live replay
+is pending.
 Archive recovery, quote retention, uncompressed retry, uncertain replies and
 the new preparation guards still need exact-binary GUI coverage.
 
