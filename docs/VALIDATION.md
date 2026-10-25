@@ -32,6 +32,26 @@ official Delta Chat Desktop 2.62.0. No passwords or account addresses are includ
 in this report. The supported build target is Linux x86-64; GUI checks use
 Ubuntu 24.04 under Xvfb.
 
+### Blocked-contact controls — 2026-10-26
+
+The Blocked users settings section now uses Core's blocked-contact list and
+block/unblock operations, including the contact picker and direct-contact
+profile action. Changes validate the current contact state, submit once and
+read back Core state before reporting success. Unknown outcomes require a
+refresh; switching profiles invalidates pending callbacks. Chat-list refreshes
+reject older snapshots and remove conversations absent from Core's current
+list without deleting history or drafts. A confirmed block closes that
+conversation if it is open.
+
+The serial focused Qt target passed **259 checks**, with no failures or skips,
+including 33 new blocking cases. These cover invalid or duplicate list entries,
+rejected writes, lost acknowledgements, unreadable state, stale confirmations,
+profile switches at each RPC boundary, and isolated real-Core profiles across
+restart. The real-Core case confirms block/list/unblock and preserved drafts;
+it also caught and fixed handling of the nullable chat lookup for hidden chats.
+The source audit checked 13,223 files with no blocking findings. Native/package
+validation and disposable GUI compatibility replay for this change are pending.
+
 ### Notification reply recovery — 2026-10-26
 
 On `94ad667`, the disposable native notification receiver emitted one inline

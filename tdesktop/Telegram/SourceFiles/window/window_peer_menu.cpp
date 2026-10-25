@@ -8,6 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "window/window_peer_menu.h"
 
 #include "delta/delta_bridge.h"
+#include "delta/delta_boxes.h"
 
 #include "base/call_delayed.h"
 #include "menu/menu_check_item.h"
@@ -931,6 +932,16 @@ void Filler::addBlockUser() {
 		|| user->isSelf()
 		|| user->isRepliesChat()
 		|| user->isVerifyCodes()) {
+		return;
+	}
+	if (Delta::Active()) {
+		const auto id = peerToUser(user->id).bare;
+		if (Delta::IsSystemUser(int(id))
+			|| (!Delta::IsDirectChat(id) && !Delta::ContactForPeer(id))) return;
+		const auto controller = _controller;
+		_addAction(u"Contact blocking"_q, [=] {
+			Delta::ManageContactBlocking(controller, id);
+		}, &st::menuIconBlock);
 		return;
 	}
 	const auto window = _controller;

@@ -15,6 +15,7 @@
 #include "prepared_attachment.h"
 #include "profile_activity.h"
 #include "chat_mute.h"
+#include "contact_blocking.h"
 #include "reply_store.h"
 
 #include <QtTest/QtTest>
@@ -169,6 +170,197 @@ class IntegrityTests final : public QObject {
 	Q_OBJECT
 
 private slots:
+	void blockedContactListValidation_data() {
+		QTest::addColumn<QString>("fault");
+		for (const auto fault : {"none", "empty", "error", "not-array", "duplicate", "reserved", "fraction", "unblocked", "missing-state", "missing-name", "bad-avatar"}) {
+			QTest::newRow(fault) << QString::fromLatin1(fault);
+		}
+	}
+
+	void blockedContactListValidation() {
+		QFETCH(QString, fault);
+		auto scope = Delta::AccountScope();
+		auto contact = QJsonObject{{u"id"_s, 12}, {u"isBlocked"_s, true},
+			{u"displayName"_s, u"Disposable contact"_s}, {u"address"_s, u"test@example.test"_s},
+			{u"profileImage"_s, QJsonValue()}};
+		if (fault == u"reserved"_s) contact[u"id"_s] = 1;
+		if (fault == u"fraction"_s) contact[u"id"_s] = 12.5;
+		if (fault == u"unblocked"_s) contact[u"isBlocked"_s] = false;
+		if (fault == u"missing-state"_s) contact.remove(u"isBlocked"_s);
+		if (fault == u"missing-name"_s) contact.remove(u"displayName"_s);
+		if (fault == u"bad-avatar"_s) contact[u"profileImage"_s] = 42;
+		auto list = QJsonArray{contact};
+		if (fault == u"duplicate"_s) list.append(contact);
+		if (fault == u"empty"_s) list = {};
+		auto response = QJsonObject{{u"result"_s, list}};
+		if (fault == u"error"_s) response[u"error"_s] = u"offline"_s;
+		if (fault == u"not-array"_s) response[u"result"_s] = QJsonObject();
+		auto completed = false;
+		Delta::ReadCoreBlockedContacts([&](QString method, QJsonArray params, DeltaRpc::Callback done) {
+			QCOMPARE(method, u"get_blocked_contacts"_s);
+			QCOMPARE(params, QJsonArray{7});
+			done(response);
+		}, scope, 7, [&](std::vector<Delta::BlockedContact> rows, QString error) {
+			const auto valid = fault == u"none"_s || fault == u"empty"_s;
+			QCOMPARE(error.isEmpty(), valid);
+			QCOMPARE(rows.size(), fault == u"none"_s ? size_t(1) : size_t(0));
+			completed = true;
+		});
+		QVERIFY(completed);
+	}
+
+	void contactBlockingReadback_data() {
+		QTest::addColumn<QString>("fault");
+		QTest::addColumn<bool>("blocking");
+		for (const auto blocking : {false, true}) {
+			for (const auto fault : {"none", "no-chat", "lost-ack", "rejected", "bad-readback", "already-target", "bad-before", "bad-chat"}) {
+				QTest::newRow(qPrintable(QString::number(blocking) + '-' + QString::fromLatin1(fault)))
+					<< QString::fromLatin1(fault) << blocking;
+			}
+		}
+	}
+
+	void contactBlockingReadback() {
+		QFETCH(QString, fault);
+		QFETCH(bool, blocking);
+		auto scope = Delta::AccountScope();
+		auto state = fault == u"already-target"_s ? blocking : !blocking;
+		auto writes = 0;
+		auto reads = 0;
+		auto completed = false;
+		Delta::ChangeCoreContactBlocked([&](QString method, QJsonArray params, DeltaRpc::Callback done) {
+			QCOMPARE(params, (QJsonArray{7, 12}));
+			if (method == u"get_contact"_s) {
+				++reads;
+				if ((reads == 1 && fault == u"bad-before"_s) || (reads == 2 && fault == u"bad-readback"_s)) {
+					done({{u"result"_s, QJsonObject{{u"id"_s, 12}}}});
+				} else done({{u"result"_s, QJsonObject{{u"id"_s, 12}, {u"isBlocked"_s, state}}}});
+			} else if (method == u"get_chat_id_by_contact_id"_s) {
+				done({{u"result"_s, fault == u"bad-chat"_s ? QJsonValue(u"10"_s) : fault == u"no-chat"_s ? QJsonValue() : QJsonValue(10)}});
+			} else {
+				QCOMPARE(method, blocking ? u"block_contact"_s : u"unblock_contact"_s);
+				++writes;
+				if (fault != u"rejected"_s) state = blocking;
+				done(fault == u"lost-ack"_s || fault == u"rejected"_s
+					? QJsonObject{{u"error"_s, u"interrupted"_s}} : QJsonObject{{u"result"_s, QJsonValue()}});
+			}
+		}, scope, 7, 12, blocking, [&](int chat, QString error) {
+			QCOMPARE(error.isEmpty(), fault == u"none"_s || fault == u"no-chat"_s || fault == u"lost-ack"_s);
+			if (error.isEmpty()) QCOMPARE(chat, fault == u"no-chat"_s ? 0 : 10);
+			completed = true;
+		});
+		QVERIFY(completed);
+		const auto beforeWrite = fault == u"already-target"_s || fault == u"bad-before"_s || fault == u"bad-chat"_s;
+		QCOMPARE(writes, beforeWrite ? 0 : 1);
+		QCOMPARE(reads, beforeWrite ? 1 : 2);
+	}
+
+	void contactBlockingCancelsOnProfileChange_data() {
+		QTest::addColumn<int>("stage");
+		for (auto i = 1; i <= 4; ++i) QTest::newRow(qPrintable(QString::number(i))) << i;
+	}
+
+	void contactBlockingCancelsOnProfileChange() {
+		QFETCH(int, stage);
+		auto scope = Delta::AccountScope();
+		auto calls = 0;
+		DeltaRpc::Callback held;
+		auto response = QJsonObject();
+		Delta::ChangeCoreContactBlocked([&](QString method, QJsonArray params, DeltaRpc::Callback done) {
+			QCOMPARE(params, (QJsonArray{7, 12}));
+			++calls;
+			response = method == u"get_contact"_s
+				? QJsonObject{{u"result"_s, QJsonObject{{u"id"_s, 12}, {u"isBlocked"_s, calls > 1}}}}
+				: QJsonObject{{u"result"_s, method == u"get_chat_id_by_contact_id"_s ? QJsonValue(10) : QJsonValue()}};
+			if (calls == stage) held = std::move(done);
+			else done(response);
+		}, scope, 7, 12, true, [](int, QString) { QFAIL("Blocking callback escaped its profile"); });
+		QVERIFY(bool(held));
+		scope.invalidate();
+		held(response);
+		QCOMPARE(calls, stage);
+	}
+
+	void blockedContactListRejectsInvalidAndStaleRequests() {
+		auto scope = Delta::AccountScope();
+		auto calls = 0;
+		DeltaRpc::Callback held;
+		const auto request = [&](QString, QJsonArray, DeltaRpc::Callback done) { ++calls; held = std::move(done); };
+		auto failures = 0;
+		Delta::ReadCoreBlockedContacts(request, scope, 0, [&](std::vector<Delta::BlockedContact>, QString error) {
+			QVERIFY(!error.isEmpty()); ++failures;
+		});
+		for (const auto contact : {0, 1, 9}) {
+			Delta::ChangeCoreContactBlocked(request, scope, 7, contact, true, [&](int, QString error) {
+				QVERIFY(!error.isEmpty()); ++failures;
+			});
+		}
+		QCOMPARE(calls, 0);
+		QCOMPARE(failures, 4);
+		Delta::ReadCoreBlockedContacts(request, scope, 7, [](std::vector<Delta::BlockedContact>, QString) {
+			QFAIL("Blocked list escaped its profile");
+		});
+		scope.invalidate();
+		held({{u"result"_s, QJsonArray()}});
+		QCOMPARE(calls, 1);
+	}
+
+	void realCoreBlockingPreservesDraftsAcrossRestart() {
+		const auto program = qEnvironmentVariable("DELTA_TEST_CORE_RPC");
+		if (program.isEmpty()) QSKIP("Set DELTA_TEST_CORE_RPC to test the real Core server.");
+		auto directory = QTemporaryDir();
+		QVERIFY(directory.isValid());
+		auto rpc = std::make_shared<DeltaRpc>();
+		rpc->start(program, directory.path());
+		auto accounts = std::vector<int>();
+		auto contacts = std::vector<int>();
+		auto chats = std::vector<int>();
+		for (auto i = 0; i != 2; ++i) {
+			const auto account = CoreCall(*rpc, u"add_account"_s, {})[u"result"_s].toInt();
+			const auto contact = CoreCall(*rpc, u"create_contact"_s,
+				{account, u"blocking-fixture@example.test"_s, u"Disposable contact"_s})[u"result"_s].toInt();
+			const auto chat = CoreCall(*rpc, u"create_chat_by_contact_id"_s, {account, contact})[u"result"_s].toInt();
+			QVERIFY(account > 0 && contact > 9 && chat > 0);
+			accounts.push_back(account); contacts.push_back(contact); chats.push_back(chat);
+			QVERIFY(!CoreCall(*rpc, u"misc_set_draft"_s,
+				{account, chat, u"Keep profile draft %1"_s.arg(i), QJsonValue(), QJsonValue(), QJsonValue(), QJsonValue()}).contains(u"error"_s));
+		}
+		QCOMPARE(contacts[0], contacts[1]);
+		auto scope = Delta::AccountScope();
+		const auto request = [=](QString method, QJsonArray params, DeltaRpc::Callback done) {
+			rpc->call(method, params, std::move(done));
+		};
+		const auto change = [&](bool blocked) {
+			auto completed = false;
+			Delta::ChangeCoreContactBlocked(request, scope, accounts[0], contacts[0], blocked, [&](int, QString error) {
+				QVERIFY2(error.isEmpty(), qPrintable(error)); completed = true;
+			});
+			QTRY_VERIFY_WITH_TIMEOUT(completed, 5000);
+		};
+		change(true);
+		rpc->stop();
+		rpc->start(program, directory.path());
+		for (auto i = 0; i != 2; ++i) {
+			QCOMPARE(Delta::CoreContactBlocked(CoreCall(*rpc, u"get_contact"_s, {accounts[i], contacts[i]}), contacts[i]),
+				std::optional<bool>(i == 0));
+			const auto draft = CoreCall(*rpc, u"get_draft"_s, {accounts[i], chats[i]})[u"result"_s].toObject();
+			QCOMPARE(draft[u"text"_s].toString(), u"Keep profile draft %1"_s.arg(i));
+			auto completed = false;
+			Delta::ReadCoreBlockedContacts(request, scope, accounts[i], [&](std::vector<Delta::BlockedContact> rows, QString error) {
+				QVERIFY2(error.isEmpty(), qPrintable(error));
+				QCOMPARE(rows.size(), i == 0 ? size_t(1) : size_t(0)); completed = true;
+			});
+			QTRY_VERIFY_WITH_TIMEOUT(completed, 5000);
+			const auto list = CoreCall(*rpc, u"get_chatlist_entries"_s,
+				{accounts[i], QJsonValue(), QJsonValue(), QJsonValue()})[u"result"_s].toArray();
+			QCOMPARE(list.contains(chats[i]), i == 1);
+		}
+		change(false);
+		QCOMPARE(CoreCall(*rpc, u"get_chat_id_by_contact_id"_s, {accounts[0], contacts[0]})[u"result"_s].toInt(), chats[0]);
+		QCOMPARE(CoreCall(*rpc, u"get_draft"_s, {accounts[0], chats[0]})[u"result"_s].toObject()[u"text"_s].toString(), u"Keep profile draft 0"_s);
+		rpc->stop();
+	}
+
 	void notificationReplySendsWithoutTouchingComposer() {
 		auto fixture = ReplyFixture();
 		auto completed = false;

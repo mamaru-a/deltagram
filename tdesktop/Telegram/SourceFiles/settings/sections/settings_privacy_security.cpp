@@ -660,6 +660,17 @@ void BuildSecuritySection(
 		});
 	}
 
+	if (Delta::Active()) {
+		builder.addButton({
+			.id = u"security/blocked"_q,
+			.title = tr::lng_settings_blocked_users(),
+			.icon = { &st::menuIconBlock },
+			.onClick = [=] { showOther(BlockedPeersId()); },
+			.keywords = { u"blocked"_q, u"ban"_q },
+		});
+		return;
+	}
+
 	auto blockedCount = rpl::combine(
 		session->api().blockedPeers().slice(
 		) | rpl::map([](const Api::BlockedPeers::Slice &data) {

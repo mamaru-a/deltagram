@@ -98,13 +98,13 @@ namespace {
 
 class ContactListRow final : public PeerListRow {
 public:
-	explicit ContactListRow(ContactRow contact)
+	explicit ContactListRow(ContactRow contact, bool showAddress = false)
 	: PeerListRow(contact.id)
 	, data(std::move(contact))
 	, _empty(Ui::EmptyUserpic::UserpicColor(Ui::EmptyUserpic::ColorIndex(data.id)), data.name)
 	, _photo(data.avatar) {
 		if (data.name == data.address) data.name = u"Contact"_q;
-		setCustomStatus(QString());
+		setCustomStatus(showAddress ? data.address : QString());
 		setSkipPeerBadge(true);
 		for (const auto &word : (data.name + ' ' + data.address).toLower().split(' ', Qt::SkipEmptyParts)) {
 			_words.emplace(word);
@@ -179,13 +179,17 @@ public:
 		const auto receive = [=](std::vector<ContactRow> contacts, QString error) {
 			if (guard.expired()) return;
 			if (!error.isEmpty()) {
+				_loadError = error;
 				setDescriptionText(error);
 				return;
 			}
 			for (auto &contact : contacts) {
-				if (contact.id > 9) delegate()->peerListAppendRow(std::make_unique<ContactListRow>(std::move(contact)));
+				if (contact.id > 9 && !delegate()->peerListFindRow(contact.id)) {
+					delegate()->peerListAppendRow(std::make_unique<ContactListRow>(std::move(contact), bool(_pick)));
+				}
 			}
-			setDescriptionText(delegate()->peerListFullRowsCount() ? QString() : tr::lng_contacts_not_found(tr::now));
+			setDescriptionText(!_loadError.isEmpty() ? _loadError
+				: delegate()->peerListFullRowsCount() ? QString() : tr::lng_contacts_not_found(tr::now));
 			sort();
 		};
 		ListContacts(receive);
@@ -289,6 +293,7 @@ private:
 	const not_null<Main::Session*> _session;
 	Fn<void(int)> _done;
 	Fn<void(ContactRow)> _pick;
+	QString _loadError;
 	std::shared_ptr<int> _alive = std::make_shared<int>(0);
 	bool _alphabet = false;
 	bool _busy = false;
@@ -2062,6 +2067,76 @@ void ShowCreateGroup(Fn<void(int)> done) {
 		box->addButton(rpl::single(u"Create"_q), submit);
 		box->addButton(tr::lng_cancel(), [=] { box->closeBox(); });
 	}));
+}
+
+void ConfirmContactBlocking(not_null<Window::SessionController*> controller,
+		int contactId, QString name, bool blocked, Fn<void()> changed) {
+	const auto current = CaptureAccountGuard();
+	controller->show(Ui::MakeConfirmBox({
+		.text = blocked
+			? u"Block %1? You can unblock this contact in Settings. Your existing messages and drafts will be kept."_q.arg(name)
+			: u"Unblock %1?"_q.arg(name),
+		.confirmed = crl::guard(controller, [=](Fn<void()> close) {
+			close();
+			if (!current || !current()) return;
+			SetContactBlocked(contactId, blocked, crl::guard(controller, [=](QString error) {
+				if (!current()) return;
+				controller->showToast(error.isEmpty()
+					? (blocked ? u"Contact blocked."_q : u"Contact unblocked."_q) : error);
+				if (changed) changed();
+			}));
+		}),
+		.confirmText = rpl::single(blocked ? u"Block"_q : u"Unblock"_q),
+		.confirmStyle = blocked ? &st::attentionBoxButton : &st::defaultBoxButton,
+	}), Ui::LayerOption::KeepOther);
+}
+
+void ChooseContactToBlock(not_null<Window::SessionController*> controller, Fn<void()> changed) {
+	const auto current = CaptureAccountGuard();
+	const auto holder = std::make_shared<QPointer<PeerListBox>>();
+	auto list = std::make_unique<ContactListController>(&controller->session(), nullptr, false,
+		crl::guard(controller, [=](ContactRow contact) {
+			if (*holder) (*holder)->closeBox();
+			if (current && current()) ConfirmContactBlocking(controller, contact.id, contact.name, true, changed);
+		}));
+	controller->show(Box<PeerListBox>(std::move(list), [=](not_null<PeerListBox*> box) {
+		*holder = box.get();
+		box->addButton(tr::lng_cancel(), [=] { box->closeBox(); });
+	}), Ui::LayerOption::KeepOther);
+}
+
+void ManageContactBlocking(not_null<Window::SessionController*> controller, uint64 userId) {
+	const auto current = CaptureAccountGuard();
+	const auto inspect = crl::guard(controller, [=](int id) {
+		if (!current || !current() || id <= 9) return;
+		AccountRequest(u"get_contact"_q, { id }, crl::guard(controller, [=](QJsonValue value, QString error) {
+			if (!current()) return;
+			const auto state = CoreContactBlocked({{u"result"_q, value}}, id);
+			if (!error.isEmpty() || !state) {
+				controller->showToast(u"The contact state could not be checked. Try again after reconnecting."_q);
+				return;
+			}
+			const auto name = value.toObject().value(u"displayName"_q).toString();
+			ConfirmContactBlocking(controller, id, name, !*state);
+		}));
+	});
+	if (const auto contact = ContactForPeer(userId)) {
+		inspect(contact->id);
+	} else if (IsDirectChat(userId) && !IsSystemUser(int(userId))) {
+		ChannelRequest(int(userId), u"get_full_chat_by_id"_q, {},
+			crl::guard(controller, [=](QJsonValue value, QString error) {
+				if (!current || !current()) return;
+				const auto chat = value.toObject();
+				const auto contacts = chat.value(u"contactIds"_q).toArray();
+				if (!error.isEmpty() || chat.value(u"chatType"_q).toString() != u"Single"_q
+					|| contacts.size() != 1 || contacts.first().toInt() <= 9
+					|| contacts.first().toDouble() != contacts.first().toInt()) {
+					controller->showToast(u"This conversation's contact could not be checked."_q);
+					return;
+				}
+				inspect(contacts.first().toInt());
+			}));
+	}
 }
 
 void ShowSavedReplies(not_null<Window::SessionController*> controller) {

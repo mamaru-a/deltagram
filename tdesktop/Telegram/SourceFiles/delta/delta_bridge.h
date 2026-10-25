@@ -9,6 +9,7 @@ This file is part of Delta Tel, a Telegram Desktop based Delta Chat client.
 #include "delta/compose_queue.h"
 #include "delta/compose_batch.h"
 #include "delta/history_mutations.h"
+#include "delta/contact_blocking.h"
 #include "mtproto/core_types.h"
 #include "rpl/producer.h"
 
@@ -90,6 +91,8 @@ void DownloadMessage(int messageId);
 [[nodiscard]] std::optional<int> ChannelViewCount(int messageId);
 void MessageInfo(int messageId, Fn<void(QString text, QString error)> done);
 void DeleteContact(int contactId, bool deleteChat, Fn<void(QString error)> done);
+void ListBlockedContacts(Fn<void(std::vector<BlockedContact>, QString)> done);
+void SetContactBlocked(int contactId, bool blocked, Fn<void(QString)> done);
 [[nodiscard]] QJsonObject SharedContactData(int messageId);
 [[nodiscard]] std::optional<QString> StatusSubtitle(uint64 userId);
 [[nodiscard]] bool IsChannel(uint64 userId);
