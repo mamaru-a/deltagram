@@ -124,6 +124,7 @@ int main(int argc, char **argv) {
 						if (value.isNull()) queueConfig.remove(key);
 						else queueConfig[key] = value;
 						if (!pin && !value.isNull()) queuePublished = true;
+						if (!pin && queueFault == u"queue-hold-checkpoint"_s) { held = request; continue; }
 						if (queueFault == u"queue-lost-ack"_s || queueFault == u"queue-unknown-publish"_s) reject();
 						else Reply(request, QJsonValue(QJsonValue::Null));
 					}
@@ -180,6 +181,7 @@ int main(int argc, char **argv) {
 		if (method == u"partial"_s) { std::cout << "{unfinished" << std::flush; return 0; }
 		if (method == u"hang"_s || method == u"get_next_event"_s) continue;
 		if (method == u"hold"_s) { held = request; continue; }
+		if (method == u"is_held"_s) { Reply(request, held.has_value()); continue; }
 		if (method == u"event"_s) {
 			std::cout << "{\"method\":\"fixture_event\",\"params\":{}}" << std::endl;
 			Reply(request, true);
@@ -193,20 +195,30 @@ int main(int argc, char **argv) {
 		if (method == u"writes"_s) { Reply(request, writes); continue; }
 		if (method == u"sends"_s) { Reply(request, sends); continue; }
 		if ((mode.startsWith(u"handoff-"_s) || mode.startsWith(u"queue-"_s)) && method == u"get_message"_s) {
-			Reply(request, sentMessages.value(args[1].toInt()));
+			auto message = sentMessages.value(args[1].toInt());
+			for (const auto &draft : drafts) {
+				if (draft[u"id"_s] == args[1]) message = draft;
+			}
+			if (handoffFault == u"handoff-missing-message"_s) message = {};
+			Reply(request, message);
 			continue;
 		}
 		if (method == u"misc_send_draft"_s) {
 			++sends;
+			if (handoffFault == u"handoff-reject-removal"_s) queueFault = u"queue-reject-publish"_s;
+			if (handoffFault == u"handoff-uncertain-removal"_s) {
+				queueFault = u"queue-unknown-publish"_s;
+				queuePublished = false;
+			}
 			const auto key = QString::number(args[0].toInt()) + ':' + QString::number(args[1].toInt());
 			const auto id = drafts[key][u"id"_s].toInt();
-			if (mode != u"handoff-reject-send"_s) {
+			if (handoffFault != u"handoff-reject-send"_s) {
 				auto message = drafts[key];
 				message[u"state"_s] = 20;
 				sentMessages[id] = message;
 				drafts[key] = {};
 			}
-			if (mode == u"handoff-reject-send"_s || mode == u"handoff-lost-ack"_s) {
+			if (handoffFault == u"handoff-reject-send"_s || handoffFault == u"handoff-lost-ack"_s) {
 				std::cout << QJsonDocument(QJsonObject{
 					{u"id"_s, request[u"id"_s]},
 					{u"error"_s, QJsonObject{{u"message"_s, u"send failed"_s}}},

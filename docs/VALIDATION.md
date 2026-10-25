@@ -668,6 +668,43 @@ also preserves the original draft ID after restart. Batch controller/GUI wiring
 and live validation remain open. Native/portable/package validation passed
 with all 77 checks at `252bfa0` (run `40193903762`).
 
+### Local Retry and batch advancement — 2026-10-25
+
+`7d64366` adds a Retry context action for failed prepared attachments whose
+source file is still retained and whose Core ownership has not been confirmed.
+The action checks the active account, preparation generation and draft handoff,
+then marks the local message as sending before dispatch. Duplicate actions
+cannot initiate a second handoff. An uncertain save reloads Core's draft;
+an existing different attachment is preserved. Core-owned failures continue
+to use the saved-attachment review flow.
+
+All 89 focused checks passed for that source revision. Its remote native and
+package validation is in progress in
+[run 40198373254](https://github.com/mamaru-a/deltagram/actions/runs/40198373254).
+Direct local Retry has not yet been replayed with that native artifact.
+Subsequent test review corrected temporary JSON-reference lifetimes in two
+Retry assertions; those assertions now retain owned JSON objects.
+
+The batch sender advances one explicitly reviewed queue entry. It records the
+Core draft ID before sending, resumes that same ID after interruption, and
+removes an entry only after confirming that Core owns its outgoing message.
+A known outgoing message is never resent. Missing or changed messages preserve
+the queue. A saved draft whose checkpoint was interrupted can be adopted only
+when its retained file, caption and quote match, then checkpointed before send.
+Stale entry actions cannot advance the next file. Errors require a fresh queue
+load; an outgoing ID returned with a queue-update error must not be resent.
+
+All 103 focused checks pass with zero failures or skips. Added coverage includes
+rejected saves/sends/checkpoints, uncertain checkpoint/removal replies,
+already-sent reconciliation, changed/missing messages, duplicate/stale actions,
+and closing the sender during a delayed checkpoint without leaking a composer
+lock or sending. A real-Core unconfigured account retains both queued files
+after the originals are removed and preserves the same rejected draft ID across
+Core restart. This is storage and rejection recovery proof, not live delivery.
+The publication audit checks 13,215 files with zero blocking findings.
+Batch GUI wiring, native validation of the batch sender and live batch recovery
+remain open. Heavy builds remain serial; no second build was started.
+
 ### Second-device dialog integrity — 2026-10-25
 
 On the disposable `be7b043` GUI, two rapid Continue clicks started two
