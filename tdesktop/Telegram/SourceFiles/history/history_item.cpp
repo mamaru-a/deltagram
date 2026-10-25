@@ -4411,6 +4411,7 @@ void HistoryItem::sendFailed() {
 	Expects(!(_flags & MessageFlag::SendingFailed));
 
 	_flags = (_flags | MessageFlag::SendingFailed) & ~MessageFlag::BeingSent;
+	invalidateChatListEntry();
 	_history->owner().notifyItemDataChange(this);
 	_history->session().changes().historyUpdated(
 		_history,
