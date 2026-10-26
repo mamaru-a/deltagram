@@ -185,8 +185,19 @@ remain pending.
 An archived device chat can still briefly offer a composer before metadata
 arrives, and the bridge send paths do not independently check device membership.
 Core rejects sending to device chats, but this client-side permission gap remains
-open. Core-blocked contact state is also not synchronized to the donor's
-`UserData::isBlocked()` flag. These are separate from the routing correction.
+open. Core-blocked contact state is not synchronized to the donor's
+`UserData::isBlocked()` flag. Core's `Chat::why_cant_send` does not reject blocked
+contacts, so copying the donor restriction would impose a policy Core does not
+provide. Official Desktop 2.62.0's
+[`Composer`](https://github.com/deltachat/deltachat-desktop/blob/v2.62.0/packages/frontend/src/components/composer/Composer.tsx#L569)
+uses contact-request actions and `canSend` to decide whether to render its input.
+The next permission slice must follow that authoritative field rather than the
+Telegram blocked-state flag. These questions are separate from the routing
+correction.
+
+Read-only disposable Core checks confirm `canSend: false` for device chat `11`
+and `true` for Saved Messages `10`, the direct contact chat `12` and group `13`.
+No outgoing request was made by this permission probe.
 
 The final serial focused Qt target passed **262 checks**, with no failures or
 skips, including numeric sender boundaries and matching-ID / known-type metadata
@@ -197,8 +208,11 @@ regression passed in Linux; its host macOS attempt exited before its assertions.
 These checks do not compile the complete native UI or prove the corrected
 sender-profile routing in the GUI.
 
-The older GUI also continues to show the group's first-message notice after
-bidirectional delivery and restart. This presentation defect remains open.
+The group's first-message notice is a historical Core info message, not a live
+promotion banner. Readback confirms `isUnpromoted: false` and `canSend: true`
+after delivery; message `284` retains the notice with `isInfo: true`. Core's
+`ChatId::add_start_info_message` stores this message during group creation.
+Its continued presence is not evidence of a promotion-state defect.
 
 ### Unpublished PR validation artifacts — 2026-10-26
 
@@ -211,6 +225,23 @@ action pins, cache policy and the serial PR concurrency lock are unchanged.
 Offline staging checks cover file sets, checksums, provenance, stale symbol
 cleanup and missing inputs. A real artifact from this workflow revision still
 needs verification.
+
+### Additional settings audit and baseline — 2026-10-26
+
+Read-only source review found more CodeBlocks that bypass section availability,
+including proxy settings and Telegram identity/catalog controls. On the
+checksum-verified `44a91b5` disposable GUI, `tg://settings/data/proxy` opens a
+Proxy settings dialog with IPv6, system/custom proxy controls and explanatory
+Telegram text. The dialog was closed without changing a setting. One project
+GUI/proxy/Core ownership chain and the existing drafts/history remain intact.
+
+`tg://settings/language` opens the English fallback picker, including Telegram
+translation controls. It does not reproduce a missing-picker failure. Source
+inspection confirms `requestLanguageList()` inserts the default language before
+attempting the unsupported catalog request. Local custom-language import and
+the built-in/custom wallpaper gallery also have local implementations; the
+cleanup must preserve them. Changes from this audit await implementation and
+native replay.
 
 ### Sender and chat identity lookups — 2026-10-26
 
