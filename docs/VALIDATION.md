@@ -1,5 +1,41 @@
 # Publication validation
 
+### Integrated native group replay and startup correction — 2026-10-26
+
+[Native `2908654`](https://github.com/omidz4t/deltagram/actions/runs/40338239128)
+passes compilation and **700 checks**, zero failures/skips. All five artifact
+hashes match. Provenance identifies head `2908654`, merge
+`4ca80d34a8da6a865c8381df6a95f1d91ab7ef28`, and base
+`b713bff697ad3450bf842da5f24f83b64a9d68e6`; the merge parents match those
+head/base revisions. The standard GitHub downloader succeeded after the older
+range downloader failed. This PR run does not verify portable packages.
+
+Disposable native replay opens Group Info for the existing encrypted group,
+shows the correct two members and omits donor contact controls. Member inspection
+shows the intended contact profile without Mute. With RPC auditing enabled, the
+inspection issues Core reads and no create/accept/block/send writes. Explicit
+Message resolves contact 10 to existing chat 12, restores its original composer
+draft and makes no create/accept/block/send call. Baseline history, drafts,
+request state and device-chat visibility remain preserved.
+
+Two native gates remain failed/unverified. The group Encryption info action
+requests the correct Core method, whose nonempty result was confirmed separately,
+but settled captures contain only the dialog title; body presentation is under
+review. Toggling the third-column Group Info leaves Loading visible and produces
+3,813 FullChat reads in a ten-second audit window. Closing the sidebar stops
+that replay; the reactive feedback path is under correction. No account mutation
+was used for either probe. Private evidence is under
+`/tmp/deltagram-live/native290-fixture/` in the isolated test container.
+
+The configured-startup correction now uses a production startup state for
+discovery, explicit retry, known-profile opening and deliberate live Add Profile.
+Creation stays blocked during unresolved/failed discovery; known-profile retries
+select that same ID before opening. Next and keyboard activation share one
+handler. Seven new focused checks pass, and all eleven Qt suites pass **742
+checks**, zero failures/skips, serially. Source audit checks 13,247 files with
+zero blocking findings. Native compilation and rendered startup retry/failure
+injection for this newer correction remain pending; `2908654` predates it.
+
 ### Setup-avatar isolation — 2026-10-26
 
 Profile creation stages each selected avatar in a distinct owner-private

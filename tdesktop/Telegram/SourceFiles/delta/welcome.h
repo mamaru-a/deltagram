@@ -5,6 +5,7 @@ This file is part of Delta Tel, a Telegram Desktop based Delta Chat client.
 
 #include "delta/account_inventory.h"
 #include "delta/delta_rpc.h"
+#include "delta/startup_state.h"
 #include "base/object_ptr.h"
 #include "base/unique_qptr.h"
 #include "ui/rp_widget.h"
@@ -77,6 +78,8 @@ private:
 
 	void showWelcome();
 	void showProfile();
+	void activatePrimary();
+	void syncStartupUi(const QString &status);
 	void showMenu();
 	void showAlternative();
 	void showOtherServer();
@@ -121,7 +124,7 @@ private:
 	bool _creatingProfile = false;
 	std::shared_ptr<Delta::ProfileSetupTable> _setupTable;
 	std::shared_ptr<Delta::ProfileSetupLease> _setupLease;
-	int _completedAccountId = 0;
+	Delta::StartupState _startup;
 	QList<DeltaRpc::Callback> _accountReadyCallbacks;
 	bool _teamProfile = false;
 	bool _pumping = false;

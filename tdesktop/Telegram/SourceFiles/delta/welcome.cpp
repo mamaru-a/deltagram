@@ -4,6 +4,7 @@ This file is part of Delta Tel, a Telegram Desktop based Delta Chat client.
 #include "delta/welcome.h"
 
 #include "delta/account_inventory.h"
+#include "delta/startup_state.h"
 #include "delta/profile_setup_actions.h"
 #include "delta/profile_setup_avatar.h"
 #include "delta/delta_boxes.h"
@@ -109,10 +110,12 @@ DeltaOnboarding::DeltaOnboarding(
 		_rpc = _keep.get();
 		_live = true;
 		_anyConfigured = true;
+		_startup.markLiveAdd();
 	}
 	_setupTable = Delta::ProfileSetupTableFor(_rpc);
 	createControls();
 	applyPage();
+	updateSetupLock();
 	if (!_live) {
 		startBackend();
 	}
@@ -136,17 +139,7 @@ DeltaOnboarding::~DeltaOnboarding() = default;
 
 void DeltaOnboarding::createControls() {
 	_next.create(this, rpl::single(QString()), st::introNextButton);
-	_next->setClickedCallback([=] {
-		if (_completedAccountId != 0) {
-			openShell(_completedAccountId);
-			return;
-		}
-		if (_page == Page::Welcome) {
-			showProfile();
-		} else {
-			createProfile();
-		}
-	});
+	_next->setClickedCallback([=] { activatePrimary(); });
 
 	_alternative.create(this, u"I Already Have a Profile"_q, st::introLink);
 	_alternative->setClickedCallback([=] { showAlternative(); });
@@ -248,7 +241,8 @@ void DeltaOnboarding::startBackend() {
 	const auto accounts = ResolveAccountsPath();
 	QDir().mkpath(accounts);
 	if (program.isEmpty()) {
-		setStatus(u"DELTA_TEL_RPC is not set."_q);
+		_startup.failDiscovery(u"DELTA_TEL_RPC is not set."_q);
+		syncStartupUi(_startup.error);
 		return;
 	}
 	_rpc = new DeltaRpc(this);
@@ -285,7 +279,6 @@ void DeltaOnboarding::applyPage() {
 
 void DeltaOnboarding::updateTexts() {
 	const auto welcome = (_page == Page::Welcome);
-	const auto completed = (_completedAccountId != 0);
 	QString title;
 	QString description;
 	if (welcome) {
@@ -304,13 +297,7 @@ void DeltaOnboarding::updateTexts() {
 			? u"Team Name"_q
 			: u"Your Name"_q));
 	}
-	if (completed) {
-		_next->setText(rpl::single(u"Open Profile"_q));
-	} else if (welcome) {
-		_next->setText(rpl::single(u"Create New Profile"_q));
-	} else {
-		_next->setText(rpl::single(u"Agree & Create Profile"_q));
-	}
+	_next->setText(rpl::single(_startup.nextLabel(welcome)));
 	_title.create(
 		this,
 		title,
@@ -459,15 +446,13 @@ void DeltaOnboarding::openShell(int accountId) {
 	if (_handedOver || !_rpc || accountId == 0) {
 		return;
 	}
-	if (_completedAccountId != 0 && accountId != _completedAccountId) {
+	if (_startup.knownAccountId != 0 && accountId != _startup.knownAccountId) {
 		return;
 	}
 	const auto failOpen = [=](const QString &error) {
 		_handedOver = false;
-		updateSetupLock();
-		setStatus(error);
-		updateTexts();
-		updateControlsGeometry();
+		_startup.failOpen(error);
+		syncStartupUi(error);
 	};
 	if (_live) {
 		_handedOver = true;
@@ -484,28 +469,43 @@ void DeltaOnboarding::openShell(int accountId) {
 	}
 	_handedOver = true;
 	updateSetupLock();
-	call(u"start_io"_q, {accountId}, [=](QJsonObject reply) {
-		if (HasError(reply)) {
-			failOpen(RpcError(reply));
-			return;
-		}
-		call(u"get_config"_q, {accountId, u"displayname"_q}, [=](QJsonObject config) {
-			if (HasError(config)) {
-				failOpen(RpcError(config));
+	const auto startIo = [=] {
+		call(u"start_io"_q, {accountId}, [=](QJsonObject reply) {
+			if (HasError(reply)) {
+				failOpen(RpcError(reply));
 				return;
 			}
-			const auto name = config.value(u"result"_q).toString();
-			Delta::ProfileSetupNoteOpened(_setupTable, accountId);
-			const auto rpc = std::shared_ptr<DeltaRpc>(_rpc);
-			_rpc = nullptr;
-			rpc->setParent(nullptr);
-			Delta::StartSession(
-				_account,
-				rpc,
-				accountId,
-				name.isEmpty() ? u"Me"_q : name);
+			call(u"get_config"_q, {accountId, u"displayname"_q}, [=](QJsonObject config) {
+				if (HasError(config)) {
+					failOpen(RpcError(config));
+					return;
+				}
+				const auto name = config.value(u"result"_q).toString();
+				Delta::ProfileSetupNoteOpened(_setupTable, accountId);
+				const auto rpc = std::shared_ptr<DeltaRpc>(_rpc);
+				_rpc = nullptr;
+				rpc->setParent(nullptr);
+				Delta::StartSession(
+					_account,
+					rpc,
+					accountId,
+					name.isEmpty() ? u"Me"_q : name);
+			});
 		});
-	});
+	};
+	// WHY: Open retry must select the same known id; a failed select_account
+	// cannot fall through to start_io on whatever profile is current.
+	if (_startup.knownAccountId == accountId) {
+		call(u"select_account"_q, {accountId}, [=](QJsonObject reply) {
+			if (HasError(reply)) {
+				failOpen(RpcError(reply));
+				return;
+			}
+			startIo();
+		});
+		return;
+	}
+	startIo();
 }
 
 void DeltaOnboarding::keyPressEvent(QKeyEvent *e) {
@@ -522,9 +522,7 @@ void DeltaOnboarding::keyPressEvent(QKeyEvent *e) {
 	} else if (e->key() == Qt::Key_Enter
 		|| e->key() == Qt::Key_Return
 		|| e->key() == Qt::Key_Space) {
-		if (_page == Page::Welcome) {
-			showProfile();
-		}
+		activatePrimary();
 	}
 }
 
@@ -560,11 +558,11 @@ void DeltaOnboarding::showWelcome() {
 }
 
 void DeltaOnboarding::showProfile() {
-	if (_completedAccountId != 0) {
-		openShell(_completedAccountId);
+	if (_startup.primaryAction() == Delta::StartupState::Action::OpenKnown) {
+		openShell(_startup.knownAccountId);
 		return;
 	}
-	if (setupBusy()) {
+	if (setupBusy() || !_startup.canCreate()) {
 		return;
 	}
 	_page = Page::Profile;
@@ -578,8 +576,38 @@ void DeltaOnboarding::showProfile() {
 	});
 }
 
+void DeltaOnboarding::activatePrimary() {
+	if (setupBusy()) {
+		return;
+	}
+	switch (_startup.primaryAction()) {
+	case Delta::StartupState::Action::None:
+		return;
+	case Delta::StartupState::Action::RetryDiscovery:
+		bootstrap();
+		return;
+	case Delta::StartupState::Action::OpenKnown:
+		openShell(_startup.knownAccountId);
+		return;
+	case Delta::StartupState::Action::Create:
+		if (_page == Page::Welcome) {
+			showProfile();
+		} else {
+			createProfile();
+		}
+		return;
+	}
+}
+
+void DeltaOnboarding::syncStartupUi(const QString &status) {
+	setStatus(status);
+	updateTexts();
+	updateSetupLock();
+	updateControlsGeometry();
+}
+
 void DeltaOnboarding::showMenu() {
-	if (setupBusy() || _completedAccountId != 0) {
+	if (setupBusy() || !_startup.canCreate()) {
 		return;
 	}
 	_menu = base::make_unique_q<Ui::PopupMenu>(
@@ -664,49 +692,72 @@ void DeltaOnboarding::pumpEvents() {
 }
 
 void DeltaOnboarding::bootstrap() {
+	const auto generation = _startup.beginDiscovery();
+	if (!_rpc) {
+		_startup.failDiscovery(u"Chatmail core is not running."_q);
+		syncStartupUi(_startup.error);
+		return;
+	}
+	syncStartupUi(Delta::kStartupLoading);
 	Delta::ReadAccountInventory([=](QString method, QJsonArray params, DeltaRpc::Callback done) {
 		call(method, params, std::move(done));
 	}, [=](Delta::AccountInventory inventory) {
+		if (!_startup.live(generation)) {
+			return;
+		}
 		if (!inventory.error.isEmpty()) {
-			setStatus(inventory.error);
+			_startup.failDiscovery(inventory.error);
+			syncStartupUi(_startup.error);
 			return;
 		}
 		_anyConfigured = !inventory.configured.empty();
 		if (!_anyConfigured) {
+			_startup.readyUnconfigured();
 			_accountId = inventory.unconfigured;
 			_accountReady = (_accountId != 0);
-			updateTexts();
-			updateControlsGeometry();
+			syncStartupUi(QString());
 			if (qEnvironmentVariableIsSet("DELTA_TEL_FORCE_OPEN") && _accountId != 0) {
 				openShell(_accountId);
 			}
 			return;
 		}
 		call(u"get_selected_account_id"_q, {}, [=](QJsonObject selected) {
-			if (HasError(selected)) {
-				setStatus(RpcError(selected));
+			if (!_startup.live(generation)) {
 				return;
 			}
-			const auto selectedValue = selected.value(u"result"_q);
-			if (!selectedValue.isNull() && (!selectedValue.isDouble()
-				|| selectedValue.toInt() <= 0 || selectedValue.toDouble() != selectedValue.toInt())) {
-				setStatus(u"Core returned an invalid selected profile."_q);
+			const auto read = Delta::ReadSelectedAccount(selected);
+			if (!read.ok) {
+				_startup.failDiscovery(HasError(selected)
+					? RpcError(selected)
+					: read.error);
+				syncStartupUi(_startup.error);
 				return;
 			}
-			const auto selectedId = selectedValue.toInt();
-			const auto openId = inventory.configured.contains(selectedId)
-				? selectedId : inventory.configured.front();
-			updateTexts();
-			updateControlsGeometry();
-			call(u"select_account"_q, { openId }, [=](QJsonObject reply) {
-				if (HasError(reply)) setStatus(RpcError(reply));
-				else openShell(openId);
-			});
+			const auto openId = Delta::ConfiguredOpenIdOrZero(
+				inventory.configured,
+				read);
+			if (openId <= 0) {
+				_startup.failDiscovery(Delta::kStartupInvalidSelected);
+				syncStartupUi(_startup.error);
+				return;
+			}
+			_startup.readyConfigured(openId);
+			syncStartupUi(QString());
+			openShell(openId);
 		});
 	});
 }
 
 void DeltaOnboarding::ensureFreshAccount(DeltaRpc::Callback callback) {
+	if (!_startup.canCreate()) {
+		const auto message = !_startup.error.isEmpty()
+			? _startup.error
+			: Delta::kStartupLoading;
+		if (callback) {
+			callback(QJsonObject{{ u"error"_q, message }});
+		}
+		return;
+	}
 	if (callback) _accountReadyCallbacks.push_back(crl::guard(this, std::move(callback)));
 	if (_preparingAccount) return;
 	_preparingAccount = true;
@@ -758,7 +809,7 @@ void DeltaOnboarding::ensureFreshAccount(DeltaRpc::Callback callback) {
 
 void DeltaOnboarding::showAlternative() {
 	if (setupMutationBlocked()) {
-		if (_completedAccountId != 0) {
+		if (_startup.completedOpen()) {
 			return;
 		}
 		setStatus(Delta::kProfileSetupBusy);
@@ -1110,13 +1161,13 @@ std::shared_ptr<Delta::ProfileSetupAvatarFile> DeltaOnboarding::saveAvatar() con
 
 void DeltaOnboarding::updateSetupLock() {
 	const auto mutating = _creatingProfile || _handedOver;
-	const auto completed = (_completedAccountId != 0);
-	_next->setDisabled(mutating);
-	_alternative->setDisabled(mutating || completed);
+	const auto allowCreate = _startup.canCreate();
+	_next->setDisabled(mutating || !_startup.nextEnabled());
+	_alternative->setDisabled(mutating || !allowCreate);
 	_back->setDisabled(mutating);
-	_menuButton->setDisabled(mutating || completed);
-	_name->setDisabled(mutating || completed);
-	_photo->setDisabled(mutating || completed);
+	_menuButton->setDisabled(mutating || !allowCreate);
+	_name->setDisabled(mutating || !allowCreate);
+	_photo->setDisabled(mutating || !allowCreate);
 }
 
 void DeltaOnboarding::setCreatingProfile(bool creating) {
@@ -1139,7 +1190,7 @@ bool DeltaOnboarding::setupBusy() const {
 }
 
 bool DeltaOnboarding::setupMutationBlocked() const {
-	if (_completedAccountId != 0 || setupBusy()) {
+	if (!_startup.canCreate() || setupBusy()) {
 		return true;
 	}
 	return _setupTable
@@ -1182,25 +1233,24 @@ void DeltaOnboarding::applySetupResult(
 	const auto captured = result.accountId;
 	if (Delta::ProfileSetupShouldOpen(result, captured)
 		&& captured == _accountId) {
-		_completedAccountId = captured;
+		_startup.markCompleted(captured);
 		_anyConfigured = true;
 		_accountReady = true;
 		Delta::ReleaseProfileSetup(_setupLease);
 		_setupLease.reset();
 		setCreatingProfile(false);
-		setStatus(result.outcome == Delta::ProfileSetupOutcome::Succeeded
+		syncStartupUi(result.outcome == Delta::ProfileSetupOutcome::Succeeded
 			? successText
 			: result.error);
-		updateTexts();
-		updateControlsGeometry();
 		openShell(captured);
 		return;
 	}
 	if (Delta::ProfileSetupCanRetryMutation(result, captured)
 		&& captured == _accountId) {
-		_completedAccountId = 0;
+		_startup.readyUnconfigured();
 		unlockSetup();
 		setStatus(result.error);
+		updateTexts();
 		return;
 	}
 	Delta::ReleaseProfileSetup(_setupLease);
@@ -1216,8 +1266,8 @@ void DeltaOnboarding::applySetupResult(
 }
 
 void DeltaOnboarding::createProfile() {
-	if (_completedAccountId != 0) {
-		openShell(_completedAccountId);
+	if (_startup.primaryAction() == Delta::StartupState::Action::OpenKnown) {
+		openShell(_startup.knownAccountId);
 		return;
 	}
 	if (setupMutationBlocked()) {

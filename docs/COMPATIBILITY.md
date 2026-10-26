@@ -22,8 +22,12 @@ are not copied here. Deltagram evidence comes from [PROGRESS.md](PROGRESS.md),
 ## Current readiness gates
 
 The source at `450c8de` passes 735 serial focused Qt checks and the offline
-version/release/script regressions, but this does not establish production
-readiness. The native build and disposable replay must cover the integrated
+version/release/script regressions. The newer configured-startup correction
+passes 742 focused checks. Native `2908654` compiles and passes 700 checks;
+its modal group/member inspection and explicit Message routing pass, while the
+third-column Group Info reproduces a metadata-request loop and the group
+encryption body remains unverified. This does not establish production
+readiness. Native compilation and disposable replay must cover the integrated
 group/sidebar/member navigation, profile encryption/name/deletion, archived
 search metadata and Failed/Retry behavior, language restart, and setup recovery
 and avatar ownership. A configured cold-start opening failure is reproduced
