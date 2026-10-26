@@ -58,6 +58,11 @@ struct CoreSessionStartRequest {
 	bool otherAccountOwnsCoreBridge = false;
 };
 
+[[nodiscard]] inline bool AccountBackendAllowsKeyDestruction(
+		AccountBackend backend) {
+	return backend == AccountBackend::Telegram;
+}
+
 [[nodiscard]] inline AccountStartupSessionDecision ResolveAccountStartupSession(
 		AccountBackend backend,
 		bool hasStoredSessionUserId) {

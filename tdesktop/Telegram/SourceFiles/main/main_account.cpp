@@ -307,9 +307,10 @@ QByteArray Account::serializeMtpAuthorization() const {
 			QDataStream stream(&result, QIODevice::WriteOnly);
 			stream.setVersion(QDataStream::Qt_5_1);
 
+			// Unresolved accounts keep the stored self until backend selection.
 			const auto currentUserId = sessionExists()
 				? session().userId()
-				: UserId();
+				: _sessionUserId;
 			stream
 				<< quint64(kWideIdsTag)
 				<< quint64(currentUserId.bare)
@@ -325,9 +326,12 @@ QByteArray Account::serializeMtpAuthorization() const {
 	};
 	if (_mtp) {
 		const auto keys = _mtp->getKeysForWrite();
-		const auto keysToDestroy = _mtpForKeysDestroy
-			? _mtpForKeysDestroy->getKeysForWrite()
-			: MTP::AuthKeysList();
+		auto keysToDestroy = _mtpKeysToDestroy;
+		if (_mtpForKeysDestroy) {
+			const auto running = _mtpForKeysDestroy->getKeysForWrite();
+			keysToDestroy.insert(
+				keysToDestroy.end(), running.begin(), running.end());
+		}
 		return serialize(_mtp->mainDcId(), keys, keysToDestroy);
 	}
 	const auto &keys = _mtpFields.keys;
@@ -489,7 +493,8 @@ void Account::startMtp(std::unique_ptr<MTP::Config> config) {
 		}
 	});
 
-	if (!_mtpKeysToDestroy.empty()) {
+	if (AccountBackendAllowsKeyDestruction(_backend)
+		&& !_mtpKeysToDestroy.empty()) {
 		destroyMtpKeys(base::take(_mtpKeysToDestroy));
 	}
 
@@ -581,6 +586,14 @@ void Account::destroyMtpKeys(MTP::AuthKeysList &&keys) {
 	if (keys.empty()) {
 		return;
 	}
+	if (!AccountBackendAllowsKeyDestruction(_backend)) {
+		// Retain the queue without starting a worker or rewriting authorization.
+		auto pending = std::move(keys);
+		for (auto &key : pending) {
+			_mtpKeysToDestroy.push_back(std::move(key));
+		}
+		return;
+	}
 	if (_mtpForKeysDestroy) {
 		_mtpForKeysDestroy->addKeysForDestroy(std::move(keys));
 		local().writeMtpData();
@@ -622,6 +635,9 @@ void Account::suggestMainDcId(MTP::DcId mainDcId) {
 
 void Account::destroyStaleAuthorizationKeys() {
 	Expects(_mtp != nullptr);
+	if (!AccountBackendAllowsKeyDestruction(_backend)) {
+		return;
+	}
 
 	for (const auto &key : _mtp->getKeysForWrite()) {
 		// Disable this for now.

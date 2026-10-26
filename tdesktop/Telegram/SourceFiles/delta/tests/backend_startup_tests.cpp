@@ -12,6 +12,17 @@ class BackendStartupTests final : public QObject {
 	Q_OBJECT
 
 private slots:
+	void onlyChosenTelegramMayDestroyAuthorizationKeys() {
+		QVERIFY(Main::AccountBackendAllowsKeyDestruction(
+			AccountBackend::Telegram));
+		QVERIFY(!Main::AccountBackendAllowsKeyDestruction(
+			AccountBackend::Core));
+		QVERIFY(!Main::AccountBackendAllowsKeyDestruction(
+			AccountBackend::Unspecified));
+		QVERIFY(!Main::AccountBackendAllowsKeyDestruction(
+			static_cast<AccountBackend>(255)));
+	}
+
 	void unspecifiedSavedSelfNotPublished() {
 		const auto decision = Main::ResolveAccountStartupSession(
 			AccountBackend::Unspecified,

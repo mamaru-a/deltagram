@@ -1,5 +1,22 @@
 # Publication validation
 
+### Held Telegram authorization during unresolved startup — 2026-10-27
+
+Unresolved/Core accounts no longer start queued or stale MTProto key deletion.
+Authorization serialization retains the stored self ID when session publication
+is held, and includes both held and already-running key-deletion queues.
+Explicitly Telegram accounts retain the donor destruction path. The encrypted
+account/auth format is unchanged.
+
+An exact-method recorder reproduces nine failing assertions before the fix and
+passes all 13 afterward under AddressSanitizer and UndefinedBehaviorSanitizer.
+It uses the production authorization serializer, stale-key method and raw key
+writer with synthetic key/account/MTP doubles; no real authorization, crypto
+session or server deletion is used. The backend/store target passes 44 tests
+and startup policy passes 13 as UID/GID 65534, zero failures/skips. The updated
+`main_account.cpp` passes native syntax/type validation. Native corrupted-tag
+restart, encrypted-storage writes and post-selection destruction remain pending.
+
 ### Native syntax checks for account-lifecycle guards — 2026-10-27
 
 The current `main_domain.cpp`, `main_session.cpp` and
