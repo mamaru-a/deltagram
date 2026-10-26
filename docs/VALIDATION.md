@@ -1,5 +1,22 @@
 # Publication validation
 
+### Passcode retention before Core session startup — 2026-10-27
+
+Automatic empty-account passcode cleanup now requires a single, logged-out
+Telegram account. Core containers and unresolved accounts retain their local
+passcode and system-unlock preference while session startup is pending or has
+failed. The zero-account guard remains before the active-account dereference.
+
+The account-policy target passes 19 QtCore tests as UID/GID 65534, zero failures
+or skips. A separate recorder compiles the complete production
+`Domain::removePasscodeIfEmpty` method with account/storage/application doubles:
+the previous method fails ten assertions for unopened Core/unresolved accounts;
+the corrected method passes all 90 assertions under AddressSanitizer and
+UndefinedBehaviorSanitizer. This verifies recorded passcode writes, unlocks,
+preferences and return values across backend/session/count combinations, not
+native encrypted-storage or lock-screen startup. Those native checks remain
+pending.
+
 ### Telegram app-configuration ownership — 2026-10-27
 
 `Session::appConfigRefreshed` now clears Telegram freeze/appeal, premium-purchase

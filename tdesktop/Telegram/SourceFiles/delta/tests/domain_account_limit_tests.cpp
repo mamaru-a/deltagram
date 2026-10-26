@@ -5,6 +5,7 @@
 using Main::AccountBackend;
 using Main::DomainAccountLimitSlot;
 using Main::DomainAccountCanRemoveAsRedundant;
+using Main::DomainAccountCanClearPasscode;
 using Main::DomainAddActivatedReuseCandidate;
 using Main::DomainAccountLimitCountsTelegramPremium;
 using Main::ResolveDomainMaxAccounts;
@@ -243,6 +244,26 @@ private slots:
 			QVERIFY(!DomainAccountCanRemoveAsRedundant(
 				backend, false, true));
 		}
+	}
+
+	void unopenedCoreAndUnresolvedAccountsKeepPasscode() {
+		for (const auto backend : {
+				AccountBackend::Core,
+				AccountBackend::Unspecified }) {
+			QVERIFY(!DomainAccountCanClearPasscode(backend, false, 1));
+			QVERIFY(!DomainAccountCanClearPasscode(backend, true, 1));
+		}
+	}
+
+	void onlyLastLoggedOutTelegramAccountClearsPasscode() {
+		QVERIFY(DomainAccountCanClearPasscode(
+			AccountBackend::Telegram, false, 1));
+		QVERIFY(!DomainAccountCanClearPasscode(
+			AccountBackend::Telegram, true, 1));
+		QVERIFY(!DomainAccountCanClearPasscode(
+			AccountBackend::Telegram, false, 2));
+		QVERIFY(!DomainAccountCanClearPasscode(
+			AccountBackend::Telegram, false, 0));
 	}
 
 };

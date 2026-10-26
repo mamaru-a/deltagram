@@ -73,4 +73,15 @@ struct DomainAccountLimitSlot {
 		&& !separateWindowExists;
 }
 
+[[nodiscard]] inline bool DomainAccountCanClearPasscode(
+		AccountBackend backend,
+		bool sessionExists,
+		int accountCount) {
+	// Only donor Telegram logout proves that the last account became empty.
+	// An unopened Core catalog or unresolved stored account may still own data.
+	return backend == AccountBackend::Telegram
+		&& !sessionExists
+		&& accountCount == 1;
+}
+
 } // namespace Main

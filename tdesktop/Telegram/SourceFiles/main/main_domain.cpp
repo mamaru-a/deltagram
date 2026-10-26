@@ -411,12 +411,12 @@ void Domain::closeAccountWindows(not_null<Main::Account*> account) {
 }
 
 bool Domain::removePasscodeIfEmpty() {
-	if (_accounts.size() != 1 || _active.current()->sessionExists()) {
+	if (_accounts.size() != 1 || !DomainAccountCanClearPasscode(
+			_active.current()->backend(),
+			_active.current()->sessionExists(),
+			int(_accounts.size()))) {
 		return false;
 	}
-	// The donor account is an unauthenticated UI placeholder for Core.
-	// Keep global preferences when it starts or becomes empty; its auth
-	// state does not represent the lifecycle of Core profiles.
 
 	// We completely logged out, remove the passcode if it was there.
 	if (Core::App().passcodeLocked()) {
