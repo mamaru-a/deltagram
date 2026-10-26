@@ -17,6 +17,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "boxes/add_contact_box.h"
 #include "delta/delta_boxes.h"
 #include "delta/delta_bridge.h"
+#include "delta/media_identity.h"
 #include "settings/settings_builder.h"
 #include "boxes/delete_messages_box.h"
 #include "boxes/star_gift_auction_box.h"
@@ -3174,6 +3175,37 @@ void SessionController::showPeerHistory(
 		PeerId peerId,
 		const SectionShow &params,
 		MsgId msgId) {
+	if (Delta::Active() && peerId && peerIsUser(peerId)) {
+		const auto userId = peerToUser(peerId).bare;
+		if (const auto contact = Delta::ContactForPeer(userId)) {
+			const auto generation = Delta::AccountGeneration();
+			const auto copied = *contact;
+			Delta::OpenContact(copied, crl::guard(this, [=](
+					int chatId,
+					QString error) {
+				if (generation != Delta::AccountGeneration()) {
+					return;
+				}
+				if (!error.isEmpty()) {
+					showToast(error);
+					return;
+				}
+				if (!Delta::CoreIdFitsInt(uint64(chatId))) {
+					showToast(u"This conversation could not be opened."_q);
+					return;
+				}
+				content()->showHistory(
+					peerFromUser(UserId(chatId)),
+					params,
+					msgId);
+			}));
+			return;
+		}
+		if (Delta::IsSenderUserId(userId)) {
+			showToast(u"This conversation could not be opened."_q);
+			return;
+		}
+	}
 	if (const auto peer = session().data().peerLoaded(peerId)) {
 		if (const auto channel = peer->asChannel()) {
 			if (channel->isCommunity()) {

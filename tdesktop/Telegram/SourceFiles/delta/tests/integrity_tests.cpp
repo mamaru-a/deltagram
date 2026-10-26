@@ -3178,7 +3178,7 @@ private slots:
 	}
 
 	void senderPeerIdentityDoesNotFitCoreIntIds() {
-		const auto sender = (std::uint64_t(1) << 40) + 12;
+		const auto sender = Delta::kContactUserIdBase + 12;
 		QVERIFY(Delta::CoreIdFitsInt(12));
 		QVERIFY(Delta::CoreIdFitsInt(std::numeric_limits<std::int32_t>::max()));
 		QVERIFY(!Delta::CoreIdFitsInt(0));
@@ -3186,6 +3186,130 @@ private slots:
 			std::uint64_t(std::numeric_limits<std::int32_t>::max()) + 1));
 		QVERIFY(!Delta::CoreIdFitsInt(sender));
 		QCOMPARE(static_cast<std::int32_t>(sender), std::int32_t(12));
+		QVERIFY(Delta::IsSenderUserId(sender));
+		QVERIFY(Delta::IsSenderUserId(Delta::kContactUserIdBase));
+		QVERIFY(!Delta::IsSenderUserId(12));
+		QVERIFY(!Delta::IsSenderUserId(0));
+		QVERIFY(!Delta::IsSenderUserId(Delta::kContactUserIdBase - 1));
+		QVERIFY(Delta::CoreChatUserId(12).has_value());
+		QCOMPARE(*Delta::CoreChatUserId(12), 12);
+		QVERIFY(Delta::CoreChatUserId(
+			std::numeric_limits<std::int32_t>::max()).has_value());
+		QVERIFY(!Delta::CoreChatUserId(sender).has_value());
+		QVERIFY(!Delta::CoreChatUserId(0).has_value());
+		QVERIFY(!Delta::CoreChatUserId(
+			std::uint64_t(std::numeric_limits<std::int32_t>::max()) + 1)
+			.has_value());
+	}
+
+	void coreJsonMarksDeviceTalkFromVerifiedFields() {
+		QVERIFY(Delta::CoreJsonMarksDeviceTalk(
+			QJsonObject{{ u"isDeviceTalk"_s, true }}));
+		QVERIFY(Delta::CoreJsonMarksDeviceTalk(
+			QJsonObject{{ u"isDeviceChat"_s, true }}));
+		QVERIFY(Delta::CoreJsonMarksDeviceTalk(QJsonObject{
+			{ u"isDeviceTalk"_s, false },
+			{ u"isDeviceChat"_s, true },
+		}));
+		QVERIFY(!Delta::CoreJsonMarksDeviceTalk(
+			QJsonObject{{ u"isDeviceTalk"_s, false }}));
+		QVERIFY(!Delta::CoreJsonMarksDeviceTalk(
+			QJsonObject{{ u"isDeviceChat"_s, false }}));
+		QVERIFY(!Delta::CoreJsonMarksDeviceTalk(QJsonObject()));
+		QVERIFY(!Delta::CoreJsonMarksDeviceTalk(
+			QJsonObject{{ u"chatType"_s, u"Single"_s }}));
+		QVERIFY(!Delta::CoreJsonMarksDeviceTalk(
+			QJsonObject{{ u"isDeviceTalk"_s, 1 }}));
+	}
+
+	void coreChatMetadataMatchesIdAndKnownTypes() {
+		const auto matching = QJsonObject{
+			{ u"id"_s, 12 },
+			{ u"chatType"_s, u"Single"_s },
+			{ u"isDeviceTalk"_s, true },
+		};
+		QVERIFY(Delta::CoreJsonIdMatches(matching, 12));
+		QVERIFY(Delta::CoreJsonIdMatches(
+			QJsonObject{{ u"id"_s, std::numeric_limits<std::int32_t>::max() }},
+			std::uint64_t(std::numeric_limits<std::int32_t>::max())));
+		QVERIFY(!Delta::CoreJsonIdMatches(matching, 13));
+		QVERIFY(!Delta::CoreJsonIdMatches(QJsonObject{{ u"id"_s, 0 }}, 0));
+		QVERIFY(!Delta::CoreJsonIdMatches(QJsonObject{{ u"id"_s, -1 }}, 12));
+		QVERIFY(!Delta::CoreJsonIdMatches(QJsonObject{{ u"id"_s, 12.5 }}, 12));
+		QVERIFY(!Delta::CoreJsonIdMatches(QJsonObject{{ u"id"_s, u"12"_s }}, 12));
+		QVERIFY(!Delta::CoreJsonIdMatches(QJsonObject(), 12));
+		QVERIFY(!Delta::CoreJsonIdMatches(matching, 0));
+		QVERIFY(!Delta::CoreJsonIdMatches(
+			matching, Delta::kContactUserIdBase + 12));
+		const auto known = [](const QString &name) {
+			return Delta::CoreJsonKnownChatType(QJsonValue(name));
+		};
+		QVERIFY(known(u"Single"_s) == Delta::CoreChatType::Single);
+		QVERIFY(known(u"Group"_s) == Delta::CoreChatType::Group);
+		QVERIFY(known(u"Mailinglist"_s) == Delta::CoreChatType::Mailinglist);
+		QVERIFY(known(u"OutBroadcast"_s) == Delta::CoreChatType::OutBroadcast);
+		QVERIFY(known(u"InBroadcast"_s) == Delta::CoreChatType::InBroadcast);
+		QVERIFY(!Delta::CoreJsonKnownChatType(QJsonValue()).has_value());
+		QVERIFY(!Delta::CoreJsonKnownChatType(QJsonValue(u"single"_s)).has_value());
+		QVERIFY(!Delta::CoreJsonKnownChatType(QJsonValue(u"Foo"_s)).has_value());
+		QVERIFY(!Delta::CoreJsonKnownChatType(QJsonValue(QString())).has_value());
+		QVERIFY(!Delta::CoreJsonKnownChatType(QJsonValue(1)).has_value());
+		QVERIFY(!Delta::CoreJsonKnownChatType(QJsonValue(true)).has_value());
+		const auto single = Delta::CoreChatMembershipFromJson(matching, 12);
+		QVERIFY(single.has_value());
+		QVERIFY(single->direct.has_value());
+		QVERIFY(single->group.has_value());
+		QCOMPARE(*single->direct, true);
+		QCOMPARE(*single->group, false);
+		QVERIFY(single->deviceTalk);
+		const auto group = Delta::CoreChatMembershipFromJson(
+			QJsonObject{
+				{ u"id"_s, 12 },
+				{ u"chatType"_s, u"Group"_s },
+				{ u"isDeviceChat"_s, false },
+			},
+			12);
+		QVERIFY(group.has_value());
+		QVERIFY(group->direct.has_value());
+		QVERIFY(group->group.has_value());
+		QCOMPARE(*group->direct, false);
+		QCOMPARE(*group->group, true);
+		QVERIFY(!group->deviceTalk);
+		for (const auto &name : { u"Mailinglist"_s, u"OutBroadcast"_s,
+				u"InBroadcast"_s }) {
+			const auto other = Delta::CoreChatMembershipFromJson(
+				QJsonObject{{ u"id"_s, 12 }, { u"chatType"_s, name }}, 12);
+			QVERIFY(other.has_value());
+			QVERIFY(other->direct.has_value());
+			QVERIFY(other->group.has_value());
+			QCOMPARE(*other->direct, false);
+			QCOMPARE(*other->group, false);
+			QVERIFY(!other->deviceTalk);
+		}
+		const auto unknown = Delta::CoreChatMembershipFromJson(
+			QJsonObject{
+				{ u"id"_s, 12 },
+				{ u"chatType"_s, u"Foo"_s },
+				{ u"isDeviceChat"_s, true },
+			},
+			12);
+		QVERIFY(unknown.has_value());
+		QVERIFY(!unknown->direct.has_value());
+		QVERIFY(!unknown->group.has_value());
+		QVERIFY(unknown->deviceTalk);
+		const auto absent = Delta::CoreChatMembershipFromJson(
+			QJsonObject{{ u"id"_s, 12 }}, 12);
+		QVERIFY(absent.has_value());
+		QVERIFY(!absent->direct.has_value());
+		QVERIFY(!absent->group.has_value());
+		QVERIFY(!absent->deviceTalk);
+		QVERIFY(!Delta::CoreChatMembershipFromJson(matching, 13).has_value());
+		QVERIFY(!Delta::CoreChatMembershipFromJson(
+			QJsonObject{
+				{ u"chatType"_s, u"Single"_s },
+				{ u"isDeviceTalk"_s, true },
+			},
+			12).has_value());
 	}
 
 	void realCoreHistoryDeletion() {

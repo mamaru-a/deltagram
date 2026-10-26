@@ -89,7 +89,6 @@ public:
 namespace {
 
 constexpr auto kSelfUserId = 1'000'000;
-constexpr auto kContactUserIdBase = uint64(1) << 40;
 [[nodiscard]] qint64 MessageMediaId(int messageId);
 
 [[nodiscard]] bool HasError(const QJsonObject &reply) {
@@ -747,9 +746,9 @@ private:
 	} else if (type == mtpc_inputPeerUser) {
 		const auto id = reader.i64();
 		reader.i64();
-		return int(id);
+		return CoreChatUserId(uint64(id)).value_or(0);
 	} else if (type == mtpc_inputPeerChat) {
-		return int(reader.i64());
+		return CoreChatUserId(uint64(reader.i64())).value_or(0);
 	}
 	return 0;
 }
@@ -759,6 +758,32 @@ Bridge *GlobalBridge = nullptr;
 QString GlobalSelfAddress;
 QColor GlobalSelfAvatarColor;
 QSet<uint64> GlobalSystemUsers;
+
+bool RememberCoreChat(uint64 userId, const QJsonObject &json) {
+	const auto membership = CoreChatMembershipFromJson(json, userId);
+	if (!membership) {
+		return false;
+	}
+	if (const auto direct = membership->direct) {
+		if (*direct) {
+			DirectChats.insert(userId);
+		} else {
+			DirectChats.remove(userId);
+		}
+	}
+	if (const auto group = membership->group) {
+		if (*group) {
+			GroupChats.insert(userId);
+		} else {
+			GroupChats.remove(userId);
+		}
+	}
+	if (membership->deviceTalk && !GlobalSystemUsers.contains(userId)) {
+		GlobalSystemUsers.insert(userId);
+		ComposerRevision = ComposerRevision.current() + 1;
+	}
+	return true;
+}
 
 class Bridge final {
 public:
@@ -2482,9 +2507,12 @@ public:
 			}
 			const auto result = reply.value(u"result"_q);
 			if (method == u"get_full_chat_by_id"_q) {
-				ChannelInfos.insert(userId, result.toObject());
-				ChannelRevision = ChannelRevision.current() + 1;
-				_session->changes().peerUpdated(_session->data().user(UserId(userId)), Data::PeerUpdate::Flag::OnlineStatus);
+				const auto object = result.toObject();
+				if (RememberCoreChat(uint64(chatForPeerUser(userId)), object)) {
+					ChannelInfos.insert(userId, object);
+					ChannelRevision = ChannelRevision.current() + 1;
+					_session->changes().peerUpdated(_session->data().user(UserId(userId)), Data::PeerUpdate::Flag::OnlineStatus);
+				}
 			} else if (!method.startsWith(u"get_"_q)) {
 				_reload.start();
 			}
@@ -2923,7 +2951,8 @@ private:
 		const auto chatId = chatForPeerUser(userId);
 		const auto guard = _alive;
 		const auto epoch = _dialogsEpoch;
-		call(
+		const auto loadIds = [=] {
+			call(
 			u"get_message_ids"_q,
 			{ _accountId, chatId, false, false },
 			[=](QJsonObject reply) {
@@ -3007,6 +3036,32 @@ private:
 							}
 						});
 				}
+			});
+		};
+		call(
+			u"get_basic_chat_info"_q,
+			{ _accountId, chatId },
+			[=](QJsonObject info) {
+				if (guard.expired()) {
+					return;
+				}
+				if (epoch != _dialogsEpoch) {
+					return fail(instance, requestId, u"DELTA_ACCOUNT_CHANGED"_q);
+				}
+				if (!HasError(info)) {
+					const auto json = info.value(u"result"_q).toObject();
+					if (RememberCoreChat(uint64(chatId), json)) {
+						if (const auto peer = _session->data().peerLoaded(
+								peerFromUser(UserId(userId)))) {
+							_session->changes().peerUpdated(
+								peer,
+								Data::PeerUpdate::Flag::Rights
+									| Data::PeerUpdate::Flag::OnlineStatus
+									| Data::PeerUpdate::Flag::FullInfo);
+						}
+					}
+				}
+				loadIds();
 			});
 	}
 
@@ -3388,10 +3443,7 @@ private:
 			entry.avatar = item.value(u"avatarPath"_q).toString();
 			entry.contactId = item.value(u"dmChatContact"_q).toInt();
 			const auto type = item.value(u"chatType"_q).toString();
-			if (type == u"Single"_q) DirectChats.insert(entry.chatId);
-			else DirectChats.remove(entry.chatId);
-			if (type == u"Group"_q) GroupChats.insert(entry.chatId);
-			else GroupChats.remove(entry.chatId);
+			RememberCoreChat(uint64(entry.chatId), item);
 			entry.channel = (type == u"OutBroadcast"_q || type == u"InBroadcast"_q);
 			if (entry.channel) {
 				auto &info = ChannelInfos[entry.chatId];
@@ -3400,9 +3452,6 @@ private:
 			}
 			if (entry.selfTalk) {
 				_selfChat = entry.chatId;
-			}
-			if (item.value(u"isDeviceTalk"_q).toBool()) {
-				GlobalSystemUsers.insert(entry.chatId);
 			}
 			_names.insert(entry.chatId, entry.name);
 			_avatars.insert(entry.chatId, entry.avatar);
