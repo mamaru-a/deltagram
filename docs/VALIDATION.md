@@ -264,6 +264,29 @@ not compile the complete settings translation unit or later UI objects; a new
 native run must prove those. No release cache or Ninja record was removed, and
 no additional heavy local build was started.
 
+The corrected `14878ed` native run
+[`40293239947`](https://github.com/omidz4t/deltagram/actions/runs/40293239947)
+passes the complete GUI compilation plus 305 integrity and 82 request-action
+checks, with no failures or skips. All five validation payload checksums pass.
+Provenance matches head `14878ed`, merge checkout `2c067bf`, base `b713bff` and
+GitHub's merge parents. The downloaded GUI reports 0.2.1. This proves the newer
+settings, permission, request UI and language code compile; it predates the
+subsequent contact-open correction.
+
+### Native permission refusal — 2026-10-26
+
+On the verified `14878ed` GUI, Device messages displays Mute without a composer
+or request actions. For an ordinary sendable chat, a fault-injected FullChat
+claims `canSend:true` for a different ID. The composer retains its original
+draft, but Send displays the availability-unknown error, performs a fresh
+metadata read and makes no `send_msg`/`misc_send_draft` call. Core readback
+confirms both profile drafts and prior message IDs are unchanged. The fault is
+cleared afterward. Evidence is
+`/tmp/deltagram-live/request-fixture/native-wrong-permission-evidence.json`;
+captures `/tmp/14878-device-chat.png` and
+`/tmp/14878-wrong-permission-refused.png` show the rendered results. This does
+not cover every attachment/notification send surface or archived-device timing.
+
 ### Additional settings audit and baseline — 2026-10-26
 
 Read-only source review found more CodeBlocks that bypass section availability,
@@ -460,6 +483,41 @@ harness does not compile the full Bridge or native widgets. The source audit
 again checked 13,228 files with zero blocking findings. Native CMake already
 regenerates language code when `lang.strings` changes; new named strings await
 that native build and rendered replay.
+
+The verified `14878ed` GUI now renders the Single Accept/Block and Group
+Accept/Delete overlays on real disposable incoming requests, without a composer.
+Opening a request performs no accept, block, create-chat or send mutation.
+Rejected Accept leaves the request intact. Two clicks with a delayed Single
+Accept acknowledgement produce one `accept_chat` call; the accepted chat shows
+its composer. A Group Accept with a lost acknowledgement also makes one write,
+then reconciles by readback without retry. Core events can expose the accepted
+composer before the delayed mutation acknowledgement returns.
+
+Single decline rejection preserves the request and displays an error. A later
+lost-ack decline issues one `block_chat`, confirms contact blocking by readback,
+hides the conversation and unselects it. Group Delete shows the conversation
+name and explains that members are not blocked. Cancel makes no mutation;
+rejection preserves the request. Confirmed deletion without injected failure
+issues one `block_chat`, removes the conversation from Core's list and the
+settled GUI, and unselects it. The group sender remains unblocked. The read-only
+checker records unreadability/list absence separately from acknowledgement;
+a generic FullChat error is not treated as proof of a successful lost-ack
+group deletion.
+
+Every action preserves prior direct-chat history, both profile drafts and the
+other fixtures' then-current states. Evidence is in
+`/tmp/deltagram-live/request-fixture/native-*-action-evidence.json`, with
+`native-request-inspection-evidence.json` and `native-group-cancel-evidence.json`.
+Private captures `/tmp/14878-request-*.png` and `/tmp/14878-decline-*.png` in the
+test container show the rendered controls, confirmation and rejection. These
+cases do not cover mailing lists, broadcasts or the newer contact-open helper.
+
+After a normal quit/restart, one GUI/proxy/Core chain is running and the recorded
+state matches: chats `14`/`15` stay accepted and sendable, Single `17` stays
+blocked/hidden, and Group `16` stays unreadable/unlisted. The original group's
+members/history and both profile drafts remain intact. Fault policy is cleared.
+The comparison is recorded in `native-request-actions-before-restart.json` and
+`native-request-actions-after-restart.json` in the same private fixture directory.
 
 ### Opening an existing contact request — 2026-10-26
 
