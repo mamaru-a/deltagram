@@ -634,6 +634,39 @@ are under source correction. Evidence and the stopped isolated GUI profile are
 under `/tmp/deltagram-live/backup-gui-fixture/`, separate from the four main
 disposable profiles.
 
+The source correction shares an exclusive setup lease per RPC/account across
+onboarding windows and uses it for create, import, invitation, classic-relay and
+second-device setup. Submitted writes retain ownership through their terminal
+callback, including live-widget teardown. Results capture the submitted account
+ID. A typed import/copy acknowledgement completes setup; an error reads
+`is_configured` once: configured permits opening only, fresh permits a later
+explicit retry on that same ID, and unreadable state blocks new mutation.
+Completed setup exposes Open Profile after an opening failure, rather than
+importing or provisioning again. Progress rendering uses the same held-lease
+state and exact event context ID, so late/completed or foreign-account progress
+cannot overwrite terminal status. Plain import still passes a null passphrase;
+passphrase-protected GUI restore remains unsupported, as in the pinned reference
+onboarding.
+
+The actual new QtCore target passes **27 checks**, and all nine focused suites
+pass **727 checks**, zero failures/skips, serially. All 41 tested helper/source
+files match the checkout. The source audit checks 13,243 files with zero blocking
+findings; whitespace checks pass. The first header/test compile caught a Qt
+`slots` macro collision; the production member is now named `entries`, without
+changing test-target keyword settings.
+
+An additional driver connects the production setup helper and `DeltaRpc` to the
+actual pinned Core in temporary accounts. Normal import preserves the saved
+draft. Replacing a committed import acknowledgement with an error yields Open
+Only after exactly one import and one configured-state read, without claiming
+verified restoration or retrying the import. Invalid import leaves the account
+fresh, and a later explicit valid import into that same ID succeeds. Completed
+setup refuses another import/create lease. No mail IO starts. Private results are
+`/tmp/profile-setup-final-core-result.json` and
+`/tmp/profile-setup-final-tests.log`. These helper/Core checks do not prove the
+QtWidgets lock, rendered Open Profile action, or native failed-open recovery;
+that replay and compilation of the new onboarding UI remain required.
+
 ### Archived device history from search — 2026-10-26
 
 On the verified `4b5e093` binary, the disposable device chat `3:11` was archived

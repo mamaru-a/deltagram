@@ -3,6 +3,7 @@ This file is part of Delta Tel, a Telegram Desktop based Delta Chat client.
 */
 #pragma once
 
+#include "delta/account_inventory.h"
 #include "delta/delta_rpc.h"
 #include "base/object_ptr.h"
 #include "base/unique_qptr.h"
@@ -31,6 +32,12 @@ class PopupMenu;
 class RoundButton;
 class UserpicButton;
 } // namespace Ui
+
+namespace Delta {
+struct ProfileSetupTable;
+struct ProfileSetupLease;
+struct ProfileSetupResult;
+} // namespace Delta
 
 class DeltaOnboarding final : public Ui::RpWidget {
 public:
@@ -78,7 +85,12 @@ private:
 	void chooseDataFolder();
 	void createProfile();
 	void setCreatingProfile(bool creating);
-	void finishSetup(const QString &text);
+	void updateSetupLock();
+	void lockSetup();
+	void unlockSetup();
+	void applySetupResult(
+		const Delta::ProfileSetupResult &result,
+		const QString &successText);
 	void openShell(int accountId);
 	void chooseBackup();
 	void askSecondDevice();
@@ -90,6 +102,9 @@ private:
 		const QString &method,
 		const QJsonArray &params,
 		DeltaRpc::Callback done);
+	[[nodiscard]] bool setupBusy() const;
+	[[nodiscard]] bool setupMutationBlocked() const;
+	[[nodiscard]] Delta::AccountInventoryRequest mutationRequest() const;
 	[[nodiscard]] QString saveAvatar() const;
 
 	const not_null<Window::Controller*> _controller;
@@ -103,6 +118,9 @@ private:
 	bool _accountReady = false;
 	bool _preparingAccount = false;
 	bool _creatingProfile = false;
+	std::shared_ptr<Delta::ProfileSetupTable> _setupTable;
+	std::shared_ptr<Delta::ProfileSetupLease> _setupLease;
+	int _completedAccountId = 0;
 	QList<DeltaRpc::Callback> _accountReadyCallbacks;
 	bool _teamProfile = false;
 	bool _pumping = false;
@@ -122,4 +140,5 @@ private:
 	object_ptr<Ui::InputField> _name = { nullptr };
 	base::unique_qptr<Ui::PopupMenu> _menu;
 	bool _handedOver = false;
+
 };
