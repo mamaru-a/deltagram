@@ -496,6 +496,21 @@ This validates the populated Images/Clear all path on that revision. Selective
 clearing, other populated cache tags, slider enforcement and the new rendered
 wording remain separate gates.
 
+[Native validation at `a64895c`](https://github.com/omidz4t/deltagram/actions/runs/40306519833)
+passes compilation and all **451 checks**, without failures or skips. Its five
+payload hashes and provenance match head `a64895c`, merge checkout `cb8cb904`,
+base `b713bff` and GitHub merge parents. After a stopped-state checkpoint,
+the verified GUI renders all four new Core strings: “This cache uses <0.1% of
+your device storage,” original-message-file retention text, “App cache” in the
+usage tooltip, and the limits explanation referring to unused cache files.
+The URI opens in the existing GUI process, with one GUI/proxy/Core owner.
+No clearing or slider change is performed during this copy replay. Original
+drafts/history, recorded request-action states, the pending alternate Single
+request and restored device visibility remain intact. Captures are
+`/tmp/a648-storage-{copy,tooltip,limits}.png`; the settings URI/PID record is
+`settings-fixture/native-a648-storage-copy.json`. Selective clearing and actual
+limit enforcement remain unverified. This binary predates the notification fix.
+
 ### Core send-permission boundary — 2026-10-26
 
 `22bfd8f` adds an account/chat-scoped FullChat permission observer and gates the
