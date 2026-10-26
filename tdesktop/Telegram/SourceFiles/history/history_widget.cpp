@@ -7426,10 +7426,11 @@ void HistoryWidget::updateSendButtonType() {
 	const auto sendKnown = (sendOwns && _peer)
 		? Delta::ComposerSendKnown(sendUserId)
 		: std::optional<bool>();
-	_send->setDisabled((Delta::UsesCoreBackend(&session()) && _peer
+	const auto disabledByCore = Delta::UsesCoreBackend(&session()) && _peer
 		&& (!sendOwns
 			|| !Delta::ComposerWritable(sendUserId)
-			|| (sendKnown.has_value() && !*sendKnown))) || (disabledBySlowmode)
+			|| (sendKnown.has_value() && !*sendKnown));
+	_send->setDisabled(disabledByCore || (disabledBySlowmode
 		&& (type == Type::Send
 			|| type == Type::Record
 			|| type == Type::Round)));

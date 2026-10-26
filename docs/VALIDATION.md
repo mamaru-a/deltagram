@@ -30,6 +30,14 @@ handler, the Domain header and public session accessors. No menu interactions,
 conference calls, native language switching or badge behavior are established
 by compilation alone.
 
+History/composer, dialog search, message/reply/element rendering and data-session
+sources also pass, bringing this focused set to 28 files. Initial checks found
+an unmatched parenthesis in the send-button disable expression and a captured
+controller pointer called as a function in the QR callback. The Core readiness
+condition is now a named boolean combined with the existing slow-mode rule;
+the QR callback passes its captured controller directly. These checks do not
+prove sending, search behavior, author painting or mixed-ID isolation at runtime.
+
 ### Passcode retention before Core session startup — 2026-10-27
 
 Automatic empty-account passcode cleanup now requires a single, logged-out

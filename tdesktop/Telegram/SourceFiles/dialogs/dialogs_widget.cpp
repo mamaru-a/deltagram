@@ -630,7 +630,7 @@ Widget::Widget(
 	_qrButton->setClickedCallback([=] {
 		if (Delta::UsesCoreBackend(&session())
 			&& Delta::OwnsSession(&session())) {
-			Delta::ShowInviteQr(controller());
+			Delta::ShowInviteQr(controller);
 		}
 	});
 	_search->changes(
