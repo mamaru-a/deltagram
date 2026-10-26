@@ -1,5 +1,43 @@
 # Publication validation
 
+### Native startup and group-sidebar corrections — 2026-10-26
+
+[Native `a19d9e2`](https://github.com/omidz4t/deltagram/actions/runs/40354448605)
+compiles and passes **742 checks**, zero failures/skips. All five artifact
+hashes match. Provenance identifies merge
+`cbbfc2ec5a36fdbe5f5779f58a471f4451b18e43`, head
+`a19d9e2973847d27dd02b649bca2f16b4a663719`, and base
+`b713bff697ad3450bf842da5f24f83b64a9d68e6`; independently read merge parents
+match. It includes startup and sidebar corrections, but predates the newer
+encryption dialog and onboarding layout.
+
+Cold-start replay uses the single configured disposable restore destination.
+With discovery delayed eight seconds, early Next/Enter/Space remain in Loading.
+A rejected selected-account read shows Retry without selecting/opening or
+allocating a profile. Clearing that rejection and retrying reaches Open Profile
+after deliberately rejected opening. Unfocused Enter and Space each retry
+selection/opening. The destination remains the single configured selected ID 1,
+its backup draft survives, and the audit contains zero add/import/configure
+writes. Mail IO is rejected before dispatch. Private evidence is under
+`/tmp/deltagram-live/backup-lock-122/startup-a19/`. Multi-account malformed
+selection and post-setup Profile-page keyboard cases remain separate gates.
+
+The original encrypted group's sidebar now settles with its correct name and
+two members: two FullChat reads over 10.56 seconds, compared with 3,813 on the
+older binary. Closing produces zero reads during a three-second idle window;
+reopening produces two in ten seconds. Switching to another group updates the
+name/member list with three reads in ten seconds. Resizing from 1112 to 820 and
+back restores Group Info with two reads and no Loading loop. The initial-open
+audit contains no create/accept/block/send/config writes. Original profiles' drafts, history/request
+state and normal device visibility still match their baselines. Fault policy
+is restored. Private evidence is `/tmp/deltagram-live/native-a19-sidebar/`.
+
+Source `6abce56` moves onboarding description copy below the avatar, caps the
+title beside the photo and stacks the name/status/buttons below growing copy.
+Available title width uses logical coordinates in RTL. Source audit has zero
+blocking findings and whitespace checks pass. Native compilation and center-click,
+compact/team/RTL layout replay remain required for this newer source.
+
 ### Native initial search error and stale-query cancellation — 2026-10-26
 
 Verified `122a3ec` shows Failed / Retry when `search_messages` is rejected,

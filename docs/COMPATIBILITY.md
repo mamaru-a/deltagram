@@ -21,26 +21,22 @@ are not copied here. Deltagram evidence comes from [PROGRESS.md](PROGRESS.md),
 
 ## Current readiness gates
 
-The source at `450c8de` passes 735 serial focused Qt checks and the offline
-version/release/script regressions. The newer configured-startup correction
-passes 742 focused checks; the subsequent encryption parser/presentation slice
-passes 751 helper checks and still needs native UI replay. Native `122a3ec`
-compiles and passes 735 checks; isolated plain restore, same-ID retry-open,
-restored-photo rendering and bidirectional delivery pass. Native `2908654`
-compiles and passes 700 checks; its local-language/English restart round trip,
-profile name/deletion, archived-search metadata failure/retry, modal group/member
-inspection and explicit Message routing pass, while the
-third-column Group Info reproduces a metadata-request loop and the group
-encryption body remains unverified. This does not establish production
-readiness. Native compilation and disposable replay must cover the integrated
-group/sidebar navigation, complete encryption presentation, broader search
-failure/cancellation, cross-window setup locking/teardown and native avatar
-layout/teardown. Native `122a3ec` checks initial search failure/retry and
-stale-query error suppression, plus normal avatar staging retention, Core copy
-and cleanup; it also reproduces the description covering the avatar button.
-A configured cold-start opening failure is reproduced
-on the verified older GUI and is under correction separately from post-import
-recovery. Existing profile data remains preserved in those checks.
+The latest helper suites pass 751 serial focused checks. Verified native
+`a19d9e2` compiles and passes 742 checks; cold-start Loading/Retry/Open Profile
+recovery and group-sidebar open/reopen/switch/resize pass. The previous sidebar
+metadata storm does not recur. Newer encryption-dialog and onboarding-layout
+changes still need native compilation/replay. The latter fixes the reproduced
+description covering the avatar button and preserves logical RTL coordinates.
+
+Native `122a3ec` passes plain restore with preserved draft/photo, retry-open and
+bidirectional delivery, timed in-flight action protection, normal avatar staging
+ownership/cleanup, initial search error/retry and stale-query error suppression.
+Native `2908654` passes language restart, profile name/deletion, archived-search
+metadata failure/retry and modal group/member inspection/Message routing.
+Original profile data remains preserved. Production readiness still requires
+complete encryption and onboarding layout replay, broader search and startup
+failure/cancellation, cross-window setup locking/teardown, remaining compatibility
+cases and final package validation.
 
 PR builds compile and smoke-test; they do not execute the workflow's optional
 package-verification step. After the final source is fixed and built, one
@@ -76,7 +72,7 @@ unverified feature areas below remain open independently of those build gates.
 | Voice messages | 🟡 Partial | Native waveform, duration, play/pause and seeking are implemented. Ordinary GUI recording on `49454ee` passed preview, rejected storage, explicit retry, restart, quoted delivery and byte-identical playback in official Desktop 2.62.0 using isolated virtual audio. Both clients displayed the 21-second duration. Quoted voice-plus-forwarding also passes rejected-send/restart/delivery and reference playback on `5182d5e`. Physical audio devices and round-video capture remain unverified. |
 | Multiple profiles | 🟡 Partial | Switching clears reused histories, drafts, pending messages and attachment caches. Core draft storage and asynchronous callbacks are scoped to the account. `3c2def3` passed distinct drafts, red/blue images, two-/four-second voice clips, and playback/search reset across overlapping message IDs. |
 | Profile and group photos | 🟡 Partial | Settings image selection/crop/save and account avatar colors checked locally with Core; group checks recorded. Complete camera workflows and live photo distribution need checking. |
-| Onboarding and relay settings | 🟡 Partial | Fresh GUI creation, repeated-submit protection, fail-closed discovery, QR-image join and live exchange passed on `3c2def3`. Native `122a3ec` passes isolated plain backup restore, preserved draft/photo, same-ID retry after opening failure and bidirectional delivery. Timed Create/alternate/Escape attempts during a held import issue no second setup operation. Cross-window contention/teardown, protected-backup GUI support and newer cold-start recovery remain unverified. |
+| Onboarding and relay settings | 🟡 Partial | Fresh GUI creation, repeated-submit protection, fail-closed discovery, QR-image join and live exchange passed on `3c2def3`. Native `122a3ec` passes plain restore, preserved draft/photo, retry-open and bidirectional delivery; timed actions during held import issue no duplicate setup operation. Native `a19d9e2` passes delayed discovery, selection-error Retry and opening-error Open Profile without allocating a profile. Cross-window contention/teardown, broader startup cases, new avatar layout and protected-backup GUI support remain open. |
 | Invite QR scanning | 🟡 Partial | Camera capture, QR image files and clipboard screenshots feed Core invites for an explicit Join. Image decoding is checked locally; physical camera capture needs hardware validation. |
 | Second-device setup | 🟡 Partial | Full transfer, restored image bytes and bidirectional synchronization passed on `27656b4` against official Desktop 2.62.0. Early/ready cancellation, duplicate starts and a profile switch during preparation passed. Camera/mobile receive paths remain unverified. |
 | Contact status and biographies | 🟡 Partial | Available Core contact status displayed; imported vCard biographies are unsupported by the current Core snapshot. |
@@ -99,7 +95,7 @@ They are **unverified**, rather than assumed to work because the donor UI has th
 | --- | --- | --- |
 | Media browser | 🟡 Partial | `cacc5ce` passes a real partial-photo placeholder upgrade, two-photo previous/next, Go To Message, and the Photos grid. Rejected viewer deletion preserves the photo; a new confirmed deletion removes only that fixture from history/grid and preserves unrelated data. Combined media types and final-head replay remain unverified. |
 | Chat management | ❓ Unverified | Clear history rejection/success and date-range deletion have targeted GUI checks; bulk read state and last-read positioning still need coverage. |
-| Member profiles | 🟡 Partial | `4b5e093` reproduces a group header opening donor contact controls without members. Native `2908654` passes modal group information, the correct member list, inspection without mutation, and explicit Message to the correct existing chat with its original draft. Third-column Group Info reproduces a metadata feedback loop and is under correction; resize/restore replay remains pending. |
+| Member profiles | 🟡 Partial | Native `2908654` passes modal group information, the correct member list, inspection without mutation, and explicit Message to the correct existing chat with its original draft. Native `a19d9e2` passes sidebar open/reopen, group switch and narrow/wide resize restore without the former metadata loop. Broader member-management behavior remains partial. |
 | Attachments | 🟡 Partial | Ordinary single-file recovery, prepared/resized/rotated image delivery, uncompressed bytes, private staging cleanup and generated archives have revision-specific checks below. Prepared-image restart/retry passes with an older quote after the Core lookup fix. Multiple-file/video paths and broader prepared-media recovery remain open. |
 | Notifications | 🟡 Partial | `94ad667` passes native/package checks and 211 focused checks. Disposable replay verifies inactive-profile delivery/counts, collapsed and sidebar badges, mute persistence/suppression, and rejection of stale notification actions across switches/restarts; valid activation/read actions work. A new Core mute read fixes the reproduced post-expiry notification loss; rejected reads preserve messages without popups, and late reads cannot notify another profile. Native/package validation at `a6d878d` passes 226 checks. Disposable inline-reply recovery covers rejected sends, lost send/storage acknowledgements, restart, exact text recovery and composer preservation against official Desktop 2.62.0. `148156d` fixes the reproduced 15 ms popup loss during dialog refresh and passes native/package checks plus fault-free inline delivery, notification cleanup, draft preservation and muted suppression. `d428416` passes native/package checks, rendered notification/settings-search cleanup and direct-to-Core inline delivery, restart and draft-preservation replay. Unsupported notification defaults and subscription search entries are removed. Idle expiry, inactive-profile popups and desktop-shell rendering remain open. |
 | Accessibility and localization | ❓ Unverified | Screen readers, keyboard navigation and RTL layouts. |
