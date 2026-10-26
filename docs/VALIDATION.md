@@ -314,7 +314,14 @@ A small Qt harness compiled the current Linux translation provider source with
 local platform stubs and a disposable Crow executable. Normal output completed
 once with translated text; forcing process-start failure completed zero times.
 This reproduces the missing `FailedToStart` completion without a mailbox or
-full native build. The fix and its follow-up checks remain pending.
+full native build. The final source correction then passed six isolated harness
+cases: normal output, forced start failure, nonzero exit with output, crash,
+missing executable, and provider destruction from its completion callback.
+Each completed once; only the two successful-output cases returned text. A
+seventh case destroys the provider before process completion and confirms no
+callback is delivered after teardown. The
+harness uses the actual provider source with local platform stubs, so full native
+compilation and real Crow integration remain separate gates.
 
 ### Contact-request action gap — 2026-10-26
 
@@ -344,6 +351,15 @@ message IDs, both composer drafts and the selected profile are unchanged.
 Private fixture evidence is `/tmp/deltagram-live/request-fixture/ready.json` in
 the test container. These fixtures prepare native action replay; Core delivery
 alone does not validate the missing UI.
+
+Opening each fixture on the checksum-verified `44a91b5` GUI renders its history
+and a composer, with no Accept or Block/Delete controls. No text was entered or
+sent. Returning to the original direct conversation and reading Core again
+confirms both requests remain requests with `canSend: false`, no request draft
+was created, and the original drafts/history are unchanged. Private rendered
+captures are `/tmp/request-single-baseline-44a.png` and
+`/tmp/request-group-baseline-44a.png`; readback is
+`/tmp/deltagram-live/request-fixture/baseline-gui-inspection.json` in the container.
 
 ### Sender and chat identity lookups — 2026-10-26
 
