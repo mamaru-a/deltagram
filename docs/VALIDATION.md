@@ -1,5 +1,19 @@
 # Publication validation
 
+### Blocked-contacts settings ownership — 2026-10-27
+
+The Core blocked-contacts section now includes its bridge declarations and
+checks session ownership before loading contacts. Replies and unblock buttons
+retain the originating account guard, generation and refresh revision. Profile
+reset clears rendered contacts without fetching through the old account during
+the reset callback. Non-owning refresh shows an unavailable state with no list
+request. Native profile-switch/unblock replay remains pending.
+
+Ten additional settings sections pass native syntax/type validation, including
+the corrected blocked-contacts file, premium, business, active sessions, search,
+notifications, storage, advanced and chat settings. The focused native set is
+now 52 distinct source files. This does not establish GUI or service behavior.
+
 ### Held Telegram authorization during unresolved startup — 2026-10-27
 
 Unresolved/Core accounts no longer start queued or stale MTProto key deletion.

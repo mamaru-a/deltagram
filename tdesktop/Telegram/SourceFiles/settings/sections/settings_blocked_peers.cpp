@@ -9,6 +9,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "settings/settings_common_session.h"
 #include "delta/account_backend.h"
+#include "delta/delta_bridge.h"
 #include "delta/delta_boxes.h"
 
 #include "api/api_blocked_peers.h"
@@ -89,7 +90,16 @@ Blocked::Blocked(
 , _container(Ui::CreateChild<Ui::VerticalLayout>(this)) {
 
 	setupContent();
-	if (Delta::UsesCoreBackend(&controller->session())) return;
+	if (Delta::UsesCoreBackend(&controller->session())) {
+		Delta::AccountViewResets() | rpl::on_next([=](int) {
+			++_coreRevision;
+			_container->clear();
+			_container->add(object_ptr<Ui::FlatLabel>(_container,
+				u"Profile changed. Refresh to load blocked contacts."_q,
+				st::aboutLabel), st::boxRowPadding);
+		}, lifetime());
+		return;
+	}
 
 	{
 		auto padding = st::changePhoneIconPadding;
@@ -328,10 +338,24 @@ void Blocked::setupContent() {
 void Blocked::refreshCore() {
 	const auto revision = ++_coreRevision;
 	_container->clear();
+	const auto session = &controller()->session();
+	if (!Delta::OwnsSession(session)) {
+		_container->add(object_ptr<Ui::FlatLabel>(_container,
+			u"Blocked contacts are not available."_q,
+			st::aboutLabel), st::boxRowPadding);
+		return;
+	}
+	const auto current = Delta::CaptureAccountGuard();
+	const auto generation = Delta::AccountGeneration();
 	_container->add(object_ptr<Ui::FlatLabel>(_container,
 		u"Loading blocked contacts…"_q, st::aboutLabel), st::boxRowPadding);
 	Delta::ListBlockedContacts(crl::guard(this, [=](std::vector<Delta::BlockedContact> contacts, QString error) {
-		if (revision != _coreRevision) return;
+		if (revision != _coreRevision
+			|| (current && !current())
+			|| generation != Delta::AccountGeneration()
+			|| !Delta::OwnsSession(session)) {
+			return;
+		}
 		_container->clear();
 		if (!error.isEmpty() || contacts.empty()) {
 			_container->add(object_ptr<Ui::FlatLabel>(_container,
@@ -343,6 +367,12 @@ void Blocked::refreshCore() {
 			const auto button = AddButtonWithIcon(_container,
 				rpl::single(contact.name), st::settingsButton, { &st::menuIconUnblock });
 			button->addClickHandler([=] {
+				if (revision != _coreRevision
+					|| (current && !current())
+					|| generation != Delta::AccountGeneration()
+					|| !Delta::OwnsSession(session)) {
+					return;
+				}
 				Delta::ConfirmContactBlocking(controller(), contact.id, contact.name, false,
 					crl::guard(this, [=] { refreshCore(); }));
 			});
