@@ -207,7 +207,7 @@ void Instance::startOutgoingCall(
 		not_null<UserData*> user,
 		StartOutgoingCallArgs args) {
 	if (Delta::UsesCoreBackend(&user->session())) {
-		Ui::show(Ui::MakeInformBox(u"Calls are not available in Deltagram."_q));
+		Ui::show(Ui::MakeInformBox(u"Calls are not available for Chatmail profiles."_q));
 		return;
 	} else if (!Delta::UsesTelegramBackend(&user->session())) {
 		return;
@@ -239,7 +239,7 @@ void Instance::startOrJoinGroupCall(
 		not_null<PeerData*> peer,
 		StartGroupCallArgs args) {
 	if (Delta::UsesCoreBackend(&peer->session())) {
-		Ui::show(Ui::MakeInformBox(u"Calls are not available in Deltagram."_q));
+		Ui::show(Ui::MakeInformBox(u"Calls are not available for Chatmail profiles."_q));
 		return;
 	} else if (!Delta::UsesTelegramBackend(&peer->session())) {
 		return;
@@ -273,7 +273,7 @@ void Instance::startOrJoinConferenceCall(StartConferenceInfo args) {
 		? &args.show->session()
 		: &args.call->session();
 	if (Delta::UsesCoreBackend(session)) {
-		Ui::show(Ui::MakeInformBox(u"Calls are not available in Deltagram."_q));
+		Ui::show(Ui::MakeInformBox(u"Calls are not available for Chatmail profiles."_q));
 		return;
 	} else if (!Delta::UsesTelegramBackend(session)) {
 		return;
@@ -704,7 +704,7 @@ void Instance::handleCallUpdate(
 		const MTPPhoneCall &call) {
 	if (call.type() == mtpc_phoneCallRequested) {
 		if (Delta::UsesCoreBackend(session)) {
-			Ui::show(Ui::MakeInformBox(u"Calls are not available in Deltagram."_q));
+			Ui::show(Ui::MakeInformBox(u"Calls are not available for Chatmail profiles."_q));
 			return;
 		} else if (!Delta::UsesTelegramBackend(session)) {
 			return;

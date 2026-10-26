@@ -69,7 +69,7 @@ Args TTLValidator::createArgs() const {
 			TimeId period,
 			Fn<void()>) {
 		if (!Delta::UsesTelegramBackend(&peer->session())) {
-			show->showToast(u"Auto-delete controls are not available in Deltagram."_q);
+			show->showToast(u"Auto-delete controls are not available for Chatmail profiles."_q);
 			return;
 		}
 		auto &api = peer->session().api();

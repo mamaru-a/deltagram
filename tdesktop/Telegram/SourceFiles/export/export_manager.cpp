@@ -34,7 +34,7 @@ void Manager::startTopic(
 		MsgId topicRootId,
 		const QString &topicTitle) {
 	if (Delta::UsesCoreBackend(&peer->session())) {
-		Ui::show(Ui::MakeInformBox(u"Chat export is not available in Deltagram."_q));
+		Ui::show(Ui::MakeInformBox(u"Chat export is not available for Chatmail profiles."_q));
 		return;
 	} else if (!Delta::UsesTelegramBackend(&peer->session())) {
 		return;
@@ -56,7 +56,7 @@ void Manager::start(
 		not_null<Main::Session*> session,
 		const MTPInputPeer &singlePeer) {
 	if (Delta::UsesCoreBackend(session)) {
-		Ui::show(Ui::MakeInformBox(u"Chat export is not available in Deltagram."_q));
+		Ui::show(Ui::MakeInformBox(u"Chat export is not available for Chatmail profiles."_q));
 		return;
 	} else if (!Delta::UsesTelegramBackend(session)) {
 		return;

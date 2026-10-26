@@ -498,7 +498,7 @@ rpl::producer<QString> GlobalTTL::title() {
 
 void GlobalTTL::setupContent() {
 	if (Delta::UsesCoreBackend(&controller()->session())) {
-		_state->show->showToast(u"Auto-delete controls are not available in Deltagram."_q);
+		_state->show->showToast(u"Auto-delete controls are not available for Chatmail profiles."_q);
 		return;
 	}
 	setFocusPolicy(Qt::StrongFocus);
