@@ -1,12 +1,49 @@
 # Publication validation
 
+### Backend identity and complete-message source validation — 2026-10-26
+
+`c6f3abc` adds explicit per-account backend identity and a separate versioned,
+atomic metadata store. The donor encrypted map and MTP authorization serializers
+retain their existing format. An exact Git-index snapshot builds on Qt 6.4.2 /
+GNU 13.3 and passes 34 QtCore checks as unprivileged UID/GID 65534, with zero
+failures/skips. Tests cover migration evidence, corrupt/unsupported metadata,
+failed persistence, independent identities, private file permissions, and
+unchanged sentinel map/auth bytes. They do not instantiate native
+`Storage::Account` or prove migration of a real Telegram session. Running the
+same permission-denial fixture as container root produces one failure because
+root can write through the read-only directory; that run is not reported as a
+passing suite.
+
+`bd1ea60` adds explicit full-message controls and an on-demand Core HTML reader,
+with owning-session checks before cache/RPC access and account-generation /
+cancellation guards. Its exact staged helper and renderer each pass 21 checks,
+zero failures/skips. The renderer forces bounded raster decoders, denies remote
+and local-file resources and automatic navigation, and preserves valid
+image-only messages. The previously failing image-only case is retained. Raw
+subject is used only as a plain viewer title. Native compilation of the UI
+translation units, language code generation, footer geometry, and real Core
+full-message GUI replay remain pending.
+
+Separate probes extract the current production transport methods verbatim into
+recording doubles. Core dispatch remains inert; all three Telegram dispatch
+cases fail because the global intercept still handles them. Five of eight
+startup/resume cases fail, covering absent Telegram connections and attempts to
+queue against a null private connection. These probes open no sockets and do
+not authenticate. They establish the regression baseline for transport
+restoration, not Telegram support.
+
+Settings and message/data routing edits are under integration. Backend choice,
+donor login, transport restoration, and mixed-session runtime proof remain
+required. No personal Telegram account, credentials, or authorization files
+have been used for these checks. The draft PR is not production-ready.
+
 ### Real Telegram requirement and multi-profile startup replay — 2026-10-26
 
 The user explicitly requires real Telegram accounts alongside Core. Current
 `MTP::Instance::Private::sendRequest` unconditionally intercepts requests through
 Delta; `MTP::Session::start` returns before constructing its connection worker.
 These global cuts do not provide Telegram account compatibility. A per-account/
-session backend audit is active, including auth/storage and global Core-cache/UI
+session backend integration is active, including auth/storage and global Core-cache/UI
 hooks. Removing those returns alone is not sufficient isolation. No personal
 Telegram account/session or credentials are used in this audit.
 
