@@ -1,5 +1,34 @@
 # Publication validation
 
+### Mixed-backend identity, conference dependency and release guards — 2026-10-27
+
+Local source integration `9215659` includes per-account backend selection,
+Telegram transport and donor conference restoration, and Core ownership gates.
+It is not a native or Telegram-login pass. Session identity/prediction helpers
+pass 15 checks, zero failures/skips, including Core with missing or unexpected
+stored donor self data, Telegram user ID `1_000_000`, and unchanged Telegram
+production/test identifiers. Native storage loading and mixed callbacks remain
+pending. Core's old unprefixed account-order entries are intentionally not
+aliased onto a real Telegram user; that can reset the Core row's old order.
+
+The exact donor tdlib `51743dfd01dff6179e2d8f7095729caa4e2222e9` builds as
+tde2e 1.8.49. The full application configures with it and the actual
+`td_tde2e` wrapper compiles against its exported CMake package. Restored
+conference call sources have not yet compiled or run. The existing incremental
+release and ccache trees are retained while native Bridge compilation runs.
+
+Release tooling passes 17 build/API-mode checks and 53 offline release checks
+on Linux. Mode changes retain Ninja records, production builds require explicit
+inputs, and missing/invalid cached mode forces configuration. Staging checks
+binary SHA256, API mode, version file and CMake mode before replacing output;
+publication checks production provenance and the CI source commit. Empty or
+multiline version files and changed/missing version assets are refused. Python
+lint/import checks, shell syntax, and workflow parsing without duplicate keys
+pass. The workflow keeps production API inputs out of PR validation builds.
+No production credentials have been requested or used, and real Actions
+publication has not run. The macOS host test attempt lacks `flock`; it is not
+reported as a passing Linux build-tool test.
+
 ### Native complete-message access — 2026-10-27
 
 [Native run 40387188858](https://github.com/omidz4t/deltagram/actions/runs/40387188858)

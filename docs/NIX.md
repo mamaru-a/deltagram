@@ -88,8 +88,9 @@ environment values `TDESKTOP_API_ID` / `TDESKTOP_API_HASH`; missing or malformed
 values fail before CMake. Do not put them in source or command arguments.
 Changing API mode reconfigures the existing CMake tree without deleting Ninja
 or ccache records. Production constants remain in the build cache and binary;
-those build outputs must be handled accordingly. Publication guards are under
-integration; a test-mode validation binary is not a production Telegram release.
+those build outputs must be handled accordingly. Staging and publication check
+production build provenance bound to the binary and version; test-mode packages
+require an explicit validation-only opt-in and cannot pass publication checks.
 
 QR scanning uses the pinned ZXing decoder and Qt Multimedia packages from the
 Nix shell. Their include paths apply only to the scan implementation, avoiding
