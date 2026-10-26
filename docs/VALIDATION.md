@@ -461,6 +461,35 @@ again checked 13,228 files with zero blocking findings. Native CMake already
 regenerates language code when `lang.strings` changes; new named strings await
 that native build and rendered replay.
 
+### Opening an existing contact request — 2026-10-26
+
+Source review found that explicit profile Message and contact-picker Chat
+called `create_chat_by_contact_id` even when a Single request already existed.
+Core clears that request through creation, bypassing the explicit Accept action.
+Chat-list inspection and bubble sender-name inspection do not use this path.
+
+The contact-open helper now looks up the conversation first. A matching Single
+chat opens without a write, retaining its request flag. Lookup/metadata failures
+do not fall back to creation. A null lookup checks the contact's blocked state
+before one creation attempt and validates the returned FullChat. Saved Messages
+has a separate self-talk validation path; other reserved contacts are refused.
+Account switches drop callbacks, and displayed errors contain local text only.
+
+The standalone Qt target compiles serially and passes 64 checks, covering
+request/accepted opens without mutation, blocked and malformed results, one-shot
+creation, self-talk and account-scope cancellation. The actual parser also
+accepts four reduced live FullChat payloads: an accepted conversation, two
+pending requests and Saved Messages. These checks read the disposable Core only;
+the requests remain pending. Logs are `/tmp/open-contact-tests.log` and
+`/tmp/open-contact-live-payloads.json` in the test container. Full Bridge/native
+GUI validation remains pending.
+
+Core lookup returns null for both absent and hidden blocked chats. A hidden
+blocked chat whose contact is unblocked cannot be distinguished by this API.
+Creation also is not atomic with lookup: an incoming request can arrive between
+the reads and the write. The helper never retries a creation, but these Core API
+limits remain unresolved; this change does not establish atomic request safety.
+
 ### Sender and chat identity lookups — 2026-10-26
 
 Review of the blocking profile action found that high sender-peer IDs could be

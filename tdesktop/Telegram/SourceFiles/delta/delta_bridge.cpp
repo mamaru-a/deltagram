@@ -7,6 +7,7 @@ This file is part of Delta Tel, a Telegram Desktop based Delta Chat client.
 #include "delta/chat_mute.h"
 #include "delta/send_permission.h"
 #include "delta/contact_request_actions.h"
+#include "delta/open_contact_chat.h"
 
 #include "apiwrap.h"
 #include "delta/account_scope.h"
@@ -2661,23 +2662,22 @@ public:
 	}
 
 	void openContact(const ContactRow &contact, Fn<void(int, QString)> done) {
-		const auto guard = _alive;
-		const auto epoch = _dialogsEpoch;
-		call(u"create_chat_by_contact_id"_q, { _accountId, contact.id },
-			[=](QJsonObject reply) {
-				if (guard.expired()) {
-					return;
+		const auto name = contact.name;
+		OpenCoreContactChat(
+			[rpc = _rpc](QString method, QJsonArray params, DeltaRpc::Callback callback) {
+				rpc->call(method, params, std::move(callback));
+			},
+			_accountScope,
+			_accountId,
+			contact.id,
+			[=](int chatId, QString error) {
+				if (error.isEmpty() && chatId > 9) {
+					_names.insert(chatId, name);
+					_session->data().processUsers(MTP_vector<MTPUser>(
+						QVector<MTPUser>{ MakeUser(chatId, name, false) }));
+					loadDialogs();
 				}
-				if (epoch != _dialogsEpoch || HasError(reply)) {
-					done(0, HasError(reply) ? ErrorText(reply) : u"Account changed."_q);
-					return;
-				}
-				const auto chatId = reply.value(u"result"_q).toInt();
-				_names.insert(chatId, contact.name);
-				_session->data().processUsers(MTP_vector<MTPUser>(
-					QVector<MTPUser>{ MakeUser(chatId, contact.name, false) }));
-				loadDialogs();
-				done(chatId, QString());
+				done(chatId, error);
 			});
 	}
 
