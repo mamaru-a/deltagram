@@ -19,6 +19,24 @@ are not copied here. Deltagram evidence comes from [PROGRESS.md](PROGRESS.md),
 - **❌ Unavailable:** explicitly disabled or recorded as unfinished.
 - **❓ Unverified:** no adequate Deltagram compatibility check is recorded.
 
+## Current readiness gates
+
+The source at `450c8de` passes 735 serial focused Qt checks and the offline
+version/release/script regressions, but this does not establish production
+readiness. The native build and disposable replay must cover the integrated
+group/sidebar/member navigation, profile encryption/name/deletion, archived
+search metadata and Failed/Retry behavior, language restart, and setup recovery
+and avatar ownership. A configured cold-start opening failure is reproduced
+on the verified older GUI and is under correction separately from post-import
+recovery. Existing profile data remains preserved in those checks.
+
+PR builds compile and smoke-test; they do not execute the workflow's optional
+package-verification step. After the final source is fixed and built, one
+serialized unpublished validation run must also check the portable runtime on
+Debian 13 and Ubuntu 22.04 and the Debian/RPM/Arch payloads and metadata.
+Artifact hashes and source provenance must match the tested revision. The
+unverified feature areas below remain open independently of those build gates.
+
 ## What works in local checks
 
 | Capability | Status | Evidence and limits |
