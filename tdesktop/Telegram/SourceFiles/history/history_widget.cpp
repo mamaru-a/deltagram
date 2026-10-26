@@ -4117,30 +4117,49 @@ void HistoryWidget::deltaDeclineContactRequest() {
 	if (!deltaContactRequest() || !_peer) return;
 	const auto userId = int(peerToUser(_peer->id).bare);
 	if (Delta::ContactRequestBusy(userId)) return;
-	if (Delta::ComposerDeclineNeedsDeletionConfirm(userId)) {
-		const auto history = _history;
-		const auto current = Delta::CaptureAccountGuard();
-		controller()->show(Ui::MakeConfirmBox({
-			.text = tr::lng_delta_delete_group_request(tr::now),
-			.confirmed = crl::guard(this, [=](Fn<void()> close) {
-				close();
-				if (!current || !current() || _history != history) return;
-				deltaFinishDecline(userId, true);
-			}),
-			.confirmText = tr::lng_delta_delete(),
-			.confirmStyle = &st::attentionBoxButton,
-		}));
+	if (Delta::ComposerDeclineIsBlock(userId)) {
+		deltaFinishDecline(userId, false);
 		return;
 	}
-	deltaFinishDecline(userId, false);
+	if (!Delta::ComposerCanDeclineContactRequest(userId)) return;
+	const auto history = _history;
+	const auto current = Delta::CaptureAccountGuard();
+	const auto name = _peer->name();
+	const auto groupDelete = Delta::ComposerDeclineNeedsDeletionConfirm(userId);
+	controller()->show(Ui::MakeConfirmBox({
+		.text = groupDelete
+			? tr::lng_delta_delete_group_request(tr::now, lt_name, name)
+			: tr::lng_delta_delete_chat_request(tr::now, lt_name, name),
+		.confirmed = crl::guard(this, [=](Fn<void()> close) {
+			close();
+			if (!current || !current() || _history != history) return;
+			if (!deltaContactRequest() || !_peer) return;
+			if (int(peerToUser(_peer->id).bare) != userId) return;
+			if (Delta::ContactRequestBusy(userId)) return;
+			if (Delta::ComposerDeclineIsBlock(userId)) {
+				deltaFinishDecline(userId, false);
+				return;
+			}
+			if (!Delta::ComposerCanDeclineContactRequest(userId)) return;
+			deltaFinishDecline(
+				userId,
+				groupDelete
+					&& Delta::ComposerDeclineNeedsDeletionConfirm(userId));
+		}),
+		.confirmText = tr::lng_delta_delete(),
+		.confirmStyle = &st::attentionBoxButton,
+	}));
 }
 
 void HistoryWidget::deltaFinishDecline(int userId, bool confirmed) {
-	if (!_peer || userId != int(peerToUser(_peer->id).bare)) return;
+	if (!deltaContactRequest() || !_peer) return;
+	if (userId != int(peerToUser(_peer->id).bare)) return;
 	if (Delta::ContactRequestBusy(userId)) return;
+	const auto reviewedDeletion = confirmed
+		&& Delta::ComposerDeclineNeedsDeletionConfirm(userId);
 	const auto history = _history;
 	const auto current = Delta::CaptureAccountGuard();
-	Delta::DeclineContactRequest(userId, confirmed, crl::guard(this, [=](QString error) {
+	Delta::DeclineContactRequest(userId, reviewedDeletion, crl::guard(this, [=](QString error) {
 		if (!current || !current() || _history != history) return;
 		if (!error.isEmpty()) {
 			controller()->showToast(error);

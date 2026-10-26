@@ -1050,9 +1050,9 @@ public:
 			ContactRequestAction action,
 			ContactRequestResult result,
 			Fn<void(QString)> done) {
-		_pendingContactRequests.erase({ _accountId, chat });
-		ComposerRevision = ComposerRevision.current() + 1;
 		if (!ContactRequestSucceeded(result)) {
+			_pendingContactRequests.erase({ _accountId, chat });
+			ComposerRevision = ComposerRevision.current() + 1;
 			if (done) {
 				done(result.error.isEmpty()
 					? kContactRequestUnverified
@@ -1061,17 +1061,35 @@ public:
 			return;
 		}
 		if (action == ContactRequestAction::Decline) {
+			_pendingContactRequests.erase({ _accountId, chat });
+			ComposerRevision = ComposerRevision.current() + 1;
 			if (_permissions->knownType(_accountId, chat) == CoreChatType::Group) {
 				_permissions->forget(_accountId, chat);
 			} else if (_permissions->watching(_accountId, chat)) {
 				_permissions->refresh(_accountScope, _accountId, chat);
 			}
 			unselectChat(chat);
-		} else if (_permissions->watching(_accountId, chat)) {
-			_permissions->refresh(_accountScope, _accountId, chat);
+			_reload.start();
+			if (done) done({});
+			return;
 		}
+		const auto current = _accountScope.guard();
+		const auto alive = _alive;
+		const auto account = _accountId;
 		_reload.start();
-		if (done) done({});
+		_permissions->refresh(_accountScope, account, chat);
+		_permissions->observe(
+			_accountScope,
+			account,
+			chat,
+			[=](std::optional<bool> canSend) {
+				if (alive.expired() || !current()) return;
+				_pendingContactRequests.erase({ account, chat });
+				ComposerRevision = ComposerRevision.current() + 1;
+				if (done) {
+					done(canSend.has_value() ? QString() : kCoreSendUnknown);
+				}
+			});
 	}
 
 	bool beginContactRequest(int userId, int &chat, Fn<void(QString)> done) {
@@ -1118,7 +1136,8 @@ public:
 		auto chat = 0;
 		if (!beginContactRequest(userId, chat, done)) return;
 		ContactRequestDeletionReview review;
-		if (confirmed) {
+		if (confirmed
+			&& _permissions->knownType(_accountId, chat) == CoreChatType::Group) {
 			review.chatId = chat;
 			review.type = CoreChatType::Group;
 			review.confirmed = true;

@@ -323,6 +323,16 @@ callback is delivered after teardown. The
 harness uses the actual provider source with local platform stubs, so full native
 compilation and real Crow integration remain separate gates.
 
+A separate startup-lifetime source audit found no reachable retained MTProto
+translation provider on the checked paths. Primary-window setup initially opens
+empty history, so it does not construct `HistoryInner` or a tracker before the
+Bridge is attached. Profile switching retains the Bridge; secondary-window
+restore is queued after attachment. Session teardown removes the UI before the
+Bridge lifetime ends. The synchronous session-publication interval exists, but
+these call paths do not construct a provider in it. No additional startup mode
+flag or speculative guard was added. This is source evidence, separate from
+native startup/restore replay.
+
 ### Contact-request action gap — 2026-10-26
 
 Source review at `22bfd8f` confirms there is no explicit `accept_chat` action in
@@ -390,8 +400,28 @@ acknowledged deletion is distinguished from uncertain readback. The helper no
 longer retains a self-referencing peer-verification callback. OpenContact and
 the explicit profile Message behavior are preserved. CMake registers the separate
 request-action QtTest executable alongside the integrity suite. Full native
-compilation and action replay are still pending. Non-Single confirmation parity
-and the Accept busy-state handoff are being reviewed before final replay.
+compilation and action replay are still pending.
+
+The follow-up confirms every visible non-Single decline with the conversation
+name. Group copy explains deletion without blocking members; mailing-list and
+incoming-broadcast copy explains blocking and hiding. Single Block remains a
+single action, and outgoing broadcasts have no decline control. Confirmation
+callbacks recheck the account, history, peer and current type before dispatch.
+Verified Accept retains its busy state through a tracked refresh and waiter,
+without publishing helper JSON into permissions. Stale-account checks precede
+busy-map mutation.
+
+An isolated harness compiled the actual `finishContactRequest` method with the
+real permission observer and stubbed UI/timer dependencies. The preceding method
+fails the busy-state check; the new method passes delayed pre-mutation read,
+post-accept metadata error and accepted-but-read-only cases. It emits reads only
+and completes once after fresh metadata, reporting availability separately from
+acceptance. Logs are `/tmp/deltagram-accept-handoff-review/*-results.log` in the
+test container. The unchanged helpers retain their 305/82 focused results; this
+harness does not compile the full Bridge or native widgets. The source audit
+again checked 13,228 files with zero blocking findings. Native CMake already
+regenerates language code when `lang.strings` changes; new named strings await
+that native build and rendered replay.
 
 ### Sender and chat identity lookups — 2026-10-26
 
