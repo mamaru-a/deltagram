@@ -1,5 +1,16 @@
 # Publication validation
 
+### Native syntax checks for account-lifecycle guards — 2026-10-27
+
+The current `main_domain.cpp`, `main_session.cpp` and
+`settings/sections/settings_information.cpp` pass the actual incremental native
+build's compiler commands with `-fsyntax-only`. Object and dependency output
+flags are removed; Ninja records and ccache are retained. These checks use the
+configured Nix/Qt headers and generated sources, including the new Core
+container/passcode and Telegram app-config guards. All three compiler exits
+are zero with empty diagnostic logs. This is syntax/type validation, not
+object generation, linking, encrypted-storage replay or GUI proof.
+
 ### Passcode retention before Core session startup — 2026-10-27
 
 Automatic empty-account passcode cleanup now requires a single, logged-out
