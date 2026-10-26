@@ -147,7 +147,7 @@ void FindMessageIds(
 	Fn<void(QVector<int> ids, QString error)> done);
 void LoadSearchResults(
 	const QVector<int> &ids,
-	Fn<void(QVector<MTPMessage>, QVector<MTPUser>)> done);
+	Fn<void(QVector<MTPMessage>, QVector<MTPUser>, QString error)> done);
 
 void LoadInviteQr(
 	Fn<void(QString name, QString text, QString svg, QString error)> done);
@@ -192,6 +192,12 @@ void ListContacts(
 	Fn<void(std::vector<ContactRow> contacts, QString error)> done,
 	bool addressOnly = false);
 void OpenContact(const ContactRow &contact, Fn<void(int, QString)> done);
+void InspectGroupMember(
+	int chatId,
+	int contactId,
+	Fn<void(ContactRow contact, uint64 userId, QString error)> done);
+// Mint kContactUserIdBase+contactId into SenderContacts. Self is refused.
+[[nodiscard]] bool RegisterContactForProfile(const ContactRow &contact);
 void ShareContact(int contactId, int peerUserId, Fn<void(QString)> done);
 
 void CreateGroup(

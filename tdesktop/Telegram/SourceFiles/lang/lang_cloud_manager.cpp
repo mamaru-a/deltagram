@@ -569,7 +569,10 @@ void CloudManager::performSwitchToCustom() {
 		const auto filePath = result.paths.front();
 		auto loader = Lang::FileParser(
 			filePath,
-			{ tr::lng_sure_save_language.base });
+			{
+				tr::lng_sure_save_language.base,
+				tr::lng_delta_sure_save_language.base,
+			});
 		if (loader.errors().isEmpty()) {
 			if (_api) {
 				_api->request(
@@ -586,9 +589,16 @@ void CloudManager::performSwitchToCustom() {
 						? GetOriginalValue(key)
 						: it.value();
 				};
-				const auto text = tr::lng_sure_save_language(tr::now)
-					+ "\n\n"
-					+ getValue(tr::lng_sure_save_language.base);
+				const auto current = Delta::Active()
+					? tr::lng_delta_sure_save_language(tr::now)
+					: tr::lng_sure_save_language(tr::now);
+				const auto target = getValue(
+					Delta::Active()
+						? tr::lng_delta_sure_save_language.base
+						: tr::lng_sure_save_language.base);
+				const auto text = (Delta::Active() && current == target)
+					? current
+					: current + "\n\n" + target;
 				const auto change = [=] {
 					_langpack.switchToCustomFile(filePath);
 					Core::Restart();

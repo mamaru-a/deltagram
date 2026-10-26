@@ -7,8 +7,11 @@ This file is part of Delta Tel, a Telegram Desktop based Delta Chat client.
 
 #include <QString>
 
+#include <memory>
 #include <utility>
 #include <vector>
+
+class PeerData;
 
 namespace Main {
 class Session;
@@ -16,6 +19,7 @@ class Session;
 
 namespace Window {
 class SessionController;
+class SectionMemento;
 struct SectionShow;
 } // namespace Window
 
@@ -56,6 +60,17 @@ void ChooseGroupMembers(not_null<Main::Session*> session,
 void ShowContacts(not_null<Main::Session*> session, Fn<void(int chatId)> done);
 void ShowChannelSubscribers(not_null<Main::Session*> session, int userId, Fn<void()> done = nullptr);
 void ShowChannelInfo(not_null<Window::SessionController*> controller, int userId,
+	const Window::SectionShow &params);
+void ShowGroupInfo(not_null<Window::SessionController*> controller, int userId,
+	const Window::SectionShow &params);
+[[nodiscard]] std::shared_ptr<Window::SectionMemento> MakeGroupInfoMemento(
+	int chatId);
+[[nodiscard]] std::shared_ptr<Window::SectionMemento> GroupInfoMementoForPeer(
+	not_null<PeerData*> peer);
+[[nodiscard]] bool UnresolvedCoreGroupPeer(not_null<PeerData*> peer);
+[[nodiscard]] bool TryShowGroupInfo(
+	not_null<Window::SessionController*> controller,
+	not_null<PeerData*> peer,
 	const Window::SectionShow &params);
 void ShowChannelInvite(not_null<Main::Session*> session, int userId);
 

@@ -1442,6 +1442,11 @@ PRIVATE
     delta/contact_request_actions.h
     delta/open_contact_chat.h
     delta/incoming_notification.h
+    delta/group_info.h
+    delta/search_chat_metadata.h
+    delta/search_failure.h
+    delta/core_profile_actions.cpp
+    delta/core_profile_actions.h
     delta/compose_queue.h
     delta/compose_queue_sender.cpp
     delta/compose_queue_sender.h

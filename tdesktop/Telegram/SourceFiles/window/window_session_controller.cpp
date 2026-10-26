@@ -1399,6 +1399,9 @@ void SessionNavigation::showPeerInfo(
 		Delta::ShowChannelInfo(parentController(), int(peerToUser(peer->id).bare), params);
 		return;
 	}
+	if (Delta::TryShowGroupInfo(parentController(), peer, params)) {
+		return;
+	}
 	//if (Adaptive::ThreeColumn()
 	//	&& !Core::App().settings().thirdSectionInfoEnabled()) {
 	//	Core::App().settings().setThirdSectionInfoEnabled(true);

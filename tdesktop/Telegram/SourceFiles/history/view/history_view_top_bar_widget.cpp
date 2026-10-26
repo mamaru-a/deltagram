@@ -483,19 +483,38 @@ void TopBarWidget::toggleInfoSection() {
 			Core::App().settings().setThirdSectionInfoEnabled(true);
 			Core::App().saveSettingsDelayed();
 			if (isThreeColumn) {
-				_controller->showSection(
-					(_activeChat.key.topic()
-						? std::make_shared<Info::Memento>(
-							_activeChat.key.topic())
-						: (_activeChat.key.sublist()
-							&& _activeChat.key.sublist()->parentChat())
-						? std::make_shared<Info::Memento>(
-							_activeChat.key.sublist())
-						: Info::Memento::Default(_activeChat.key.peer())),
-					Window::SectionShow().withThirdColumn());
+				std::shared_ptr<Window::SectionMemento> memento;
+				if (const auto topic = _activeChat.key.topic()) {
+					memento = std::make_shared<Info::Memento>(topic);
+				} else if (const auto sublist = _activeChat.key.sublist()
+					; sublist && sublist->parentChat()) {
+					memento = std::make_shared<Info::Memento>(sublist);
+				} else if (const auto peer = _activeChat.key.peer()) {
+					memento = Delta::GroupInfoMementoForPeer(peer);
+					if (!memento && Delta::UnresolvedCoreGroupPeer(peer)) {
+						_controller->showPeerInfo(
+							peer,
+							Window::SectionShow().withThirdColumn());
+						return;
+					}
+					if (!memento) {
+						memento = Info::Memento::Default(peer);
+					}
+				}
+				if (memento) {
+					_controller->showSection(
+						std::move(memento),
+						Window::SectionShow().withThirdColumn());
+				}
 			} else {
 				_controller->resizeForThirdSection();
 				_controller->updateColumnLayout();
+				if (const auto peer = _activeChat.key.peer()
+					; peer && Delta::UnresolvedCoreGroupPeer(peer)) {
+					_controller->showPeerInfo(
+						peer,
+						Window::SectionShow().withThirdColumn());
+				}
 			}
 		} else {
 			infoClicked();

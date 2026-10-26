@@ -9,6 +9,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "delta/delta_bridge.h"
 #include "delta/delta_boxes.h"
+#include "delta/core_profile_actions.h"
 
 #include "base/call_delayed.h"
 #include "menu/menu_check_item.h"
@@ -1134,14 +1135,23 @@ void Filler::addNewContact() {
 		return;
 	}
 	const auto controller = _controller;
+	const auto id = peerToUser(user->id).bare;
+	if (Delta::Active() && (Delta::IsGroup(id) || Delta::IsSystemUser(id))) {
+		return;
+	}
 	const auto edit = [=] {
-		if (controller->showFrozenError()) {
+		if (Delta::Active()) {
+			Delta::ShowCoreContactNameBox(controller, id, true);
+			return;
+		} else if (controller->showFrozenError()) {
 			return;
 		}
 		controller->show(Box(EditContactBox, controller, user));
 	};
 	_addAction(
-		tr::lng_info_add_as_contact(tr::now),
+		Delta::Active()
+			? Delta::kCoreEditNameLabel
+			: tr::lng_info_add_as_contact(tr::now),
 		edit,
 		&st::menuIconInvite);
 }
@@ -1164,14 +1174,23 @@ void Filler::addEditContact() {
 		return;
 	}
 	const auto controller = _controller;
+	const auto id = peerToUser(user->id).bare;
+	if (Delta::Active() && (Delta::IsGroup(id) || Delta::IsSystemUser(id))) {
+		return;
+	}
 	const auto edit = [=] {
-		if (controller->showFrozenError()) {
+		if (Delta::Active()) {
+			Delta::ShowCoreContactNameBox(controller, id, false);
+			return;
+		} else if (controller->showFrozenError()) {
 			return;
 		}
 		controller->show(Box(EditContactBox, controller, user));
 	};
 	_addAction(
-		tr::lng_info_edit_contact(tr::now),
+		Delta::Active()
+			? Delta::kCoreEditNameLabel
+			: tr::lng_info_edit_contact(tr::now),
 		edit,
 		&st::menuIconEdit);
 }
@@ -1219,9 +1238,19 @@ void Filler::addDeleteContact() {
 		return;
 	}
 	const auto controller = _controller;
+	const auto id = peerToUser(user->id).bare;
+	if (Delta::Active() && (Delta::IsGroup(id) || Delta::IsSystemUser(id))) {
+		return;
+	}
 	_addAction({
 		.text = tr::lng_info_delete_contact(tr::now),
-		.handler = [=] { PeerMenuDeleteContact(controller, user); },
+		.handler = [=] {
+			if (Delta::Active()) {
+				Delta::ShowCoreContactDeleteBox(controller, id);
+				return;
+			}
+			PeerMenuDeleteContact(controller, user);
+		},
 		.icon = &st::menuIconDeleteAttention,
 		.isAttention = true,
 	});
@@ -1972,6 +2001,20 @@ void Filler::fillHistoryActions() {
 void Filler::fillProfileActions() {
 	addTTLSubmenu(true);
 	addSupportInfo();
+	if (Delta::Active()) {
+		if (const auto user = _peer->asUser()) {
+			const auto id = peerToUser(user->id).bare;
+			if (!user->isSelf()
+				&& !Delta::IsSystemUser(id)
+				&& !Delta::IsGroup(id)) {
+				const auto controller = _controller;
+				_addAction(
+					u"Encryption info"_q,
+					[=] { Delta::ShowCorePeerEncryptionInfo(controller, id); },
+					&st::menuIconInfo);
+			}
+		}
+	}
 	addNewContact();
 	addShareContact();
 	addEditContact();
@@ -2223,6 +2266,12 @@ void PeerMenuExportTopic(
 void PeerMenuDeleteContact(
 		not_null<Window::SessionController*> controller,
 		not_null<UserData*> user) {
+	if (Delta::Active()) {
+		Delta::ShowCoreContactDeleteBox(
+			controller,
+			peerToUser(user->id).bare);
+		return;
+	}
 	if (controller->showFrozenError()) {
 		return;
 	}

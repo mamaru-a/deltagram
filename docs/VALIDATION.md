@@ -432,6 +432,100 @@ information/member path rather than a contact-profile success claim. The
 onboarding profile was restored and its previous request-action states,
 original drafts/history still match their recorded preservation baseline.
 
+The initial dedicated group-info helper snapshot compiles as its own QtCore
+target with `-j1` and passes **31 checks**, with no failures or skips. These
+cover matching Group metadata, member identity boundaries, read-only member
+inspection and account invalidation. CMake registers the separate target;
+the complete group UI and later profile/encryption integration are still under
+implementation. This helper result does not establish native group rendering
+or member-profile behavior. The private log is
+`/tmp/round30-group-info-tests.log` in the test container.
+
+The first search-name metadata helper snapshot compiles separately and passes
+**34 checks**, without failures or skips. Search integration must also propagate
+metadata failures through the primary `Delta::LoadSearchResults`/dialogs callback
+and the legacy search adapter; silently shortening a result vector would falsely
+look like a complete search. That integration is still in progress. Its private
+log is `/tmp/round32-search-chat-metadata-tests.log`.
+
+The initial Core profile-action helper snapshot passes **76 checks**, but a
+separate adversarial probe demonstrates two uncovered deletion defects:
+malformed acknowledgement plus failed contact read is reported as success, while
+a valid acknowledgement with a hidden-but-readable contact is reported unknown.
+An isolated offline real-Core check confirms normal deletion with an existing
+chat hides the contact from `get_contacts` while `get_contact` remains readable;
+the chat is preserved. No live mailbox or mail IO is involved. Corrections to
+mutation acknowledgement/readback and actual UI wiring are required before
+committing these profile changes. Private evidence is
+`/tmp/core-profile-delete-contract.json`, `/tmp/core-profile-actions-probe` and
+`/tmp/round31-core-profile-actions-tests.log`. Passing these initial injected
+tests is not treated as proof of correct deletion or full native profile UI.
+
+The corrected profile helper snapshot passes **95 checks**, with no failures
+or skips. The original probe now rejects malformed acknowledgement plus unreadable
+state and accepts a normal hidden-contact deletion; rename also supports clearing
+the private alias and readback after lost acknowledgement. UI contact deletion
+uses this shared helper. Further adversarial review exposes two remaining edges:
+the completed deletion retains its request through a callback ownership cycle,
+and checked “also delete chat” treats a null lookup as no chat. An isolated offline
+Core fixture proves null also means a hidden blocked chat, which survives contact
+deletion. Those corrections are in progress; this snapshot is not committed as
+validated profile behavior. Logs are `/tmp/round35-core-profile-actions-tests.log`
+and `/tmp/core-profile-hidden-chat-contract.json`.
+
+### Integrated group, profile and search corrections — 2026-10-26
+
+The source batch now supplies a dedicated Core Group Info surface with matching
+Group metadata, member count, description, read-only contact inspection and Core
+encryption information. Member profiles use full-width sender identities; Message
+retains the explicit contact-chat opener. Header, third-column toggle, restore
+and resize routes select the group surface; unknown real Core peers are classified
+before presenting a contact profile. Third-column group widgets do not adapt
+themselves into a layer or navigate the main history backward.
+
+Core profile contact actions resolve exact contacts rather than treating chat
+or synthetic sender IDs as contact IDs. Edit name changes the private alias,
+including clearing it; it does not claim to add a contact by changing a name.
+Encryption text and contact flags come from Core, without Telegram verification
+badges. Contact deletion verifies key/address lists because a hidden contact may
+remain readable. Optional chat deletion validates the reviewed Single chat and
+peer before one write, retains separate chat/contact outcomes, and refuses an
+ambiguous null lookup when no reviewed chat ID is available. Lost acknowledgements
+are not retried. Completed/cancelled requests release their callback state.
+
+The original adversarial probe now reports all expected outcomes: malformed
+delete acknowledgement is not success, acknowledged hidden-contact deletion
+succeeds, checkbox null lookup is not success, and completed request state is
+not retained. A separate driver connects the actual helper and `DeltaRpc` to a
+temporary offline Core account: ambiguous lookup and wrong-peer review issue no
+mutation; the exact reviewed blocked chat and contact are deleted once each;
+an unrelated chat and its draft remain intact. No live mailbox or mail IO is used.
+Evidence is `/tmp/round38-core-profile-real-check.json` and
+`/tmp/core-profile-actions-probe` in the test container.
+
+Search hydrates matching BasicChat names before building results for unlisted
+chats. Missing metadata or malformed hits fail the page instead of silently
+shortening a complete result set. Visible Failed/Retry state distinguishes errors
+from a successful empty search, retains earlier hits and retries the same page
+without advancing its offset. The widget now uses the tested `CoreSearchPager`
+directly; account/query generation guards reject stale outcomes. An isolated
+QtCore harness extracts the exact `loadSearchHits` and `SearchHitMessage` source
+and passes **21 runtime cases**, including name hydration, whole-page failure,
+cached-name recovery, ordering and account invalidation. RPC, message construction
+and session boundaries are stubbed; native failure injection remains pending.
+Private results are `/tmp/search-bridge-current/results.json`.
+
+Serial focused checks pass **700 checks**: 305 integrity, 82 request-action,
+64 contact-open, 59 notification, 31 group-info, 35 search metadata, 111 profile
+actions and 13 search-failure checks, with no failures or skips. Snapshot source
+files match the tested helpers. The source audit checks 13,241 files with zero
+blocking findings; whitespace checks pass. These checks do not compile every UI
+translation unit or prove final rendered behavior. Native compilation, language
+code generation, group/sidebar/profile/search fault replay and remaining
+compatibility/package gates are still required. Native run `40315236704` at
+`cacc5ce` completed successfully but predates this source batch; its artifact
+verification and notification GUI replay remain separate checks.
+
 ### Archived device history from search — 2026-10-26
 
 On the verified `4b5e093` binary, the disposable device chat `3:11` was archived
@@ -568,6 +662,30 @@ publishing. Translation uses a configured custom URL or an available platform
 engine; Core has no MTProto fallback. Without either backend, translation controls
 are omitted and direct requests return an unavailable result. Platform-engine
 availability is cached for Core; a newly installed engine needs an app restart.
+
+On verified native `a64895c`, a local three-key `.strings` fixture imports through
+the language picker. After the confirmed restart, its language name, picker
+title and OK label render from the fixture. A controlled repeat without capture
+during restart passes both custom import/restart and the switch back to English,
+each with one new GUI/proxy/Core chain. English is selected afterward; original
+drafts/history, recorded request states and restored device visibility match
+their baseline. Private evidence is
+`settings-fixture/native-custom-language-evidence.json`; captures are
+`/tmp/a648-language-{custom-persisted,controlled-custom,controlled-english}.png`.
+
+The first English restart terminated with SIGABRT while capture/xdotool utilities
+were blocked across window destruction. After verifying process termination,
+stopping the blocked test utilities and relaunching once, English and data were
+preserved. The controlled repeat above did not reproduce the abort. Its cause
+remains unattributed; this is not a source crash fix or refutation, and final
+native replay must repeat the controlled switch. Captures are now time-bounded
+and run only after the ownership chain is ready.
+
+The custom-import confirmation also repeats donor “Telegram will restart” text.
+The Core-only source correction uses a new app-neutral language key, preserves
+current/target custom translations when different and avoids duplicate identical
+fallback text. Donor behavior and the local English-switch implementation are
+unchanged. New language code generation/native rendering remain pending.
 
 These settings changes are committed at `eafbca5`. Source audit and diff checks
 pass, but the focused Qt target does not compile these UI translation units.

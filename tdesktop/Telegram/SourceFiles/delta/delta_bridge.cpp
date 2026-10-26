@@ -9,6 +9,8 @@ This file is part of Delta Tel, a Telegram Desktop based Delta Chat client.
 #include "delta/send_permission.h"
 #include "delta/contact_request_actions.h"
 #include "delta/open_contact_chat.h"
+#include "delta/group_info.h"
+#include "delta/search_chat_metadata.h"
 
 #include "apiwrap.h"
 #include "delta/account_scope.h"
@@ -75,6 +77,7 @@ This file is part of Delta Tel, a Telegram Desktop based Delta Chat client.
 #include <limits>
 #include <map>
 #include <memory>
+#include <optional>
 #include <set>
 #include <utility>
 
@@ -110,6 +113,31 @@ constexpr auto kSelfUserId = 1'000'000;
 		}
 	}
 	return u"Request failed."_q;
+}
+
+[[nodiscard]] std::optional<QJsonObject> SearchHitMessage(
+		const QJsonObject &reply,
+		int msgId) {
+	if (HasError(reply) || msgId <= 0) {
+		return std::nullopt;
+	}
+	const auto result = reply.value(u"result"_q);
+	if (!result.isObject()) {
+		return std::nullopt;
+	}
+	const auto data = result.toObject();
+	const auto id = data.value(u"id"_q);
+	const auto chat = data.value(u"chatId"_q);
+	const auto chatId = chat.toInt();
+	if (!id.isDouble()
+		|| id.toInt() != msgId
+		|| id.toDouble() != double(msgId)
+		|| !chat.isDouble()
+		|| chat.toDouble() != double(chatId)
+		|| !CoreSearchChatId(chatId)) {
+		return std::nullopt;
+	}
+	return data;
 }
 
 QHash<qint64, QString> AvatarFiles;
@@ -2083,7 +2111,7 @@ public:
 
 	void loadSearchResults(
 			const QVector<int> &ids,
-			Fn<void(QVector<MTPMessage>, QVector<MTPUser>)> done) {
+			Fn<void(QVector<MTPMessage>, QVector<MTPUser>, QString)> done) {
 		// Keep legacy callers bounded too; widgets normally ask for one page.
 		struct State {
 			int offset = 0;
@@ -2093,19 +2121,43 @@ public:
 		const auto state = std::make_shared<State>();
 		const auto next = std::make_shared<Fn<void()>>();
 		const auto weakNext = std::weak_ptr<Fn<void()>>(next);
+		const auto guard = _alive;
+		const auto epoch = _dialogsEpoch;
+		const auto accountId = _accountId;
+		const auto accountValid = _accountScope.guard();
 		*next = [=] {
+			if (guard.expired()
+				|| !accountValid()
+				|| epoch != _dialogsEpoch
+				|| accountId != _accountId) {
+				return;
+			}
 			if (state->offset >= ids.size()) {
-				done(std::move(state->messages), std::move(state->users));
+				done(std::move(state->messages), std::move(state->users), {});
 				return;
 			}
 			const auto page = ids.mid(state->offset, 50);
 			state->offset += page.size();
 			const auto continuation = weakNext.lock();
 			loadSearchHits(0, std::vector<int>(page.begin(), page.end()), [=](
-					QVector<MTPMessage> messages, QVector<MTPUser> users) {
+					QVector<MTPMessage> messages,
+					QVector<MTPUser> users,
+					QString error) {
+				if (guard.expired()
+					|| !accountValid()
+					|| epoch != _dialogsEpoch
+					|| accountId != _accountId) {
+					return;
+				}
+				if (!error.isEmpty()) {
+					done({}, {}, error);
+					return;
+				}
 				state->messages += messages;
 				state->users += users;
-				if (continuation) (*continuation)();
+				if (continuation) {
+					(*continuation)();
+				}
 			});
 		};
 		(*next)();
@@ -2114,11 +2166,10 @@ public:
 	void searchMessages(
 			int userId,
 			const QString &query,
-			Fn<void(QVector<MTPMessage>, QVector<MTPUser>)> done) {
+			Fn<void(QVector<MTPMessage>, QVector<MTPUser>, QString)> done) {
 		findMessageIds(userId, query, [=](QVector<int> ids, QString error) {
 			if (!error.isEmpty()) {
-				reportError(error);
-				done({}, {});
+				done({}, {}, error);
 				return;
 			}
 			loadSearchResults(ids, std::move(done));
@@ -3074,62 +3125,170 @@ private:
 	void loadSearchHits(
 			int fallbackUser,
 			const std::vector<int> &ids,
-			Fn<void(QVector<MTPMessage>, QVector<MTPUser>)> done) {
-		struct State {
-			QVector<MTPMessage> messages;
-			QSet<int> users;
-			int remaining = 0;
-			QString error;
-		};
-		const auto state = std::make_shared<State>();
-		state->remaining = int(ids.size());
-		state->messages.resize(int(ids.size()));
+			Fn<void(QVector<MTPMessage>, QVector<MTPUser>, QString)> done) {
 		if (ids.empty()) {
-			done({}, {});
+			done({}, {}, {});
 			return;
 		}
+		struct Hit {
+			int chatId = 0;
+			QJsonObject data;
+		};
+		struct State {
+			std::vector<Hit> hits;
+			int remaining = 0;
+			QString error;
+			bool finished = false;
+		};
+		const auto state = std::make_shared<State>();
+		state->hits.resize(ids.size());
+		state->remaining = int(ids.size());
 		const auto guard = _alive;
-		for (auto i = 0; i != int(ids.size()); ++i) {
-				fetchMessage(ids[i],
-				[=](QJsonObject one) {
-					if (guard.expired()) {
+		const auto epoch = _dialogsEpoch;
+		const auto accountId = _accountId;
+		const auto accountValid = _accountScope.guard();
+		const auto stillHere = [=] {
+			return !guard.expired()
+				&& accountValid()
+				&& epoch == _dialogsEpoch
+				&& accountId == _accountId;
+		};
+		const auto finish = [=](
+				QVector<MTPMessage> messages,
+				QVector<MTPUser> users,
+				QString error) {
+			if (state->finished || !stillHere()) {
+				return;
+			}
+			state->finished = true;
+			done(std::move(messages), std::move(users), std::move(error));
+		};
+		const auto failPage = [=](const QString &error) {
+			finish(
+				{},
+				{},
+				error.isEmpty() ? kSearchChatMetadataUnavailable : error);
+		};
+		const auto applyUsers = [=] {
+			if (!stillHere()) {
+				return;
+			}
+			auto users = QVector<MTPUser>();
+			users.push_back(selfUser());
+			auto seenUsers = QSet<int>();
+			auto messages = QVector<MTPMessage>();
+			for (const auto &hit : state->hits) {
+				auto peerUser = fallbackUser;
+				if (!peerUser) {
+					peerUser = peerUserForChat(hit.chatId);
+				}
+				if (!peerUser) {
+					failPage(u"Core returned invalid search results."_q);
+					return;
+				}
+				if (peerUser != kSelfUserId && !seenUsers.contains(peerUser)) {
+					const auto chatId = chatForPeerUser(peerUser);
+					const auto name = _names.value(chatId);
+					if (!SearchChatNameUsable(name)) {
+						failPage(kSearchChatMetadataUnavailable);
 						return;
 					}
-					if (!HasError(one)) {
-						const auto data = one.value(u"result"_q).toObject();
-						auto peerUser = fallbackUser;
-						if (!peerUser) {
-							peerUser = peerUserForChat(
-								data.value(u"chatId"_q).toInt());
-						}
-						state->messages[i] = MessageFromJson(peerUser, data);
-						state->users.insert(peerUser);
-					} else if (state->error.isEmpty()) {
-						state->error = ErrorText(one);
+					seenUsers.insert(peerUser);
+					users.push_back(MakeUser(
+						peerUser,
+						name,
+						false,
+						_avatars.value(chatId)));
+				}
+				messages.push_back(MessageFromJson(peerUser, hit.data));
+			}
+			finish(std::move(messages), std::move(users), {});
+		};
+		const auto hydrate = [=] {
+			if (!stillHere()) {
+				return;
+			}
+			if (!state->error.isEmpty()) {
+				failPage(state->error);
+				return;
+			}
+			std::vector<int> missing;
+			auto seen = QSet<int>();
+			for (const auto &hit : state->hits) {
+				if (seen.contains(hit.chatId)
+					|| SearchChatNameUsable(_names.value(hit.chatId))) {
+					continue;
+				}
+				seen.insert(hit.chatId);
+				missing.push_back(hit.chatId);
+			}
+			if (missing.empty()) {
+				applyUsers();
+				return;
+			}
+			ReadSearchChatMetadata(
+				[rpc = _rpc](
+						QString method,
+						QJsonArray params,
+						DeltaRpc::Callback callback) {
+					rpc->call(method, params, std::move(callback));
+				},
+				_accountScope,
+				accountId,
+				missing,
+				[=](SearchChatMetadataResult result) {
+					if (!stillHere()) {
+						return;
 					}
-					if (--state->remaining == 0) {
-						auto users = QVector<MTPUser>();
-						users.push_back(selfUser());
-						for (const auto userId : state->users) {
-							if (userId && userId != kSelfUserId) {
-								const auto chatId = chatForPeerUser(userId);
-								users.push_back(MakeUser(
-									userId,
-									_names.value(chatId),
-									false,
-									_avatars.value(chatId)));
-							}
+					for (auto i = result.chats.cbegin();
+						i != result.chats.cend();
+						++i) {
+						const auto &payload = i.value();
+						if (!SearchChatNameUsable(payload.name)) {
+							continue;
 						}
-						auto messages = QVector<MTPMessage>();
-						for (const auto &message : state->messages) {
-							if (message.type() == mtpc_message) {
-								messages.push_back(message);
-							}
-						}
-						if (!state->error.isEmpty()) reportError(state->error);
-						done(std::move(messages), std::move(users));
+						_names.insert(payload.chatId, payload.name);
+						_avatars.insert(payload.chatId, payload.avatar);
+						RememberCoreChat(
+							uint64(payload.chatId),
+							payload.json);
 					}
+					for (const auto chat : missing) {
+						if (!SearchChatNameUsable(_names.value(chat))) {
+							failPage(result.error.isEmpty()
+								? kSearchChatMetadataUnavailable
+								: result.error);
+							return;
+						}
+					}
+					applyUsers();
 				});
+		};
+		for (auto i = 0; i != int(ids.size()); ++i) {
+			if (!stillHere()) {
+				return;
+			}
+			const auto msgId = ids[i];
+			fetchMessage(msgId, [=](QJsonObject one) {
+				if (!stillHere()) {
+					return;
+				}
+				if (state->error.isEmpty()) {
+					if (HasError(one)) {
+						state->error = ErrorText(one);
+					} else if (const auto data = SearchHitMessage(one, msgId)) {
+						state->hits[i] = Hit{
+							data->value(u"chatId"_q).toInt(),
+							*data,
+						};
+					} else {
+						state->error = u"Core returned invalid search results."_q;
+					}
+				}
+				if (--state->remaining == 0) {
+					hydrate();
+				}
+			});
 		}
 	}
 
@@ -3160,9 +3319,18 @@ private:
 		if (!reader.ok()) {
 			return fail(instance, requestId, u"DELTA_BAD_REQUEST"_q);
 		}
+		const auto guard = _alive;
+		const auto epoch = _dialogsEpoch;
 		searchMessages(userId, query, [=](
 				QVector<MTPMessage> messages,
-				QVector<MTPUser> users) {
+				QVector<MTPUser> users,
+				QString error) {
+			if (guard.expired() || epoch != _dialogsEpoch) {
+				return;
+			}
+			if (!error.isEmpty()) {
+				return fail(instance, requestId, u"DELTA_SEARCH_FAILED"_q);
+			}
 			const auto boxed = MTPmessages_Messages(MTP_messages_messages(
 				MTP_vector<MTPMessage>(messages),
 				MTP_vector<MTPForumTopic>(),
@@ -4862,9 +5030,9 @@ void FindMessageIds(
 
 void LoadSearchResults(
 		const QVector<int> &ids,
-		Fn<void(QVector<MTPMessage>, QVector<MTPUser>)> done) {
+		Fn<void(QVector<MTPMessage>, QVector<MTPUser>, QString)> done) {
 	if (!GlobalBridge) {
-		done({}, {});
+		done({}, {}, u"Delta Chat is not running."_q);
 		return;
 	}
 	GlobalBridge->loadSearchResults(ids, std::move(done));
@@ -5000,6 +5168,66 @@ void OpenContact(const ContactRow &contact, Fn<void(int, QString)> done) {
 		return;
 	}
 	GlobalBridge->openContact(contact, std::move(done));
+}
+
+void InspectGroupMember(
+		int chatId,
+		int contactId,
+		Fn<void(ContactRow, uint64, QString)> done) {
+	if (!GlobalBridge) {
+		done({}, 0, u"No active account."_q);
+		return;
+	}
+	const auto bridge = GlobalBridge;
+	const auto guard = bridge->_alive;
+	const auto epoch = bridge->_dialogsEpoch;
+	InspectCoreGroupMember(
+		[rpc = bridge->_rpc](QString method, QJsonArray params, DeltaRpc::Callback callback) {
+			rpc->call(method, params, std::move(callback));
+		},
+		bridge->_accountScope,
+		bridge->_accountId,
+		chatId,
+		contactId,
+		[=](CoreGroupMemberProfile profile, QString error) {
+			if (guard.expired() || epoch != bridge->_dialogsEpoch) {
+				return;
+			}
+			auto row = ContactRow();
+			row.id = profile.contactId;
+			row.name = profile.name;
+			row.address = profile.address;
+			row.avatar = profile.avatar;
+			row.lastSeen = profile.lastSeen;
+			done(std::move(row), profile.profileUserId, std::move(error));
+		});
+}
+
+bool RegisterContactForProfile(const ContactRow &contact) {
+	const auto kind = CoreGroupClassifyMember(contact.id);
+	if (!GlobalBridge
+		|| kind == CoreGroupMemberKind::Invalid
+		|| kind == CoreGroupMemberKind::Self) {
+		return false;
+	}
+	const auto peerId = CoreGroupMemberProfileUserId(contact.id);
+	if (!peerId) {
+		return false;
+	}
+	auto stored = contact;
+	if (stored.name.isEmpty()) {
+		stored.name = stored.address;
+	}
+	if (stored.name.isEmpty()) {
+		stored.name = CoreGroupMemberPlaceholder(contact.id);
+	}
+	if (stored.name.isEmpty()) {
+		stored.name = u"Unknown sender"_q;
+	}
+	SenderContacts.insert(*peerId, stored);
+	const auto user = GlobalBridge->_session->data().user(UserId(*peerId));
+	user->setName(stored.name, QString(), QString(), QString());
+	return true;
 }
 
 void ShareContact(int contactId, int peerUserId, Fn<void(QString)> done) {

@@ -51,6 +51,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "chat_helpers/tabbed_selector.h" // TabbedSelector::refreshStickers
 #include "chat_helpers/message_field.h"
 #include "info/info_memento.h"
+#include "delta/delta_boxes.h"
+#include "delta/delta_bridge.h"
 #include "apiwrap.h"
 #include "dialogs/dialogs_widget.h"
 #include "history/history_widget.h"
@@ -414,6 +416,26 @@ MainWidget::MainWidget(
 	}) | rpl::flatten_latest(
 	) | rpl::on_next([this](Dialogs::Key key, bool canWrite) {
 		updateThirdColumnToCurrentChat(key, canWrite);
+	}, lifetime());
+
+	Delta::ChannelStatusValue(1) | rpl::on_next([=](const QString &) {
+		if (!isThreeColumn()
+				|| !Core::App().settings().thirdSectionInfoEnabled()
+				|| _thirdSection) {
+			return;
+		}
+		const auto peer = _controller->activeChatCurrent().peer();
+		if (!peer) {
+			return;
+		}
+		if (auto group = Delta::GroupInfoMementoForPeer(peer)) {
+			_controller->showSection(
+				std::move(group),
+				Window::SectionShow(
+					Window::SectionShow::Way::ClearStack,
+					anim::type::instant,
+					anim::activation::background).withThirdColumn());
+		}
 	}, lifetime());
 
 	QCoreApplication::instance()->installEventFilter(this);
@@ -2702,16 +2724,25 @@ void MainWidget::updateControlsGeometry() {
 							params);
 					}
 				} else if (Core::App().settings().thirdSectionInfoEnabled()) {
-					_controller->showSection(
-						(thread->asTopic()
-							? std::make_shared<Info::Memento>(
-								thread->asTopic())
-							: thread->asSublist()
-							? std::make_shared<Info::Memento>(
-								thread->asSublist())
-							: Info::Memento::Default(
-								thread->asHistory()->peer)),
-						params.withThirdColumn());
+					std::shared_ptr<Window::SectionMemento> memento;
+					if (thread->asTopic()) {
+						memento = std::make_shared<Info::Memento>(
+							thread->asTopic());
+					} else if (thread->asSublist()) {
+						memento = std::make_shared<Info::Memento>(
+							thread->asSublist());
+					} else if (const auto peer = thread->asHistory()->peer) {
+						memento = Delta::GroupInfoMementoForPeer(peer);
+						if (!memento
+								&& !Delta::UnresolvedCoreGroupPeer(peer)) {
+							memento = Info::Memento::Default(peer);
+						}
+					}
+					if (memento) {
+						_controller->showSection(
+							std::move(memento),
+							params.withThirdColumn());
+					}
 				}
 			}
 		}
@@ -2976,6 +3007,12 @@ auto MainWidget::thirdSectionForCurrentMainSection(
 		; sublist && sublist->parentChat()) {
 		return std::make_shared<Info::Memento>(sublist);
 	} else if (const auto peer = key.peer()) {
+		if (auto group = Delta::GroupInfoMementoForPeer(peer)) {
+			return group;
+		}
+		if (Delta::UnresolvedCoreGroupPeer(peer)) {
+			return nullptr;
+		}
 		return Info::Memento::Default(peer);
 	} else if (const auto sublist = key.sublist()) {
 		return Info::Memento::Default(sublist->owningHistory()->peer);
@@ -3010,9 +3047,11 @@ void MainWidget::updateThirdColumnToCurrentChat(
 			Core::App().saveSettingsDelayed();
 		}
 
-		_controller->showSection(
-			thirdSectionForCurrentMainSection(key),
-			params.withThirdColumn());
+		if (auto memento = thirdSectionForCurrentMainSection(key)) {
+			_controller->showSection(
+				std::move(memento),
+				params.withThirdColumn());
+		}
 	};
 	auto switchTabbedFast = [&](not_null<Data::Thread*> thread) {
 		saveOldThirdSection();
