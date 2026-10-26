@@ -333,6 +333,18 @@ sender-routing correction. A plain incoming sender-name click uses
 `Element::fromLink` → `showPeerInfo` in this client. It must not be described as
 the `PeerData::createOpenLink` path without checking the actual caller.
 
+A fresh disposable profile, **Deltagram integrity request sender**, on the pinned
+Core 2.63.0-dev sent one direct probe and one group probe to the existing
+disposable onboarding profile. Its isolated Core process stopped after delivery.
+The recipient reports a Single request (chat `14`, message `294`) and a Group
+request (chat `15`, message `296`), both with `isContactRequest: true` and
+`canSend: false`. Neither request was accepted. Each creation/send intent was
+journaled before its single RPC, without mutation retries. Existing direct-chat
+message IDs, both composer drafts and the selected profile are unchanged.
+Private fixture evidence is `/tmp/deltagram-live/request-fixture/ready.json` in
+the test container. These fixtures prepare native action replay; Core delivery
+alone does not validate the missing UI.
+
 ### Sender and chat identity lookups — 2026-10-26
 
 Review of the blocking profile action found that high sender-peer IDs could be
