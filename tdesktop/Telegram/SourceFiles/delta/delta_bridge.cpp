@@ -6,6 +6,7 @@ This file is part of Delta Tel, a Telegram Desktop based Delta Chat client.
 #include "delta/profile_activity.h"
 #include "delta/chat_mute.h"
 #include "delta/send_permission.h"
+#include "delta/contact_request_actions.h"
 
 #include "apiwrap.h"
 #include "delta/account_scope.h"
@@ -72,6 +73,8 @@ This file is part of Delta Tel, a Telegram Desktop based Delta Chat client.
 #include <limits>
 #include <map>
 #include <memory>
+#include <set>
+#include <utility>
 
 namespace Delta {
 
@@ -896,9 +899,15 @@ public:
 	}
 
 	void watchComposerChat(int userId) {
-		const auto chat = chatForPeerUser(userId);
+		const auto chat = (userId > 0) ? chatForPeerUser(userId) : 0;
+		const auto changed = (_permissionFocus != chat);
 		_permissionFocus = chat;
-		if (chat > 0) _permissions->ensure(_accountScope, _accountId, chat);
+		if (chat <= 0) return;
+		if (changed) {
+			_permissions->watch(_accountScope, _accountId, chat);
+		} else {
+			_permissions->ensure(_accountScope, _accountId, chat);
+		}
 	}
 
 	void observeComposerChat(int userId) {
@@ -936,10 +945,12 @@ public:
 				done(u"Account changed."_q);
 				return;
 			}
-			if (CoreSendAllowed(canSend)) {
+			if (_permissions->sendable(_accountId, chat)) {
 				_replies->send(_accountId, std::move(reviewed), finished);
 			} else {
-				done(kCoreSendDenied);
+				done(CoreSendUnavailable(
+					canSend,
+					_permissions->contactRequest(_accountId, chat)));
 			}
 		});
 	}
@@ -979,16 +990,159 @@ public:
 	}
 
 	[[nodiscard]] bool composerSendAllowed(int userId) const {
-		return _permissions->allowed(_accountId, chatForPeerUser(userId));
+		return _permissions->sendable(_accountId, chatForPeerUser(userId));
+	}
+
+	[[nodiscard]] std::optional<bool> composerContactRequest(int userId) const {
+		return _permissions->contactRequest(_accountId, chatForPeerUser(userId));
+	}
+
+	[[nodiscard]] bool composerDeclineIsBlock(int userId) const {
+		return _permissions->knownType(_accountId, chatForPeerUser(userId))
+			== CoreChatType::Single;
+	}
+
+	[[nodiscard]] bool composerCanDeclineContactRequest(int userId) const {
+		const auto chat = chatForPeerUser(userId);
+		const auto type = _permissions->knownType(_accountId, chat);
+		return _permissions->contactRequest(_accountId, chat) == true
+			&& type
+			&& *type != CoreChatType::OutBroadcast;
+	}
+
+	[[nodiscard]] bool composerDeclineNeedsDeletionConfirm(int userId) const {
+		return _permissions->knownType(_accountId, chatForPeerUser(userId))
+			== CoreChatType::Group;
+	}
+
+	[[nodiscard]] bool contactRequestBusy(int userId) const {
+		return _pendingContactRequests.contains(
+			{ _accountId, chatForPeerUser(userId) });
 	}
 
 	QString outgoingDenied(int userId) {
 		const auto chat = chatForPeerUser(userId);
-		if (_permissions->allowed(_accountId, chat)) return {};
-		if (!_permissions->known(_accountId, chat).has_value()) {
-			_permissions->observe(_accountScope, _accountId, chat);
+		if (_permissions->sendable(_accountId, chat)) return {};
+		_permissions->observe(_accountScope, _accountId, chat);
+		return CoreSendUnavailable(
+			_permissions->known(_accountId, chat),
+			_permissions->contactRequest(_accountId, chat));
+	}
+
+	AccountInventoryRequest contactRequestRpc() const {
+		return [rpc = _rpc](QString method, QJsonArray params, DeltaRpc::Callback done) {
+			rpc->call(method, params, std::move(done));
+		};
+	}
+
+	void unselectChat(int chat) {
+		const auto peer = peerFromUser(UserId(peerUserForChat(chat)));
+		for (const auto &window : _session->windows()) {
+			if (window->activeChatCurrent().peer() == _session->data().peer(peer)) {
+				window->clearSectionStack(Window::SectionShow(
+					Window::SectionShow::Way::ClearStack, anim::type::instant));
+			}
 		}
-		return kCoreSendDenied;
+	}
+
+	void finishContactRequest(
+			int chat,
+			ContactRequestAction action,
+			ContactRequestResult result,
+			Fn<void(QString)> done) {
+		_pendingContactRequests.erase({ _accountId, chat });
+		ComposerRevision = ComposerRevision.current() + 1;
+		if (!ContactRequestSucceeded(result)) {
+			if (done) {
+				done(result.error.isEmpty()
+					? kContactRequestUnverified
+					: result.error);
+			}
+			return;
+		}
+		if (action == ContactRequestAction::Decline) {
+			if (_permissions->knownType(_accountId, chat) == CoreChatType::Group) {
+				_permissions->forget(_accountId, chat);
+			} else if (_permissions->watching(_accountId, chat)) {
+				_permissions->refresh(_accountScope, _accountId, chat);
+			}
+			unselectChat(chat);
+		} else if (_permissions->watching(_accountId, chat)) {
+			_permissions->refresh(_accountScope, _accountId, chat);
+		}
+		_reload.start();
+		if (done) done({});
+	}
+
+	bool beginContactRequest(int userId, int &chat, Fn<void(QString)> done) {
+		chat = chatForPeerUser(userId);
+		if (chat <= 0 || userId <= 0) {
+			if (done) done(kContactRequestUnavailable);
+			return false;
+		}
+		const auto key = std::pair<int, int>{ _accountId, chat };
+		if (_pendingContactRequests.contains(key)) {
+			if (done) done(u"Wait for the current request change to finish."_q);
+			return false;
+		}
+		_pendingContactRequests.insert(key);
+		ComposerRevision = ComposerRevision.current() + 1;
+		return true;
+	}
+
+	void acceptContactRequest(int userId, Fn<void(QString)> done) {
+		auto chat = 0;
+		if (!beginContactRequest(userId, chat, done)) return;
+		const auto current = _accountScope.guard();
+		const auto alive = _alive;
+		AcceptCoreContactRequest(
+			contactRequestRpc(),
+			_accountScope,
+			_accountId,
+			chat,
+			[=](ContactRequestResult result) {
+				if (alive.expired()) return;
+				if (!current()) {
+					_pendingContactRequests.erase({ _accountId, chat });
+					return;
+				}
+				finishContactRequest(
+					chat,
+					ContactRequestAction::Accept,
+					std::move(result),
+					done);
+			});
+	}
+
+	void declineContactRequest(int userId, bool confirmed, Fn<void(QString)> done) {
+		auto chat = 0;
+		if (!beginContactRequest(userId, chat, done)) return;
+		ContactRequestDeletionReview review;
+		if (confirmed) {
+			review.chatId = chat;
+			review.type = CoreChatType::Group;
+			review.confirmed = true;
+		}
+		const auto current = _accountScope.guard();
+		const auto alive = _alive;
+		DeclineCoreContactRequest(
+			contactRequestRpc(),
+			_accountScope,
+			_accountId,
+			chat,
+			review,
+			[=](ContactRequestResult result) {
+				if (alive.expired()) return;
+				if (!current()) {
+					_pendingContactRequests.erase({ _accountId, chat });
+					return;
+				}
+				finishContactRequest(
+					chat,
+					ContactRequestAction::Decline,
+					std::move(result),
+					done);
+			});
 	}
 
 	void loadComposeQueue(int userId, Fn<void(ComposeQueue, QString)> done) {
@@ -1043,11 +1197,17 @@ public:
 			finishComposeQueue(account, chat, userId, current, {}, std::move(done));
 			return;
 		}
-		if (!_permissions->allowed(account, chat)) {
-			if (!_permissions->known(account, chat).has_value()) {
-				_permissions->observe(_accountScope, account, chat);
-			}
-			finishComposeQueue(account, chat, userId, current, kCoreSendDenied, std::move(done));
+		if (!_permissions->sendable(account, chat)) {
+			_permissions->observe(_accountScope, account, chat);
+			finishComposeQueue(
+				account,
+				chat,
+				userId,
+				current,
+				CoreSendUnavailable(
+					_permissions->known(account, chat),
+					_permissions->contactRequest(account, chat)),
+				std::move(done));
 			return;
 		}
 		const auto guard = _alive;
@@ -1133,7 +1293,7 @@ public:
 			std::vector<ComposeDraft> selection, Fn<void(bool)> done,
 			std::vector<ForwardSource> forwards) {
 		if (!composerWritable(userId)) return {};
-		if (!_permissions->allowed(_accountId, chatForPeerUser(userId))) return {};
+		if (!_permissions->sendable(_accountId, chatForPeerUser(userId))) return {};
 		const auto offset = selection.size();
 		for (const auto &source : forwards) {
 			if (source.chat <= 0 || source.message <= 0) return {};
@@ -1208,7 +1368,7 @@ public:
 	std::shared_ptr<PreparedSend> beginPreparedSend(int userId) {
 		if (!composerWritable(userId)) return {};
 		const auto chat = chatForPeerUser(userId);
-		if (chat <= 0 || !_permissions->allowed(_accountId, chat)) return {};
+		if (chat <= 0 || !_permissions->sendable(_accountId, chat)) return {};
 		auto result = std::make_shared<PreparedSend>();
 		result->account = _accountId;
 		result->chat = chat;
@@ -1250,11 +1410,11 @@ public:
 			done(0, u"The attachment belongs to an earlier profile view."_q);
 			return;
 		}
-		if (!_permissions->allowed(preparation->account, preparation->chat)) {
-			if (!_permissions->known(preparation->account, preparation->chat).has_value()) {
-				_permissions->observe(_accountScope, preparation->account, preparation->chat);
-			}
-			done(0, kCoreSendDenied);
+		if (!_permissions->sendable(preparation->account, preparation->chat)) {
+			_permissions->observe(_accountScope, preparation->account, preparation->chat);
+			done(0, CoreSendUnavailable(
+				_permissions->known(preparation->account, preparation->chat),
+				_permissions->contactRequest(preparation->account, preparation->chat)));
 			return;
 		}
 		const auto guard = _alive;
@@ -2101,6 +2261,7 @@ public:
 		_deletedMessages.clear();
 		_pendingMuteChats.clear();
 		_pendingContactBlocks.clear();
+		_pendingContactRequests.clear();
 		_knownListedChats.clear();
 		++_dialogsRevision;
 		_names.clear();
@@ -2606,7 +2767,11 @@ public:
 					ChannelRevision = ChannelRevision.current() + 1;
 					_session->changes().peerUpdated(_session->data().user(UserId(userId)), Data::PeerUpdate::Flag::OnlineStatus);
 				}
-				_permissions->apply(_accountId, chat, object);
+				_permissions->refreshObserved(
+					_accountScope,
+					_accountId,
+					chat,
+					_permissionFocus);
 			} else if (!method.startsWith(u"get_"_q)) {
 				_reload.start();
 			}
@@ -3346,7 +3511,8 @@ private:
 			} else {
 				_permissions->refreshWatched(_accountScope, _accountId, _permissionFocus);
 			}
-		} else if (kind == u"ChatlistChanged"_q) {
+		} else if (kind == u"ChatlistChanged"_q
+			|| kind == u"ContactsChanged"_q) {
 			_permissions->refreshWatched(_accountScope, _accountId, _permissionFocus);
 		}
 		if (kind == u"ConnectivityChanged"_q) {
@@ -3815,6 +3981,7 @@ public:
 	QSet<int> _deletedMessages;
 	QSet<int> _pendingMuteChats;
 	QSet<int> _pendingContactBlocks;
+	std::set<std::pair<int, int>> _pendingContactRequests;
 	bool _switching = false;
 	const std::shared_ptr<bool> _aliveOwner = std::make_shared<bool>(true);
 	const std::weak_ptr<bool> _alive = _aliveOwner;
@@ -3947,6 +4114,50 @@ std::optional<bool> ComposerSendKnown(int userId) {
 
 bool ComposerSendAllowed(int userId) {
 	return GlobalBridge && GlobalBridge->composerSendAllowed(userId);
+}
+
+std::optional<bool> ComposerContactRequest(int userId) {
+	return GlobalBridge
+		? GlobalBridge->composerContactRequest(userId)
+		: std::nullopt;
+}
+
+bool ComposerDeclineIsBlock(int userId) {
+	return GlobalBridge && GlobalBridge->composerDeclineIsBlock(userId);
+}
+
+bool ComposerCanDeclineContactRequest(int userId) {
+	return GlobalBridge && GlobalBridge->composerCanDeclineContactRequest(userId);
+}
+
+bool ComposerDeclineNeedsDeletionConfirm(int userId) {
+	return GlobalBridge && GlobalBridge->composerDeclineNeedsDeletionConfirm(userId);
+}
+
+bool ContactRequestBusy(int userId) {
+	return GlobalBridge && GlobalBridge->contactRequestBusy(userId);
+}
+
+void AcceptContactRequest(int userId, Fn<void(QString)> done) {
+	if (GlobalBridge) {
+		GlobalBridge->acceptContactRequest(userId, std::move(done));
+	} else if (done) {
+		done(kContactRequestUnavailable);
+	}
+}
+
+void DeclineContactRequest(int userId, bool confirmed, Fn<void(QString)> done) {
+	if (GlobalBridge) {
+		GlobalBridge->declineContactRequest(userId, confirmed, std::move(done));
+	} else if (done) {
+		done(kContactRequestUnavailable);
+	}
+}
+
+QString ComposerSendUnavailable(int userId) {
+	return GlobalBridge
+		? GlobalBridge->outgoingDenied(userId)
+		: kCoreSendUnknown;
 }
 
 void WatchComposerChat(int userId) {

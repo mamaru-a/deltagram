@@ -230,6 +230,23 @@ QJsonObject FullChatJson(int id, QJsonValue canSend, bool device = false) {
 	return json;
 }
 
+QJsonObject RequestFullChatJson(
+		int id,
+		bool canSend,
+		bool request,
+		const QString &type = u"Single"_s,
+		QJsonArray contacts = QJsonArray{ 12 }) {
+	return {
+		{ u"id"_s, id },
+		{ u"chatType"_s, type },
+		{ u"canSend"_s, canSend },
+		{ u"isContactRequest"_s, request },
+		{ u"isDeviceChat"_s, false },
+		{ u"isSelfTalk"_s, false },
+		{ u"contactIds"_s, std::move(contacts) },
+	};
+}
+
 } // namespace
 
 class IntegrityTests final : public QObject {
@@ -502,12 +519,32 @@ private slots:
 		QVERIFY(replies[0].durable);
 	}
 
+	void notificationReplyContactRequestKeepsPendingWithoutSend() {
+		auto fixture = AuthorizedReplyFixture();
+		auto completed = 0;
+		fixture.submit(1, 12, u"request reply"_s, [&](int id, QString error) {
+			QCOMPARE(id, 0);
+			QCOMPARE(error, Delta::kCoreSendDeniedKeepReply);
+			++completed;
+		});
+		QVERIFY(fixture.permissions.reply(RequestFullChatJson(12, true, true)));
+		QCOMPARE(fixture.replies.sends, 0);
+		QCOMPARE(completed, 1);
+		QVERIFY(fixture.permissions.permissions->allowed(1, 12));
+		QVERIFY(!fixture.permissions.permissions->sendable(1, 12));
+		const auto replies = fixture.replies.list();
+		QCOMPARE(replies.size(), size_t(1));
+		QCOMPARE(replies[0].text, u"request reply"_s);
+		QCOMPARE(replies[0].state, Delta::ReplyState::Pending);
+		QVERIFY(replies[0].durable);
+	}
+
 	void notificationReplyPermissionErrorKeepsPendingWithoutSend() {
 		auto fixture = AuthorizedReplyFixture();
 		auto completed = 0;
 		fixture.submit(1, 12, u"offline reply"_s, [&](int id, QString error) {
 			QCOMPARE(id, 0);
-			QCOMPARE(error, Delta::kCoreSendDeniedKeepReply);
+			QCOMPARE(error, Delta::kCoreSendUnknownKeepReply);
 			++completed;
 		});
 		QVERIFY(fixture.permissions.reply(u"offline"_s, true));
@@ -524,7 +561,7 @@ private slots:
 		auto completed = 0;
 		fixture.submit(1, 12, u"wrapped reply"_s, [&](int id, QString error) {
 			QCOMPARE(id, 0);
-			QCOMPARE(error, Delta::kCoreSendDeniedKeepReply);
+			QCOMPARE(error, Delta::kCoreSendUnknownKeepReply);
 			++completed;
 		});
 		QVERIFY(fixture.permissions.replyEnvelope({
@@ -3585,6 +3622,19 @@ private slots:
 		QVERIFY(!Delta::CoreSendAllowed(std::nullopt));
 		QVERIFY(!Delta::CoreSendAllowed(false));
 		QVERIFY(Delta::CoreSendAllowed(true));
+		QCOMPARE(Delta::CoreSendUnavailable(std::nullopt), Delta::kCoreSendUnknown);
+		QCOMPARE(Delta::CoreSendUnavailable(std::nullopt, true), Delta::kCoreSendUnknownKeepReply);
+		QCOMPARE(Delta::CoreSendUnavailable(false), Delta::kCoreSendDenied);
+		QCOMPARE(Delta::CoreSendUnavailable(false, true), Delta::kCoreSendDeniedKeepReply);
+		QCOMPARE(
+			Delta::CoreSendUnavailable(true, std::optional<bool>(true), false),
+			Delta::kCoreSendDenied);
+		QCOMPARE(
+			Delta::CoreSendUnavailable(true, std::optional<bool>(true), true),
+			Delta::kCoreSendDeniedKeepReply);
+		QCOMPARE(
+			Delta::CoreSendUnavailable(true, std::optional<bool>(false), false),
+			Delta::kCoreSendUnknown);
 		QCOMPARE(Delta::CoreEventChatId(QJsonObject{{ u"chatId"_s, 10 }}), 10);
 		QCOMPARE(Delta::CoreEventChatId(QJsonObject{{ u"chat_id"_s, 11 }}), 11);
 		QCOMPARE(Delta::CoreEventChatId(QJsonObject{{ u"chatId"_s, 10 }, { u"chat_id"_s, 11 }}), 10);
@@ -3613,16 +3663,49 @@ private slots:
 		QCOMPARE(fixture.changes, 1);
 	}
 
-	void chatSendPermissionsNewerDenialNotOverwrittenByStaleAllow() {
+	void chatSendPermissionsMetadataNotificationRefreshesWithoutPublishingPayload() {
 		auto fixture = PermissionFixture();
 		auto scope = Delta::AccountScope();
 		fixture.permissions->observe(scope, 2, 10);
+		QVERIFY(fixture.reply(FullChatJson(10, false)));
+		QVERIFY(fixture.permissions->known(2, 10) == std::optional<bool>(false));
+		const auto untracked = FullChatJson(10, true);
+		QVERIFY(Delta::CoreFullChatCanSend(untracked, 10) == std::optional<bool>(true));
+		fixture.methods.clear();
+		fixture.permissions->refreshObserved(scope, 2, 10, 10);
+		QCOMPARE(fixture.methods, QStringList{ u"get_full_chat_by_id"_s });
 		QCOMPARE(fixture.pending.size(), size_t(1));
-		fixture.permissions->apply(2, 10, FullChatJson(10, false));
 		QVERIFY(fixture.permissions->known(2, 10) == std::optional<bool>(false));
 		QVERIFY(!fixture.permissions->allowed(2, 10));
-		QVERIFY(fixture.reply(FullChatJson(10, true)));
+		QVERIFY(fixture.reply(FullChatJson(10, false)));
 		QVERIFY(fixture.permissions->known(2, 10) == std::optional<bool>(false));
+		QVERIFY(!fixture.permissions->allowed(2, 10));
+	}
+
+	void chatSendPermissionsUntrackedMetadataCannotBeatInFlightObserver() {
+		auto fixture = PermissionFixture();
+		auto scope = Delta::AccountScope();
+		auto completed = 0;
+		auto last = std::optional<bool>(true);
+		fixture.permissions->observe(scope, 2, 10, [&](std::optional<bool> value) {
+			last = value;
+			++completed;
+		});
+		QCOMPARE(fixture.pending.size(), size_t(1));
+		fixture.permissions->refresh(scope, 2, 10);
+		const auto untracked = FullChatJson(10, true);
+		QVERIFY(Delta::CoreFullChatCanSend(untracked, 10) == std::optional<bool>(true));
+		fixture.permissions->refreshObserved(scope, 2, 10, 10);
+		QCOMPARE(fixture.pending.size(), size_t(1));
+		QVERIFY(!fixture.permissions->known(2, 10).has_value());
+		QVERIFY(!fixture.permissions->allowed(2, 10));
+		QVERIFY(fixture.reply(untracked));
+		QCOMPARE(completed, 0);
+		QVERIFY(!fixture.permissions->allowed(2, 10));
+		QCOMPARE(fixture.pending.size(), size_t(1));
+		QVERIFY(fixture.reply(FullChatJson(10, false)));
+		QCOMPARE(completed, 1);
+		QVERIFY(last == std::optional<bool>(false));
 		QVERIFY(!fixture.permissions->allowed(2, 10));
 	}
 
@@ -3760,6 +3843,127 @@ private slots:
 		QCOMPARE(fixture.pending.size(), size_t(1));
 	}
 
+	void chatSendPermissionsWatchRefreshesFailedAndDenied() {
+		auto fixture = PermissionFixture();
+		auto scope = Delta::AccountScope();
+		fixture.permissions->watch(scope, 2, 10);
+		QCOMPARE(fixture.pending.size(), size_t(1));
+		QVERIFY(fixture.reply(u"offline"_s, true));
+		QVERIFY(!fixture.permissions->known(2, 10).has_value());
+		fixture.permissions->ensure(scope, 2, 10);
+		QCOMPARE(fixture.pending.size(), size_t(0));
+		fixture.permissions->watch(scope, 2, 10);
+		QCOMPARE(fixture.pending.size(), size_t(1));
+		QVERIFY(fixture.reply(FullChatJson(10, false)));
+		QVERIFY(fixture.permissions->known(2, 10) == std::optional<bool>(false));
+		fixture.permissions->ensure(scope, 2, 10);
+		QCOMPARE(fixture.pending.size(), size_t(0));
+		fixture.permissions->watch(scope, 2, 10);
+		QCOMPARE(fixture.pending.size(), size_t(1));
+		QVERIFY(fixture.reply(FullChatJson(10, true)));
+		QVERIFY(fixture.permissions->allowed(2, 10));
+	}
+
+	void chatSendPermissionsRefreshObservedSkipsIdleUnfocused() {
+		auto fixture = PermissionFixture();
+		auto scope = Delta::AccountScope();
+		fixture.permissions->observe(scope, 2, 10);
+		fixture.permissions->observe(scope, 2, 11);
+		QVERIFY(fixture.reply(FullChatJson(10, true)));
+		QVERIFY(fixture.reply(FullChatJson(11, true)));
+		fixture.methods.clear();
+		fixture.pending.clear();
+		fixture.permissions->refreshObserved(scope, 2, 11, 10);
+		QCOMPARE(fixture.pending.size(), size_t(0));
+		QVERIFY(fixture.permissions->allowed(2, 11));
+		fixture.permissions->refreshObserved(scope, 2, 99, 10);
+		QVERIFY(!fixture.permissions->watching(2, 99));
+		QCOMPARE(fixture.pending.size(), size_t(0));
+		fixture.permissions->refreshObserved(scope, 2, 10, 10);
+		QCOMPARE(fixture.methods, QStringList{ u"get_full_chat_by_id"_s });
+		QCOMPARE(fixture.pending.front().params, (QJsonArray{ 2, 10 }));
+		auto waiting = 0;
+		fixture.permissions->observe(scope, 2, 11, [&](std::optional<bool>) { ++waiting; });
+		QCOMPARE(fixture.pending.size(), size_t(2));
+		fixture.methods.clear();
+		fixture.permissions->refreshObserved(scope, 2, 11, 10);
+		QCOMPARE(fixture.pending.size(), size_t(2));
+		QCOMPARE(waiting, 0);
+		QVERIFY(fixture.permissions->allowed(2, 10));
+		QVERIFY(fixture.permissions->allowed(2, 11));
+	}
+
+	void chatSendPermissionsReentrantResetForgetAndReobserve() {
+		auto fixture = PermissionFixture();
+		auto scope = Delta::AccountScope();
+		auto hits = 0;
+		auto last = std::optional<bool>(true);
+		fixture.permissions->observe(scope, 2, 10, [&](std::optional<bool> value) {
+			last = value;
+			++hits;
+			QVERIFY(value == std::optional<bool>(true));
+			fixture.permissions->forget(2, 10);
+			QVERIFY(!fixture.permissions->watching(2, 10));
+			fixture.permissions->reset();
+			fixture.permissions->observe(scope, 2, 11, [&](std::optional<bool> next) {
+				last = next;
+				++hits;
+			});
+		});
+		QVERIFY(fixture.reply(FullChatJson(10, true)));
+		QCOMPARE(hits, 1);
+		QVERIFY(last == std::optional<bool>(true));
+		QVERIFY(!fixture.permissions->watching(2, 10));
+		QVERIFY(fixture.permissions->watching(2, 11));
+		QVERIFY(fixture.permissions->reading(2, 11));
+		QVERIFY(!fixture.permissions->allowed(2, 10));
+		QVERIFY(!fixture.permissions->allowed(2, 11));
+		QVERIFY(fixture.reply(FullChatJson(11, false)));
+		QCOMPARE(hits, 2);
+		QVERIFY(last == std::optional<bool>(false));
+		QVERIFY(!fixture.permissions->allowed(2, 11));
+	}
+
+	void chatSendPermissionsChangedCallbackMayResetAndReobserve() {
+		std::unique_ptr<Delta::ChatSendPermissions> permissions;
+		std::vector<PermissionFixture::Pending> pending;
+		auto next = Delta::AccountScope();
+		auto changes = 0;
+		auto hits = 0;
+		permissions = std::make_unique<Delta::ChatSendPermissions>(
+			[&](QString, QJsonArray params, DeltaRpc::Callback done) {
+				pending.push_back({ u"get_full_chat_by_id"_s, std::move(params), std::move(done) });
+			},
+			[&] {
+				++changes;
+				if (changes != 1) return;
+				permissions->reset();
+				permissions->observe(next, 2, 12);
+			});
+		auto scope = Delta::AccountScope();
+		permissions->observe(scope, 2, 10, [&](std::optional<bool> value) {
+			++hits;
+			QVERIFY(value == std::optional<bool>(true));
+			QVERIFY(!permissions->watching(2, 10));
+			QVERIFY(permissions->watching(2, 12));
+			QVERIFY(permissions->reading(2, 12));
+		});
+		QCOMPARE(pending.size(), size_t(1));
+		auto first = std::move(pending.front().done);
+		pending.erase(pending.begin());
+		first({{ u"result"_s, FullChatJson(10, true) }});
+		QCOMPARE(hits, 1);
+		QCOMPARE(changes, 1);
+		QCOMPARE(pending.size(), size_t(1));
+		QCOMPARE(pending.front().params, (QJsonArray{ 2, 12 }));
+		QVERIFY(!permissions->allowed(2, 10));
+		auto second = std::move(pending.front().done);
+		pending.erase(pending.begin());
+		second({{ u"result"_s, FullChatJson(12, false) }});
+		QVERIFY(permissions->known(2, 12) == std::optional<bool>(false));
+		QVERIFY(!permissions->allowed(2, 12));
+	}
+
 	void chatSendPermissionsAllowedCallbackFiresOnce() {
 		auto fixture = PermissionFixture();
 		auto scope = Delta::AccountScope();
@@ -3791,10 +3995,18 @@ private slots:
 		fixture.permissions->observe(scope, 2, 10, sendIfAllowed);
 		QVERIFY(fixture.reply(u"offline"_s, true));
 		QVERIFY(!fixture.permissions->allowed(2, 10));
-		fixture.permissions->apply(2, 10, QJsonObject{
+		const auto untracked = QJsonObject{
 			{ u"id"_s, 10 },
 			{ u"chatType"_s, u"Single"_s },
-		});
+			{ u"canSend"_s, true },
+		};
+		QVERIFY(Delta::CoreFullChatCanSend(untracked, 10) == std::optional<bool>(true));
+		fixture.permissions->refreshObserved(scope, 2, 10, 10);
+		QVERIFY(!fixture.permissions->allowed(2, 10));
+		QVERIFY(fixture.reply(QJsonObject{
+			{ u"id"_s, 10 },
+			{ u"chatType"_s, u"Single"_s },
+		}));
 		QVERIFY(!fixture.permissions->allowed(2, 10));
 		QCOMPARE(sends, 0);
 		Delta::ReadCoreChatCanSend([&](QString, QJsonArray, DeltaRpc::Callback done) {
@@ -3841,6 +4053,66 @@ private slots:
 		QVERIFY(!fixture.permissions->allowed(2, 10));
 		QVERIFY(fixture.reply(FullChatJson(11, true)));
 		QVERIFY(!fixture.permissions->allowed(2, 11));
+	}
+
+	void chatSendPermissionsParsesContactRequestIndependently() {
+		auto fixture = PermissionFixture();
+		auto scope = Delta::AccountScope();
+		auto completed = 0;
+		fixture.permissions->observe(scope, 2, 10, [&](std::optional<bool> canSend) {
+			QVERIFY(canSend == std::optional<bool>(true));
+			++completed;
+		});
+		QCOMPARE(fixture.methods, QStringList{ u"get_full_chat_by_id"_s });
+		QVERIFY(fixture.reply(RequestFullChatJson(10, true, true)));
+		QCOMPARE(completed, 1);
+		QVERIFY(fixture.permissions->allowed(2, 10));
+		QVERIFY(!fixture.permissions->sendable(2, 10));
+		QVERIFY(fixture.permissions->contactRequest(2, 10) == std::optional<bool>(true));
+		QVERIFY(fixture.permissions->knownType(2, 10) == std::optional<Delta::CoreChatType>(Delta::CoreChatType::Single));
+		QCOMPARE(fixture.changes, 1);
+		QCOMPARE(fixture.methods.size(), size_t(1));
+	}
+
+	void chatSendPermissionsMissingRequestFlagDoesNotOverlay() {
+		auto fixture = PermissionFixture();
+		auto scope = Delta::AccountScope();
+		fixture.permissions->observe(scope, 2, 10);
+		QVERIFY(fixture.reply(FullChatJson(10, true)));
+		QVERIFY(fixture.permissions->allowed(2, 10));
+		QVERIFY(fixture.permissions->sendable(2, 10));
+		QVERIFY(!fixture.permissions->contactRequest(2, 10).has_value());
+		QVERIFY(!fixture.permissions->knownType(2, 10).has_value());
+		QCOMPARE(fixture.methods, QStringList{ u"get_full_chat_by_id"_s });
+	}
+
+	void chatSendPermissionsMalformedRequestLeavesSendUnchanged() {
+		auto fixture = PermissionFixture();
+		auto scope = Delta::AccountScope();
+		auto json = FullChatJson(10, true);
+		json.insert(u"isContactRequest"_s, 1);
+		fixture.permissions->observe(scope, 2, 10);
+		QVERIFY(fixture.reply(json));
+		QVERIFY(fixture.permissions->allowed(2, 10));
+		QVERIFY(fixture.permissions->sendable(2, 10));
+		QVERIFY(!fixture.permissions->contactRequest(2, 10).has_value());
+		QCOMPARE(fixture.methods.size(), size_t(1));
+	}
+
+	void chatSendPermissionsClearedRequestBecomesSendable() {
+		auto fixture = PermissionFixture();
+		auto scope = Delta::AccountScope();
+		fixture.permissions->observe(scope, 2, 10);
+		QVERIFY(fixture.reply(RequestFullChatJson(10, true, true)));
+		QVERIFY(fixture.permissions->allowed(2, 10));
+		QVERIFY(!fixture.permissions->sendable(2, 10));
+		fixture.permissions->refresh(scope, 2, 10);
+		QVERIFY(fixture.reply(RequestFullChatJson(10, true, false)));
+		QVERIFY(fixture.permissions->allowed(2, 10));
+		QVERIFY(fixture.permissions->sendable(2, 10));
+		QVERIFY(fixture.permissions->contactRequest(2, 10) == std::optional<bool>(false));
+		QCOMPARE(fixture.changes, 2);
+		QCOMPARE(fixture.methods.size(), size_t(2));
 	}
 
 	void realCoreHistoryDeletion() {

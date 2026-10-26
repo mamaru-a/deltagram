@@ -325,8 +325,8 @@ compilation and real Crow integration remain separate gates.
 
 ### Contact-request action gap — 2026-10-26
 
-Source review confirms there is no explicit `accept_chat` action in the Qt
-bridge. Core includes incoming requests in the chat list but reports
+Source review at `22bfd8f` confirms there is no explicit `accept_chat` action in
+the Qt bridge. Core includes incoming requests in the chat list but reports
 `isContactRequest: true` and `canSend: false`. Official Desktop presents explicit
 Accept and Block/Delete actions; a send-permission lock alone does not provide
 that request flow. Group decline uses Core `block_chat`, which deletes the group
@@ -360,6 +360,38 @@ was created, and the original drafts/history are unchanged. Private rendered
 captures are `/tmp/request-single-baseline-44a.png` and
 `/tmp/request-group-baseline-44a.png`; readback is
 `/tmp/deltagram-live/request-fixture/baseline-gui-inspection.json` in the container.
+
+Separate decline fixtures are also ready: another Group request (chat `16`)
+from the request sender, and a Single request (chat `17`) from a second fresh
+profile, **Deltagram integrity decline sender**. Core confirms all four fixtures
+remain requests with sending disabled. Existing drafts, message IDs and the
+selected profile are unchanged. Both isolated sender processes exited after
+delivery. Single creation and send attempts were journaled without mutation
+retries; evidence is `/tmp/deltagram-live/request-decline-fixture/ready.json`.
+This leaves separate fixtures for Accept and destructive decline replay.
+
+A later isolated request/permission snapshot passed **305 integrity checks**.
+Its separate action suite passed **82 checks** after correcting a new fixture's
+scope-generation assumption: `invalidate()` expires old guards and starts a new
+generation, rather than permanently disabling new reads. The narrow shared-tree
+test correction is now applied; rebuilding both current focused test files
+serially passes the same 305 and 82 checks. Compiling the snapshot
+parser against reduced FullChat payloads from all four live requests also passes;
+this reads metadata only and does not accept, block or delete a request. These
+checks do not compile the native widget changes. Logs are
+`/tmp/request-review-tests.log` and `/tmp/request-review-recovery-tests.log` in
+the disposable test container.
+
+The native source now adds an Accept and Block/Delete overlay driven by the
+tracked FullChat request flag, separately from send permission. Actions use
+`accept_chat` or `block_chat`, with per-account/chat busy guards and account/UI
+lifetime checks. Group decline confirms deletion without blocking members;
+acknowledged deletion is distinguished from uncertain readback. The helper no
+longer retains a self-referencing peer-verification callback. OpenContact and
+the explicit profile Message behavior are preserved. CMake registers the separate
+request-action QtTest executable alongside the integrity suite. Full native
+compilation and action replay are still pending. Non-Single confirmation parity
+and the Accept busy-state handoff are being reviewed before final replay.
 
 ### Sender and chat identity lookups — 2026-10-26
 

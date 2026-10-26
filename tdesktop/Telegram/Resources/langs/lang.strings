@@ -30,6 +30,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_enable_notifications_from_tray" = "Enable notifications";
 "lng_open_from_tray" = "Open Telegram";
 "lng_deltagram_open_from_tray" = "Open Deltagram";
+"lng_delta_accept" = "Accept";
+"lng_delta_block" = "Block";
+"lng_delta_delete" = "Delete";
+"lng_delta_delete_group_request" = "This deletes the group conversation. Group members are not blocked.";
 "lng_minimize_to_tray" = "Minimize to Tray";
 "lng_quit_from_tray" = "Quit Telegram";
 "lng_deltagram_quit_from_tray" = "Quit Deltagram";

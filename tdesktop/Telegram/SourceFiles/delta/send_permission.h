@@ -2,6 +2,7 @@
 
 #include "account_inventory.h"
 #include "account_scope.h"
+#include "contact_request_actions.h"
 #include "media_identity.h"
 #include "reply_store.h"
 
@@ -24,6 +25,10 @@ inline const QString kCoreSendDenied = QStringLiteral(
 	"This conversation cannot accept messages.");
 inline const QString kCoreSendDeniedKeepReply = QStringLiteral(
 	"This conversation cannot accept messages. The reply was saved for review.");
+inline const QString kCoreSendUnknown = QStringLiteral(
+	"Message availability could not be confirmed. Try again.");
+inline const QString kCoreSendUnknownKeepReply = QStringLiteral(
+	"Message availability could not be confirmed. Try again. The reply was saved for review.");
 inline const QString kCoreSendReplyAccountChanged = QStringLiteral(
 	"A notification reply in your previous profile needs review. Switch back and open Saved replies.");
 
@@ -55,6 +60,25 @@ inline const QString kCoreSendReplyAccountChanged = QStringLiteral(
 
 [[nodiscard]] inline bool CoreSendAllowed(std::optional<bool> canSend) {
 	return canSend.has_value() && *canSend;
+}
+
+[[nodiscard]] inline QString CoreSendUnavailable(
+		std::optional<bool> canSend,
+		bool keepReply = false) {
+	if (canSend.has_value() && !*canSend) {
+		return keepReply ? kCoreSendDeniedKeepReply : kCoreSendDenied;
+	}
+	return keepReply ? kCoreSendUnknownKeepReply : kCoreSendUnknown;
+}
+
+[[nodiscard]] inline QString CoreSendUnavailable(
+		std::optional<bool> canSend,
+		std::optional<bool> contactRequest,
+		bool keepReply = false) {
+	if (contactRequest == true) {
+		return keepReply ? kCoreSendDeniedKeepReply : kCoreSendDenied;
+	}
+	return CoreSendUnavailable(canSend, keepReply);
 }
 
 [[nodiscard]] inline int CoreEventChatId(const QJsonObject &event) {
@@ -120,6 +144,14 @@ public:
 		observe(scope, account, chat);
 	}
 
+	void watch(const AccountScope &scope, int account, int chat) {
+		if (watching(account, chat)) {
+			refresh(scope, account, chat);
+			return;
+		}
+		ensure(scope, account, chat);
+	}
+
 	void refresh(const AccountScope &scope, int account, int chat) {
 		if (!watching(account, chat)) return;
 		auto &slot = _slots[{ account, chat }];
@@ -151,13 +183,17 @@ public:
 		for (const auto chat : chats) refresh(scope, account, chat);
 	}
 
-	void apply(int account, int chat, const QJsonObject &json) {
-		if (account <= 0 || chat <= 0) return;
-		auto &slot = ensureSlot(account, chat);
-		++slot.seq;
-		slot.inFlight = 0;
-		publish(slot, CoreFullChatCanSend(json, chat));
-		if (slot.dirty) followUp({ account, chat }, slot);
+	void refreshObserved(
+			const AccountScope &scope,
+			int account,
+			int chat,
+			int focusedChat = 0) {
+		if (account <= 0 || chat <= 0 || !watching(account, chat)) return;
+		if (chat != focusedChat) {
+			const auto i = _slots.find({ account, chat });
+			if (i == _slots.end() || i->second.waiters.empty()) return;
+		}
+		refresh(scope, account, chat);
 	}
 
 	void forget(int account, int chat) {
@@ -165,7 +201,8 @@ public:
 		if (i == _slots.end()) return;
 		auto waiters = std::move(i->second.waiters);
 		_slots.erase(i);
-		if (_changed) _changed();
+		auto notify = _changed;
+		if (notify) notify();
 		for (auto &waiter : waiters) waiter(std::nullopt);
 	}
 
@@ -183,8 +220,22 @@ public:
 		return (i == _slots.end()) ? std::nullopt : i->second.value;
 	}
 
+	[[nodiscard]] std::optional<bool> contactRequest(int account, int chat) const {
+		const auto i = _slots.find({ account, chat });
+		return (i == _slots.end()) ? std::nullopt : i->second.contactRequest;
+	}
+
+	[[nodiscard]] std::optional<CoreChatType> knownType(int account, int chat) const {
+		const auto i = _slots.find({ account, chat });
+		return (i == _slots.end()) ? std::nullopt : i->second.type;
+	}
+
 	[[nodiscard]] bool allowed(int account, int chat) const {
 		return CoreSendAllowed(known(account, chat));
+	}
+
+	[[nodiscard]] bool sendable(int account, int chat) const {
+		return allowed(account, chat) && contactRequest(account, chat) != true;
 	}
 
 	[[nodiscard]] bool watching(int account, int chat) const {
@@ -200,6 +251,8 @@ private:
 	using Key = std::pair<int, int>;
 	struct Slot {
 		std::optional<bool> value;
+		std::optional<bool> contactRequest;
+		std::optional<CoreChatType> type;
 		std::uint64_t incarnation = 0;
 		std::uint64_t seq = 0;
 		std::uint64_t inFlight = 0;
@@ -222,32 +275,52 @@ private:
 		const auto incarnation = slot.incarnation;
 		const auto seq = slot.inFlight;
 		const auto alive = std::weak_ptr<bool>(_alive);
-		_request(QStringLiteral("get_full_chat_by_id"), { account, chat },
+		auto request = _request;
+		request(QStringLiteral("get_full_chat_by_id"), { account, chat },
 			[alive, valid = std::move(valid), account, chat, incarnation, seq, this](
 					QJsonObject reply) {
 				if (alive.expired()) return;
+				const auto live = valid();
+				const auto parsed = live
+					? CoreContactRequestFromReply(reply, chat)
+					: std::nullopt;
 				completeRead(
 					{ account, chat },
 					incarnation,
 					seq,
-					valid() ? CoreChatCanSend(reply, chat) : std::nullopt);
+					live ? CoreChatCanSend(reply, chat) : std::nullopt,
+					parsed ? std::optional<bool>(parsed->isContactRequest) : std::nullopt,
+					parsed ? std::optional<CoreChatType>(parsed->type) : std::nullopt);
 			});
 	}
 
-	void followUp(Key key, Slot &slot) {
-		auto valid = slot.followUpGuard
-			? std::move(slot.followUpGuard)
+	void followUp(Key key) {
+		const auto i = _slots.find(key);
+		if (i == _slots.end()) return;
+		auto valid = i->second.followUpGuard
+			? std::move(i->second.followUpGuard)
 			: std::function<bool()>([] { return true; });
-		slot.followUpGuard = {};
+		i->second.followUpGuard = {};
 		startRead(key.first, key.second, std::move(valid));
 	}
 
-	void publish(Slot &slot, std::optional<bool> value) {
-		const auto changed = slot.value != value;
-		slot.value = value;
-		auto waiters = std::move(slot.waiters);
-		slot.waiters.clear();
-		if (changed && _changed) _changed();
+	void publish(
+			Key key,
+			std::optional<bool> value,
+			std::optional<bool> contactRequest,
+			std::optional<CoreChatType> type) {
+		const auto i = _slots.find(key);
+		if (i == _slots.end()) return;
+		const auto changed = i->second.value != value
+			|| i->second.contactRequest != contactRequest
+			|| i->second.type != type;
+		i->second.value = value;
+		i->second.contactRequest = contactRequest;
+		i->second.type = type;
+		auto waiters = std::move(i->second.waiters);
+		i->second.waiters.clear();
+		auto notify = _changed;
+		if (changed && notify) notify();
 		for (auto &waiter : waiters) waiter(value);
 	}
 
@@ -255,20 +328,21 @@ private:
 			Key key,
 			std::uint64_t incarnation,
 			std::uint64_t seq,
-			std::optional<bool> value) {
+			std::optional<bool> value,
+			std::optional<bool> contactRequest,
+			std::optional<CoreChatType> type) {
 		const auto i = _slots.find(key);
 		if (i == _slots.end() || i->second.incarnation != incarnation) return;
-		auto &slot = i->second;
-		if (slot.inFlight == seq) slot.inFlight = 0;
-		if (seq != slot.seq) {
-			if (slot.dirty && slot.inFlight == 0) followUp(key, slot);
+		if (i->second.inFlight == seq) i->second.inFlight = 0;
+		if (seq != i->second.seq) {
+			if (i->second.dirty && i->second.inFlight == 0) followUp(key);
 			return;
 		}
-		if (slot.dirty) {
-			followUp(key, slot);
+		if (i->second.dirty) {
+			followUp(key);
 			return;
 		}
-		publish(slot, value);
+		publish(key, value, contactRequest, type);
 	}
 
 	Request _request;
@@ -300,13 +374,19 @@ inline void SubmitAuthorizedReply(
 			}
 			const auto reviewed = *saved;
 			permissions.observe(scope, account, reviewed.chat,
-				[&replies, account, reviewed, valid, done](std::optional<bool> canSend) {
+				[&replies, &permissions, account, reviewed, valid, done](
+						std::optional<bool> canSend) {
 					if (!valid()) {
 						if (done) done(0, kCoreSendReplyAccountChanged);
 						return;
 					}
-					if (!CoreSendAllowed(canSend)) {
-						if (done) done(0, kCoreSendDeniedKeepReply);
+					if (!permissions.sendable(account, reviewed.chat)) {
+						if (done) {
+							done(0, CoreSendUnavailable(
+								canSend,
+								permissions.contactRequest(account, reviewed.chat),
+								true));
+						}
 						return;
 					}
 					replies.send(account, reviewed, done);

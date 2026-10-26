@@ -314,6 +314,14 @@ HistoryWidget::HistoryWidget(
 	this,
 	tr::lng_profile_join_channel(tr::now).toUpper(),
 	st::historyComposeButton)
+, _deltaAccept(
+	this,
+	tr::lng_delta_accept(tr::now).toUpper(),
+	st::historyComposeButton)
+, _deltaDecline(
+	this,
+	tr::lng_delta_block(tr::now).toUpper(),
+	st::historyUnblock)
 , _muteUnmute(
 	this,
 	tr::lng_channel_mute(tr::now).toUpper(),
@@ -458,6 +466,8 @@ HistoryWidget::HistoryWidget(
 	_unblock->addClickHandler([=] { unblockUser(); });
 	_botStart->addClickHandler([=] { sendBotStartCommand(); });
 	_joinChannel->addClickHandler([=] { joinChannel(); });
+	_deltaAccept->addClickHandler([=] { deltaAcceptContactRequest(); });
+	_deltaDecline->addClickHandler([=] { deltaDeclineContactRequest(); });
 	_muteUnmute->addClickHandler([=] { toggleMuteUnmute(); });
 	setupGiftToChannelButton();
 	setupDirectMessageButton();
@@ -657,6 +667,8 @@ HistoryWidget::HistoryWidget(
 	_unblock->hide();
 	_botStart->hide();
 	_joinChannel->hide();
+	_deltaAccept->hide();
+	_deltaDecline->hide();
 	_muteUnmute->hide();
 	_reportMessages->hide();
 
@@ -2152,6 +2164,8 @@ void HistoryWidget::applyInlineBotQuery(UserData *bot, const QString &query) {
 void HistoryWidget::orderWidgets() {
 	_voiceRecordBar->raise();
 	_send->raise();
+	_deltaAccept->raise();
+	_deltaDecline->raise();
 	_aiButton->raise();
 	_sendAsFile->raise();
 	_expand->raise();
@@ -2626,6 +2640,7 @@ void HistoryWidget::setInnerFocus() {
 			|| isJoinChannel()
 			|| isBotStart()
 			|| isBlocked()
+			|| deltaContactRequest()
 			|| !_richDraftPreview->isHidden()
 			|| (!_canSendTexts && !_editMsgId)) {
 			if (_scroll->isHidden()) {
@@ -2731,6 +2746,7 @@ void HistoryWidget::setupShortcuts() {
 			});
 		if (showRecordButton()
 			&& _canSendMessages
+			&& !deltaContactRequest()
 			&& _joinChannel->isHidden()
 			&& !_composeSearch) {
 			const auto isVoice = request->check(Command::RecordVoice, 1);
@@ -3067,11 +3083,8 @@ void HistoryWidget::showHistory(
 		PeerId peerId,
 		MsgId showAtMsgId,
 		const Window::SectionShow &params) {
-	if (Delta::Active() && peerId) {
-		const auto userId = int(peerToUser(peerId).bare);
-		if (userId > 0) {
-			Delta::WatchComposerChat(userId);
-		}
+	if (Delta::Active()) {
+		Delta::WatchComposerChat(peerId ? int(peerToUser(peerId).bare) : 0);
 	}
 	_pinnedClickedId = FullMsgId();
 	_minPinnedId = std::nullopt;
@@ -4057,7 +4070,8 @@ bool HistoryWidget::canWriteMessage() const {
 		&& !isJoinChannel()
 		&& !isMuteUnmute()
 		&& !isBotStart()
-		&& !isSearching();
+		&& !isSearching()
+		&& !deltaContactRequest();
 }
 
 bool HistoryWidget::deltaComposerLocked() const {
@@ -4073,11 +4087,70 @@ bool HistoryWidget::deltaSendAllowed() const {
 bool HistoryWidget::deltaRefuseSend() {
 	if (deltaComposerLocked()) return true;
 	if (deltaSendAllowed()) return false;
-	if (_peer) {
-		Delta::ObserveComposerChat(int(peerToUser(_peer->id).bare));
-	}
-	controller()->showToast(u"This conversation cannot accept messages."_q);
+	const auto error = Delta::ComposerSendUnavailable(
+		int(peerToUser(_peer->id).bare));
+	if (error.isEmpty()) return false;
+	controller()->showToast(error);
 	return true;
+}
+
+bool HistoryWidget::deltaContactRequest() const {
+	return Delta::Active() && _peer
+		&& Delta::ComposerContactRequest(int(peerToUser(_peer->id).bare)) == true;
+}
+
+void HistoryWidget::deltaAcceptContactRequest() {
+	if (!deltaContactRequest() || !_peer) return;
+	const auto userId = int(peerToUser(_peer->id).bare);
+	if (Delta::ContactRequestBusy(userId)) return;
+	const auto history = _history;
+	const auto current = Delta::CaptureAccountGuard();
+	Delta::AcceptContactRequest(userId, crl::guard(this, [=](QString error) {
+		if (!current || !current() || _history != history) return;
+		if (!error.isEmpty()) controller()->showToast(error);
+		updateControlsVisibility();
+		updateControlsGeometry();
+	}));
+}
+
+void HistoryWidget::deltaDeclineContactRequest() {
+	if (!deltaContactRequest() || !_peer) return;
+	const auto userId = int(peerToUser(_peer->id).bare);
+	if (Delta::ContactRequestBusy(userId)) return;
+	if (Delta::ComposerDeclineNeedsDeletionConfirm(userId)) {
+		const auto history = _history;
+		const auto current = Delta::CaptureAccountGuard();
+		controller()->show(Ui::MakeConfirmBox({
+			.text = tr::lng_delta_delete_group_request(tr::now),
+			.confirmed = crl::guard(this, [=](Fn<void()> close) {
+				close();
+				if (!current || !current() || _history != history) return;
+				deltaFinishDecline(userId, true);
+			}),
+			.confirmText = tr::lng_delta_delete(),
+			.confirmStyle = &st::attentionBoxButton,
+		}));
+		return;
+	}
+	deltaFinishDecline(userId, false);
+}
+
+void HistoryWidget::deltaFinishDecline(int userId, bool confirmed) {
+	if (!_peer || userId != int(peerToUser(_peer->id).bare)) return;
+	if (Delta::ContactRequestBusy(userId)) return;
+	const auto history = _history;
+	const auto current = Delta::CaptureAccountGuard();
+	Delta::DeclineContactRequest(userId, confirmed, crl::guard(this, [=](QString error) {
+		if (!current || !current() || _history != history) return;
+		if (!error.isEmpty()) {
+			controller()->showToast(error);
+			updateControlsVisibility();
+			updateControlsGeometry();
+			return;
+		}
+		controller()->clearSectionStack(Window::SectionShow(
+			Window::SectionShow::Way::ClearStack, anim::type::instant));
+	}));
 }
 
 std::optional<std::vector<Delta::ForwardSource>> HistoryWidget::deltaForwardSources() const {
@@ -4141,7 +4214,10 @@ void HistoryWidget::updateControlsVisibility() {
 		? Delta::ComposerSendKnown(userId) : std::optional<bool>();
 	const auto batch = (Delta::Active() && _peer)
 		? Delta::PendingPreparedBatch(userId) : nullptr;
-	_field->rawTextEdit()->setReadOnly(!writable || (known.has_value() && !*known));
+	_field->rawTextEdit()->setReadOnly(
+		!writable
+			|| (known.has_value() && !*known)
+			|| deltaContactRequest());
 	_attachToggle->setDisabled(!writable && !batch);
 	const auto attachment = (Delta::Active() && _peer)
 		? Delta::DraftAttachmentName(int(peerToUser(_peer->id).bare)) : QString();
@@ -4231,6 +4307,8 @@ void HistoryWidget::updateControlsVisibility() {
 				|| isMuteUnmute()
 				|| isBotStart()
 				|| isReportMessages()))) {
+		_deltaAccept->hide();
+		_deltaDecline->hide();
 		const auto toggle = [&](Ui::FlatButton *shown) {
 			const auto toggleOne = [&](not_null<Ui::FlatButton*> button) {
 				if (button.get() != shown) {
@@ -4314,6 +4392,92 @@ void HistoryWidget::updateControlsVisibility() {
 		}
 		hidePreview();
 		hideField();
+	} else if (deltaContactRequest()) {
+		_unblock->hide();
+		_botStart->hide();
+		_joinChannel->hide();
+		_muteUnmute->hide();
+		_reportMessages->hide();
+		_send->hide();
+		if (_silent) {
+			_silent->hide();
+		}
+		if (_scheduled) {
+			_scheduled->hide();
+		}
+		if (_toggleSuggestPost) {
+			_toggleSuggestPost->hide();
+		}
+		if (_giftToUser) {
+			_giftToUser->hide();
+		}
+		if (_ttlInfo) {
+			_ttlInfo->hide();
+		}
+		if (_sendAs) {
+			_sendAs->hide();
+		}
+		_kbShown = false;
+		_kbScroll->hide();
+		_fieldBarCancel->hide();
+		if (_replaceMedia) {
+			_replaceMedia->hide();
+		}
+		_tabbedSelectorToggle->hide();
+		_botKeyboardShow->hide();
+		_botKeyboardHide->hide();
+		_botCommandStart->hide();
+		if (_botMenu.button) {
+			_botMenu.button->hide();
+		}
+		if (_tabbedPanel) {
+			_tabbedPanel->hide();
+		}
+		if (_voiceRecordBar) {
+			_voiceRecordBar->hideFast();
+		}
+		if (_inlineResults) {
+			_inlineResults->hide();
+		}
+		if (_sendRestriction) {
+			_sendRestriction->hide();
+		}
+		if (_autocomplete) {
+			_autocomplete->hide();
+		}
+		if (_supportAutocomplete) {
+			_supportAutocomplete->hide();
+		}
+		hidePreview();
+		hideField();
+		const auto busy = Delta::ContactRequestBusy(userId);
+		const auto canDecline = Delta::ComposerCanDeclineContactRequest(userId);
+		_deltaAccept->setText(tr::lng_delta_accept(tr::now).toUpper());
+		_deltaAccept->setDisabled(busy);
+		if (_deltaAccept->isHidden()) {
+			_deltaAccept->clearState();
+			_deltaAccept->show();
+		}
+		if (canDecline) {
+			_deltaDecline->setText((Delta::ComposerDeclineIsBlock(userId)
+				? tr::lng_delta_block(tr::now)
+				: tr::lng_delta_delete(tr::now)).toUpper());
+			_deltaDecline->setDisabled(busy);
+			if (_deltaDecline->isHidden()) {
+				_deltaDecline->clearState();
+				_deltaDecline->show();
+			}
+		} else {
+			_deltaDecline->hide();
+		}
+		const auto keepAttach = batch
+			|| deltaQueuedAttachmentCount()
+			|| !attachment.isEmpty();
+		if (keepAttach) {
+			_attachToggle->show();
+		} else {
+			_attachToggle->hide();
+		}
 	} else if (editingMessage() || _canSendMessages) {
 		if (_autocomplete) {
 			_autocomplete->requestRefresh();
@@ -4321,6 +4485,8 @@ void HistoryWidget::updateControlsVisibility() {
 		_unblock->hide();
 		_botStart->hide();
 		_joinChannel->hide();
+		_deltaAccept->hide();
+		_deltaDecline->hide();
 		_muteUnmute->hide();
 		_reportMessages->hide();
 		_send->show();
@@ -4461,6 +4627,8 @@ void HistoryWidget::updateControlsVisibility() {
 		_unblock->hide();
 		_botStart->hide();
 		_joinChannel->hide();
+		_deltaAccept->hide();
+		_deltaDecline->hide();
 		_muteUnmute->hide();
 		_reportMessages->hide();
 		_attachToggle->hide();
@@ -7815,9 +7983,13 @@ void HistoryWidget::moveFieldControls() {
 
 // (_botMenu.button) (_attachToggle|_replaceMedia) (_sendAs) ---- _inlineResults ------------------------------ _tabbedPanel ------ _fieldBarCancel
 // (_attachDocument|_attachPhoto) _field (_ttlInfo) (_scheduled) (_giftToUser) (_silent|_cmdStart|_kbShow) (_toggleSuggestPost) (_kbHide|_tabbedSelectorToggle) _send
-// (_botStart|_unblock|_joinChannel|_muteUnmute|_reportMessages)
+// (_botStart|_unblock|_joinChannel|_muteUnmute|_reportMessages|_deltaAccept|_deltaDecline)
 
-	auto buttonsBottom = bottom - _attachToggle->height();
+	auto overlayBottom = bottom;
+	if (!_deltaAccept->isHidden()) {
+		overlayBottom -= _deltaAccept->height();
+	}
+	auto buttonsBottom = overlayBottom - _attachToggle->height();
 	auto left = st::historySendRight;
 	if (_botMenu.button) {
 		const auto skip = st::historyBotMenuSkip;
@@ -7833,13 +8005,13 @@ void HistoryWidget::moveFieldControls() {
 		_sendAs->moveToLeft(left, buttonsBottom);
 		left += _sendAs->width();
 	}
-	const auto fieldTop = bottom - fieldHeight() - st::historySendPadding;
+	const auto fieldTop = overlayBottom - fieldHeight() - st::historySendPadding;
 	_field->moveToLeft(left, fieldTop);
 	_richDraftPreview->moveToLeft(left, fieldTop);
 	if (_fieldDisabled) {
 		_fieldDisabled->moveToLeft(
 			left,
-			bottom - fieldHeight() - st::historySendPadding);
+			overlayBottom - fieldHeight() - st::historySendPadding);
 	}
 	auto right = st::historySendRight;
 	_send->moveToRight(right, buttonsBottom); right += _send->width();
@@ -7901,6 +8073,23 @@ void HistoryWidget::moveFieldControls() {
 	_joinChannel->setGeometry(fullWidthButtonRect);
 	_muteUnmute->setGeometry(fullWidthButtonRect);
 	_reportMessages->setGeometry(fullWidthButtonRect);
+	if (!_deltaAccept->isHidden()) {
+		if (_deltaDecline->isHidden()) {
+			_deltaAccept->setGeometry(fullWidthButtonRect);
+		} else {
+			const auto half = fullWidthButtonRect.width() / 2;
+			_deltaDecline->setGeometry(
+				fullWidthButtonRect.x(),
+				fullWidthButtonRect.y(),
+				half,
+				fullWidthButtonRect.height());
+			_deltaAccept->setGeometry(
+				fullWidthButtonRect.x() + half,
+				fullWidthButtonRect.y(),
+				fullWidthButtonRect.width() - half,
+				fullWidthButtonRect.height());
+		}
+	}
 	if (_sendRestriction) {
 		_sendRestriction->setGeometry(fullWidthButtonRect);
 	}
@@ -8544,6 +8733,7 @@ void HistoryWidget::handleHistoryChange(not_null<const History*> history) {
 			const auto joinChannel = isJoinChannel();
 			const auto muteUnmute = isMuteUnmute();
 			const auto reportMessages = isReportMessages();
+			const auto contactRequest = deltaContactRequest();
 			const auto update = false
 				|| (_reportMessages->isHidden() == reportMessages)
 				|| (!reportMessages && _unblock->isHidden() == unblock)
@@ -8558,7 +8748,8 @@ void HistoryWidget::handleHistoryChange(not_null<const History*> history) {
 					&& !unblock
 					&& !botStart
 					&& !joinChannel
-					&& _muteUnmute->isHidden() == muteUnmute);
+					&& _muteUnmute->isHidden() == muteUnmute)
+				|| (_deltaAccept->isHidden() == contactRequest);
 			if (update) {
 				updateControlsVisibility();
 				updateControlsGeometry();
@@ -8981,6 +9172,11 @@ void HistoryWidget::updateHistoryGeometry(
 			|| isMuteUnmute()
 			|| isReportMessages())) {
 		newScrollHeight -= _unblock->height();
+	} else if (!editingMessage() && deltaContactRequest()) {
+		newScrollHeight -= _deltaAccept->height();
+		if (!_attachToggle->isHidden()) {
+			newScrollHeight -= _attachToggle->height();
+		}
 	} else {
 		if (editingMessage() || _canSendMessages) {
 			newScrollHeight -= (fieldHeight() + 2 * st::historySendPadding);
@@ -9820,7 +10016,9 @@ bool HistoryWidget::showSlowmodeError() {
 }
 
 void HistoryWidget::sendInlineResult(InlineBots::ResultSelected result) {
-	if (!_peer || !_canSendMessages) {
+	if (deltaRefuseSend()) {
+		return;
+	} else if (!_peer || !_canSendMessages) {
 		return;
 	} else if (showSlowmodeError()) {
 		return;
@@ -10485,6 +10683,9 @@ bool HistoryWidget::sendExistingDocument(
 		std::optional<MsgId> localId) {
 	const auto ephemeralReply = session().ephemeralMessages()
 		.isEphemeralBotReply(messageToSend.action.replyTo.messageId);
+	if (deltaRefuseSend()) {
+		return false;
+	}
 	const auto error = (_peer && !ephemeralReply)
 		? Data::RestrictionError(_peer, ChatRestriction::SendStickers)
 		: Data::SendError();
@@ -10536,6 +10737,9 @@ bool HistoryWidget::sendExistingPhoto(
 		Api::SendOptions options) {
 	const auto ephemeralReply = session().ephemeralMessages()
 		.isEphemeralBotReply(replyTo().messageId);
+	if (deltaRefuseSend()) {
+		return false;
+	}
 	const auto error = (_peer && !ephemeralReply)
 		? Data::RestrictionError(_peer, ChatRestriction::SendPhotos)
 		: Data::SendError();
@@ -11225,7 +11429,9 @@ void HistoryWidget::fullInfoUpdated() {
 	}
 	if (updateCmdStartShown()) {
 		refresh = true;
-	} else if (!_scroll->isHidden() && _unblock->isHidden() == isBlocked()) {
+	} else if (!_scroll->isHidden()
+			&& (_unblock->isHidden() == isBlocked()
+				|| _deltaAccept->isHidden() == deltaContactRequest())) {
 		refresh = true;
 	}
 	if (_history
@@ -11260,7 +11466,9 @@ void HistoryWidget::handlePeerUpdate() {
 	}
 	if (!_showAnimation) {
 		const auto blockChanged = (_unblock->isHidden() == isBlocked());
+		const auto requestChanged = (_deltaAccept->isHidden() == deltaContactRequest());
 		if (blockChanged
+			|| requestChanged
 			|| (!isBlocked()
 				&& (_joinChannel->isHidden() == isJoinChannel()))) {
 			resize = true;
@@ -11481,6 +11689,7 @@ void HistoryWidget::updateTopBarSelection() {
 			|| isRecording()
 			|| isBotStart()
 			|| isBlocked()
+			|| deltaContactRequest()
 			|| !_richDraftPreview->isHidden()
 			|| (!_canSendTexts && !_editMsgId)
 			|| (_list
