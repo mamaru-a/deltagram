@@ -1,5 +1,23 @@
 # Native Qt Delta Chat client, from Telegram Desktop
 
+## Current account requirements (2026-10-26)
+
+The product must support both Core profiles and real Telegram accounts in one
+application. The Core-only design below records the original migration plan;
+it does not authorize disabling the Telegram backend. Core accounts use
+Chatmail Core exclusively. Telegram accounts use the donor's authentication,
+MTProto transport, and account persistence.
+
+Backend identity must be persisted per `Main::Account` and available before
+transport or session UI starts. An unresolved account must not open a Telegram
+connection. Core bridge presence and the focused window cannot classify another
+account's requests, cached messages, settings, or UI. Existing Telegram
+authorization must survive migration. See `AGENTS.md` for the current boundary.
+
+The backend foundation is still under implementation. Telegram login and mixed
+account behavior are not yet validated. Core test or GUI results alone do not
+prove Telegram compatibility or production readiness.
+
 Telegram Desktop (`tdesktop/`) is a donor of native Qt UX. Chatmail Core
 (`context/core/`, https://github.com/chatmail/core) is the backend.
 `context/deltachat-desktop/` is a behavior reference only.

@@ -1,5 +1,13 @@
 # Nix and incremental builds
 
+Real Telegram accounts are now a release requirement alongside Core profiles.
+The build scripts currently use `TDESKTOP_API_TEST=ON`; a successful build with
+that setting is not production Telegram login validation. Production Telegram
+API configuration, native authentication/session persistence, and the donor
+feature exclusions must be reviewed before claiming Telegram release support.
+Keep credentials outside the source tree and logs. Core validation remains a
+separate requirement.
+
 `make init` installs the project-local Nix toolchain under ignored `data/nix`,
 fetches pinned sources into ignored `context/`, builds the dependency closure,
 and verifies shell entry. `./nix/develop.sh` opens the shell; `nix/enter.sh`
