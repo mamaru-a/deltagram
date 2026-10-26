@@ -1,5 +1,40 @@
 # Publication validation
 
+### Native initial search error and stale-query cancellation — 2026-10-26
+
+Verified `122a3ec` shows Failed / Retry when `search_messages` is rejected,
+with no message-page fetch and no No Results claim. Clearing the rejection and
+pressing Enter on the same query issues one new ID request and fetches its two
+hits once; both rows display Device messages. A separate query-change check
+holds the old query's error for 15 seconds, then starts the successful query.
+After the old error arrives, the newer two results remain and Failed / Retry
+does not return. Audits contain no create/accept/block/send writes. Fault policy
+is restored after each check. Private evidence is under
+`/tmp/deltagram-live/native122-search-id-failure/` and
+`/tmp/deltagram-live/native122-search-query-cancel/`. Load-more failure and
+account-switch cancellation remain separate native gates.
+
+### Native setup-avatar ownership and layout finding — 2026-10-26
+
+Verified native `122a3ec` selects and crops a synthetic red PNG in a separate
+unconfigured onboarding destination. Delayed config dispatch keeps the submitted
+`selfavatar` callback pending for 10.1 seconds: the unique staging file remains
+present with owner-only read/write access until Core copies it. After terminal
+callback completion, the staging file is gone and Core's separate blob remains
+readable and red. Provisioning is rejected before dispatch; the destination
+remains unconfigured and no mail IO starts. The first verifier incorrectly
+looked directly in `/tmp`; a second explicit attempt uses the GUI's actual
+private Nix temporary directory. This is two deliberate submissions, not an
+automatic retry. Private evidence is
+`/tmp/deltagram-live/backup-avatar-122/native-result.json`.
+
+That replay also proves a profile-page layout defect: the description overlaps
+the avatar button. Two clicks at its covered center do nothing; its uncovered
+top opens the picker. The selected avatar still renders red and copies correctly.
+The geometry correction is under scoped implementation. Native center-click,
+compact/long-copy layout and widget-teardown ownership remain pending; the
+passing file-lifetime check does not establish those behaviors.
+
 ### Native restore recovery, media and delivery — 2026-10-26
 
 [Native `122a3ec`](https://github.com/omidz4t/deltagram/actions/runs/40348261095)

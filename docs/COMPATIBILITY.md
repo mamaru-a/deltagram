@@ -34,7 +34,10 @@ third-column Group Info reproduces a metadata-request loop and the group
 encryption body remains unverified. This does not establish production
 readiness. Native compilation and disposable replay must cover the integrated
 group/sidebar navigation, complete encryption presentation, broader search
-failure/cancellation, cross-window setup locking/teardown and native avatar ownership.
+failure/cancellation, cross-window setup locking/teardown and native avatar
+layout/teardown. Native `122a3ec` checks initial search failure/retry and
+stale-query error suppression, plus normal avatar staging retention, Core copy
+and cleanup; it also reproduces the description covering the avatar button.
 A configured cold-start opening failure is reproduced
 on the verified older GUI and is under correction separately from post-import
 recovery. Existing profile data remains preserved in those checks.
