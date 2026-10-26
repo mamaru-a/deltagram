@@ -5,6 +5,7 @@ This file is part of Delta Tel, a Telegram Desktop based Delta Chat client.
 #include "delta/compose_queue_sender.h"
 #include "delta/profile_activity.h"
 #include "delta/chat_mute.h"
+#include "delta/incoming_notification.h"
 #include "delta/send_permission.h"
 #include "delta/contact_request_actions.h"
 #include "delta/open_contact_chat.h"
@@ -3562,10 +3563,10 @@ private:
 			|| kind == u"MsgReadCountChanged"_q
 			|| kind == u"MsgDelivered"_q
 			|| kind == u"MsgFailed"_q) {
-			const auto chatId = event.value(u"chatId"_q).toInt();
-			const auto msgId = event.value(u"msgId"_q).toInt();
+			const auto chatId = IncomingEventChatId(event);
+			const auto msgId = IncomingEventMsgId(event);
 			if (chatId > 0 && msgId > 0) {
-				addIncoming(chatId, msgId);
+				addIncoming(chatId, msgId, IncomingEventKindFromName(kind));
 			}
 		}
 		if (kind == u"IncomingMsg"_q
@@ -3583,7 +3584,10 @@ private:
 		}
 	}
 
-	void addIncoming(int chatId, int msgId) {
+	void addIncoming(
+			int chatId,
+			int msgId,
+			IncomingEventKind origin = IncomingEventKind::Existing) {
 		const auto userId = peerUserForChat(chatId);
 		const auto peerId = peerFromUser(UserId(userId));
 		const auto guard = _alive;
@@ -3595,63 +3599,107 @@ private:
 						return;
 					}
 					const auto data = one.value(u"result"_q).toObject();
-					if (data.value(u"state"_q).toInt() == 19) return;
+					const auto decision = ClassifyIncomingMessage(
+						origin,
+						chatId,
+						msgId,
+						data);
+					if (decision == IncomingApplyKind::Skip) {
+						return;
+					}
 					const auto built = MessageFromJson(userId, data);
 					const auto existing = _session->data().message(peerId, MsgId(msgId));
 					if (existing && built.type() == mtpc_message) {
 						existing->updateReactions(built.c_message().vreactions());
 					}
-					auto hasPhoto = false;
-					if (built.type() == mtpc_message) {
-						const auto media = built.c_message().vmedia();
-						hasPhoto = media
-							&& (media->type() == mtpc_messageMediaPhoto
-								|| media->type() == mtpc_messageMediaDocument);
-					}
-					if (existing && !hasPhoto) {
-						if (built.type() == mtpc_message && !existing->isService()) {
-							existing->setText(TextWithEntities{
-								qs(built.c_message().vmessage()),
-							});
-							existing->invalidateChatListEntry();
-							_session->data().notifyItemDataChange(existing);
-							_session->data().updateDependentMessages(existing);
-							_session->data().requestItemViewRefresh(existing);
+					if (existing) {
+						auto hasPhoto = false;
+						if (built.type() == mtpc_message) {
+							const auto media = built.c_message().vmedia();
+							hasPhoto = media
+								&& (media->type() == mtpc_messageMediaPhoto
+									|| media->type() == mtpc_messageMediaDocument);
 						}
-						// Native file/video presentation owns its real caption. Apply
-						// it after the fallback text used by the donor text adapter.
-						ApplyMessageData(existing);
-						return;
+						if (IncomingExistingTextFastPath(decision, hasPhoto)) {
+							if (built.type() == mtpc_message
+								&& !existing->isService()) {
+								existing->setText(TextWithEntities{
+									qs(built.c_message().vmessage()),
+								});
+								existing->invalidateChatListEntry();
+								_session->data().notifyItemDataChange(existing);
+								_session->data().updateDependentMessages(existing);
+								_session->data().requestItemViewRefresh(existing);
+							}
+							// Native file/video presentation owns its real caption. Apply
+							// it after the fallback text used by the donor text adapter.
+							ApplyMessageData(existing);
+							return;
+						}
+						if (decision == IncomingApplyKind::Existing
+							&& hasPhoto
+							&& built.type() == mtpc_message) {
+							// processMessages(Existing) skips applySentMessage.
+							_session->data().updateExistingMessage(
+								built.c_message());
+						}
 					}
-					const auto apply = [=](bool notify) {
+					const auto apply = [=](bool notify, const QString &name) {
 						if (_deletedMessages.contains(msgId)) return;
 						_session->data().processUsers(MTP_vector<MTPUser>(
 							QVector<MTPUser>{ MakeUser(
 								userId,
-								userId == kSelfUserId
-									? _selfName
-									: _names.value(chatId),
+								name,
 								userId == kSelfUserId,
 								_avatars.value(chatId)) }));
 						_session->data().processMessages(
 							QVector<MTPMessage>{ built },
 							notify ? ::NewMessageType::Unread : ::NewMessageType::Existing);
 					};
-					if (data.value(u"state"_q).toInt() != 10) {
-						apply(true);
+					const auto cachedName = (userId == kSelfUserId)
+						? _selfName
+						: _names.value(chatId);
+					if (decision != IncomingApplyKind::Unread) {
+						apply(false, cachedName);
 						return;
 					}
-					ReadCoreChatMute([rpc = _rpc](QString method, QJsonArray params, DeltaRpc::Callback done) {
-						rpc->call(method, params, std::move(done));
-					}, _accountScope, _accountId, chatId, [=](std::optional<bool> muted) {
-						if (muted) {
-							const auto history = _session->data().history(peerId);
-							history->owner().notifySettings().applyBackendMute(history->peer, *muted);
-						} else {
-							reportError(u"The message arrived, but its notification setting could not be checked."_q);
+					const auto afterName = [=](QString name) {
+						if (!IncomingNameUsable(name)) {
+							reportError(kIncomingNameUnavailable);
+							apply(false, cachedName);
+							return;
 						}
-						apply(muted.has_value());
-					});
+						if (userId != kSelfUserId) {
+							_names.insert(chatId, name);
+						}
+						ReadCoreChatMute([rpc = _rpc](QString method, QJsonArray params, DeltaRpc::Callback done) {
+							rpc->call(method, params, std::move(done));
+						}, _accountScope, _accountId, chatId, [=](std::optional<bool> muted) {
+							if (muted) {
+								const auto history = _session->data().history(peerId);
+								history->owner().notifySettings().applyBackendMute(history->peer, *muted);
+							} else {
+								reportError(u"The message arrived, but its notification setting could not be checked."_q);
+							}
+							apply(muted.has_value(), name);
+						});
+					};
+					if (IncomingNameUsable(cachedName)) {
+						afterName(cachedName);
+						return;
+					}
+					ReadIncomingChatName(
+						[rpc = _rpc](QString method, QJsonArray params, DeltaRpc::Callback done) {
+							rpc->call(method, params, std::move(done));
+						},
+						_accountScope,
+						_accountId,
+						chatId,
+						[=](QString name) {
+							if (!guard.expired()) {
+								afterName(std::move(name));
+							}
+						});
 				});
 		};
 		if (_session->data().message(peerId, MsgId(msgId))) {

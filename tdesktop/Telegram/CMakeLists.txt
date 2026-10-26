@@ -1441,6 +1441,7 @@ PRIVATE
     delta/send_permission.h
     delta/contact_request_actions.h
     delta/open_contact_chat.h
+    delta/incoming_notification.h
     delta/compose_queue.h
     delta/compose_queue_sender.cpp
     delta/compose_queue_sender.h

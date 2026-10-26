@@ -361,9 +361,58 @@ through `addIncoming`. Its non-fresh branch uses `NewMessageType::Unread`, so
 the noticed ChatE2ee info row can create a popup before the dialog name is
 loaded. `Unknown` is the client's empty-name fallback. Core emits that local
 notice as `MsgsChanged`, not `IncomingMsg`; it is not in the fresh-message list.
-The correction is being implemented to keep these updates in the transcript
-without a popup and resolve a real Core name before notifying incoming user
-messages. It still needs focused and native regression validation.
+The correction keeps these updates in the transcript without a popup and
+resolves a Core name before notifying incoming user messages. Only an
+`IncomingMsg` with matching message/chat IDs, boolean `isInfo: false` and fresh
+state 10 takes the Unread path. Drafts and malformed/mismatched messages are
+skipped. Mute and name lookup failures preserve the transcript without a popup;
+a legitimate Core name of `Unknown` remains valid. Existing photo/document
+updates call the donor's public content-update method before processing as
+Existing, so media refresh does not acquire notification side effects.
+
+Serial focused tests pass **305 integrity, 82 request-action, 64 contact-open
+and 59 notification checks**, with no failures or skips. An isolated QtCore
+harness extracts the exact current `Bridge::addIncoming` method and passes
+18 runtime cases covering event classification, name/mute reads, account
+invalidation, preview/event ordering and existing media updates. The earlier
+round-25 method fails the existing-media regression under the same current
+headers. The final case also requires exactly one public media update. RPC,
+MTP/session/media and notification scheduling are stubbed: these results do not
+prove donor `mainView`, native media replacement or rendered popup behavior.
+Private logs are `/tmp/incoming-round28-focused-tests.log` on the host and
+`/tmp/incoming-bridge-{old,new}/results.json` in the test container. Full native
+compilation and notification/media GUI replay remain pending.
+
+### Pending-contact opening and lost-ack group decline — 2026-10-26
+
+[Native validation at `4b5e093`](https://github.com/omidz4t/deltagram/actions/runs/40302056479)
+passes compilation and **451 checks** (305 integrity, 82 request-action and
+64 contact-open), without failures or skips. All five artifact payload hashes,
+head `4b5e093`, merge checkout `66fa52e` and base `b713bff` match provenance and
+GitHub merge parents. This binary predates the storage-copy and notification
+corrections.
+
+In the alternate disposable profile, pending Group `14` → sender profile →
+Message opens existing pending Single `13` with Block/Accept controls and no
+composer. The audit records one `get_chat_id_by_contact_id` for contact `13`,
+followed by history/draft reads for chat `13`; no create, accept, block or send
+occurs. Both requests remain pending and the original drafts/history survive.
+Private evidence is `request-followup-fixture/native-open-request-message-open-evidence.json`;
+captures `/tmp/4b5-request-sender-profile-top.png` and
+`/tmp/4b5-message-request-loaded.png` show the route.
+
+A separate confirmed Delete of Group `14` submits one `block_chat`. The
+test proxy records Core's successful null acknowledgement, then replaces it
+with a lost-ack error for the GUI. Core subsequently reports the group unreadable
+and absent from the list; the GUI reports that the change could not be verified
+and makes no second write. It does not infer acknowledgement from a generic
+read error. The remaining Single request stays pending, the sender stays
+unblocked, and original drafts/history are unchanged. Selecting that Single
+shows its original Block/Accept overlay. Fault policy is cleared. Evidence is
+`request-followup-fixture/native-lost-group-delete-evidence.json`, with captures
+`/tmp/4b5-lost-group-{confirm,after,settled}.png`. Ordinary accepted/new/blocked
+contact-open routes, Saved Messages through Contacts and broader native
+compatibility gates still need their own replay.
 
 ### Local-storage cache wording — 2026-10-26
 
