@@ -526,6 +526,16 @@ compatibility/package gates are still required. Native run `40315236704` at
 `cacc5ce` completed successfully but predates this source batch. Its artifact
 and notification GUI replay are verified separately below.
 
+[Integrated native run `40328676156`](https://github.com/omidz4t/deltagram/actions/runs/40328676156)
+at `5f86956` stops in `delta_boxes.cpp`: the Group Info member callbacks pass
+`UserData` into `showPeerInfo`, but the translation unit only has its forward
+declaration. The correction includes `data/data_user.h`, making the public
+`PeerData` inheritance available to the existing `not_null` conversion. Member
+IDs and navigation calls are unchanged. The run compiled the new search widgets,
+history top bar and Core profile-action UI before this failure; it did not reach
+the full smoke-test stage or prove the remaining native translation units.
+The corrected complete native build remains required.
+
 ### Native incoming notifications — 2026-10-26
 
 [Native run `40315236704`](https://github.com/omidz4t/deltagram/actions/runs/40315236704)
@@ -583,6 +593,46 @@ without another delete request. The original drafts, unrelated message IDs,
 request states and restored device visibility remain unchanged.
 Private evidence is under `cacc-notification-fixture/viewer-delete/`; deletion is
 intentional fixture cleanup, not loss of an original account message.
+
+### Offline backup restore contracts — 2026-10-26
+
+The checksum-verified pinned Core binary exports and imports both unencrypted
+and passphrase-protected backups in temporary account trees. The source is an
+offline copy of the stopped disposable sender, with relative account paths
+checked before opening it. No mail IO or provisioning is started. All original
+source files are fingerprinted before and after and remain unchanged; temporary
+backup files and copied profiles are removed at completion. Passphrases are
+generated in process and are not included in evidence or chat.
+
+Eight non-device chats and 23 message IDs, plus a known saved draft, survive each
+successful restore. Core deliberately deletes/resets device-local messages on
+import, so those notices are not treated as portable history. A missing
+passphrase rejects the encrypted archive and leaves the destination unconfigured;
+the correct passphrase then restores into that same destination. An invalid
+archive is rejected, and a later explicit valid import into the unconfigured
+destination succeeds. Import into an already configured destination is rejected
+and preserves its history/draft.
+
+The first test incorrectly expected device-local message IDs to survive import;
+the verifier was corrected against Core's explicit device-message reset, then
+rerun with new temporary trees. This is an offline Core contract check, not GUI
+restore proof. The current onboarding restore call supplies no passphrase, and
+its protected-backup and repeated-submit UI behavior still require correction or
+validation. Private evidence is
+`/tmp/deltagram-live/backup-restore-offline-evidence.json` in the test container.
+
+An isolated GUI replay on `cacc5ce` confirms an onboarding recovery defect. A
+plain backup exported from an offline disposable copy imports once into a new
+GUI data directory. The proxy rejects `start_io`, so no mailbox IO starts. Core
+confirms the restored account is configured and its saved draft is intact, but
+the welcome screen has no retry-open action. Choosing Restore again correctly
+refuses the configured destination without a second import. The Create control
+also remains enabled during import, and a queued progress event replaces the
+opening error with `100%`. No provisioning is attempted. This test does not
+prove concurrent overwrite; the missing setup lock and recovery/status behavior
+are under source correction. Evidence and the stopped isolated GUI profile are
+under `/tmp/deltagram-live/backup-gui-fixture/`, separate from the four main
+disposable profiles.
 
 ### Archived device history from search — 2026-10-26
 

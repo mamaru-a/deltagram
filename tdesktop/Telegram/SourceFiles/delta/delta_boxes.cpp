@@ -8,6 +8,7 @@ This file is part of Delta Tel, a Telegram Desktop based Delta Chat client.
 #include "boxes/peer_list_controllers.h"
 #include "data/data_thread.h"
 #include "data/data_peer.h"
+#include "data/data_user.h"
 #include "data/data_photo.h"
 #include "data/data_peer_id.h"
 #include "data/data_session.h"
