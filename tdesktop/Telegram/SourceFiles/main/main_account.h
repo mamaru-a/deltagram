@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
+#include "main/account_backend.h"
 #include "mtproto/mtproto_auth_key.h"
 #include "mtproto/mtp_instance.h"
 #include "base/weak_ptr.h"
@@ -114,6 +115,13 @@ public:
 	void setHandleLoginCode(Fn<void(QString)> callback);
 	void handleLoginCode(const QString &code) const;
 
+	[[nodiscard]] AccountBackend backend() const {
+		return _backend;
+	}
+	[[nodiscard]] AccountBackendBindResult bindBackend(
+		AccountBackend backend);
+	[[nodiscard]] bool hasStoredMtpAuthorizationKeys() const;
+
 	[[nodiscard]] rpl::lifetime &lifetime() {
 		return _lifetime;
 	}
@@ -162,6 +170,7 @@ private:
 	QByteArray _sessionUserSerialized;
 	int32 _sessionUserStreamVersion = 0;
 	std::unique_ptr<SessionSettings> _storedSessionSettings;
+	AccountBackend _backend = AccountBackend::Unspecified;
 	MTP::Instance::Fields _mtpFields;
 	MTP::AuthKeysList _mtpKeysToDestroy;
 	bool _loggingOut = false;

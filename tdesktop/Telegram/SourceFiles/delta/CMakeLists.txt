@@ -88,4 +88,11 @@ if (BUILD_TESTING)
     target_link_libraries(delta_startup_state_tests PRIVATE Qt6::Core Qt6::Test)
     add_test(NAME delta_startup_state COMMAND delta_startup_state_tests)
     set_tests_properties(delta_startup_state PROPERTIES TIMEOUT 30)
+    add_executable(delta_account_backend_tests tests/account_backend_tests.cpp)
+    target_include_directories(delta_account_backend_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_CURRENT_SOURCE_DIR}/..)
+    target_link_libraries(delta_account_backend_tests PRIVATE Qt6::Core Qt6::Test)
+    add_test(NAME delta_account_backend COMMAND delta_account_backend_tests)
+    set_tests_properties(delta_account_backend PROPERTIES TIMEOUT 30)
 endif()

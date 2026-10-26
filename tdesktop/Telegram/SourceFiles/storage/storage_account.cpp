@@ -6,6 +6,8 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "storage/storage_account.h"
+#include "main/account_backend.h"
+#include "main/account_backend_store.h"
 #include "delta/delta_bridge.h"
 
 #include "storage/localstorage.h"
@@ -105,6 +107,7 @@ enum { // Local Storage Keys
 	lskMediaLastPlaybackPositions = 0x1c, // no data
 	lskBotStorages = 0x1d, // data: PeerId botId
 	lskPrefs = 0x1e, // no data
+	// WHY: backend identity is an app-owned sidecar; never a donor map key.
 };
 
 auto EmptyMessageDraftSources()
@@ -210,12 +213,14 @@ QString Account::supportModePath() const {
 
 StartResult Account::legacyStart(const QByteArray &passcode) {
 	const auto result = readMapWith(MTP::AuthKeyPtr(), passcode);
-	if (result == ReadMapResult::Failed) {
+	if (result == ReadMapResult::Failed
+		|| result == ReadMapResult::Missing) {
 		Assert(_localKey == nullptr);
 	} else if (result == ReadMapResult::IncorrectPasscode) {
 		return StartResult::IncorrectPasscodeLegacy;
 	}
 	clearLegacyFiles();
+	applyBackendMigration(result == ReadMapResult::Missing);
 	return StartResult::Success;
 }
 
@@ -223,7 +228,8 @@ std::unique_ptr<MTP::Config> Account::start(MTP::AuthKeyPtr localKey) {
 	Expects(localKey != nullptr);
 
 	_localKey = std::move(localKey);
-	readMapWith(_localKey);
+	const auto mapResult = readMapWith(_localKey);
+	applyBackendMigration(mapResult == ReadMapResult::Missing);
 	clearLegacyFiles();
 	return readMtpConfig();
 }
@@ -233,6 +239,7 @@ void Account::startAdded(MTP::AuthKeyPtr localKey) {
 
 	_localKey = std::move(localKey);
 	clearLegacyFiles();
+	applyBackendMigration(true);
 }
 
 void Account::clearLegacyFiles() {
@@ -312,7 +319,13 @@ Account::ReadMapResult Account::readMapWith(
 
 	FileReadDescriptor mapData;
 	if (!ReadFile(mapData, u"map"_q, _basePath)) {
-		return ReadMapResult::Failed;
+		const auto base = _basePath + u"map"_q;
+		if (QFile::exists(base + 's')
+			|| QFile::exists(base + '0')
+			|| QFile::exists(base + '1')) {
+			return ReadMapResult::Failed;
+		}
+		return ReadMapResult::Missing;
 	}
 	LOG(("App Info: reading map..."));
 
@@ -1144,6 +1157,57 @@ std::unique_ptr<Main::SessionSettings> Account::applyReadContext(
 	}
 
 	return std::move(context.sessionSettingsStorage);
+}
+
+QByteArray Account::backendStoreIdentity() const {
+	return ToFilePart(_dataNameKey).toUtf8();
+}
+
+QString Account::backendStorePath() const {
+	return Main::AccountBackendStorePath(
+		BaseGlobalPath(),
+		backendStoreIdentity());
+}
+
+bool Account::persistBackendTag(Main::AccountBackend backend) {
+	if (!Main::IsBoundAccountBackend(backend)) {
+		return false;
+	}
+	const auto identity = backendStoreIdentity();
+	const auto path = backendStorePath();
+	const auto status = Main::WriteAccountBackendStore(
+		path,
+		identity,
+		backend);
+	if (status == Main::AccountBackendStoreWriteStatus::Written
+		|| status == Main::AccountBackendStoreWriteStatus::Unchanged) {
+		return true;
+	}
+	LOG(("App Error: could not persist account backend metadata for '%1'."
+		).arg(path));
+	return false;
+}
+
+void Account::applyBackendMigration(bool mapMissing) {
+	const auto identity = backendStoreIdentity();
+	const auto path = backendStorePath();
+	const auto store = Main::ReadAccountBackendStore(path, identity);
+	const auto evidence = Main::MakeAccountBackendMigrationEvidence(
+		mapMissing
+			? Main::AccountBackendRecordKind::FreshMissing
+			: Main::AccountBackendRecordKind::LegacyExisting,
+		store,
+		_owner->hasStoredMtpAuthorizationKeys(),
+		false);
+	const auto migration = Main::ResolveStoredAccountBackend(evidence);
+	if (!Main::IsBoundAccountBackend(migration.backend)) {
+		return;
+	}
+	const auto result = _owner->bindBackend(migration.backend);
+	if (result == Main::AccountBackendBindResult::RejectedPersistFailed) {
+		LOG(("App Error: account backend metadata persist failed; "
+			"leaving Unspecified."));
+	}
 }
 
 void Account::writeMtpData() {

@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "main/main_account.h"
 
+#include "main/account_backend.h"
 #include "base/platform/base_platform_info.h"
 #include "core/application.h"
 #include "storage/storage_account.h"
@@ -430,6 +431,7 @@ void Account::startMtp(std::unique_ptr<MTP::Config> config) {
 	fields.config = std::move(config);
 	fields.deviceModel = Platform::DeviceModelPretty();
 	fields.systemVersion = Platform::SystemVersionPretty();
+	fields.backend = _backend;
 	_mtp = std::make_unique<MTP::Instance>(
 		MTP::Instance::Mode::Normal,
 		std::move(fields));
@@ -461,6 +463,7 @@ void Account::startMtp(std::unique_ptr<MTP::Config> config) {
 	}, _lifetime);
 
 	_mtpFields.mainDcId = _mtp->mainDcId();
+	_mtpFields.backend = _mtp->backend();
 
 	_mtp->setUpdatesHandler([=](const MTP::Response &message) {
 		checkForUpdates(message) || checkForNewSession(message);
@@ -577,6 +580,7 @@ void Account::destroyMtpKeys(MTP::AuthKeysList &&keys) {
 	destroyFields.keys = std::move(keys);
 	destroyFields.deviceModel = Platform::DeviceModelPretty();
 	destroyFields.systemVersion = Platform::SystemVersionPretty();
+	destroyFields.backend = _mtp->backend();
 	_mtpForKeysDestroy = std::make_unique<MTP::Instance>(
 		MTP::Instance::Mode::KeysDestroyer,
 		std::move(destroyFields));
@@ -626,6 +630,34 @@ void Account::handleLoginCode(const QString &code) const {
 	if (_handleLoginCode) {
 		_handleLoginCode(code);
 	}
+}
+
+AccountBackendBindResult Account::bindBackend(AccountBackend backend) {
+	AccountBackendBindState state;
+	state.backend = _backend;
+	state.mtpAlreadyExists = (_mtp != nullptr);
+	const auto result = TryBindAccountBackend(state, backend);
+	if (result != AccountBackendBindResult::Bound) {
+		return result;
+	}
+	const auto persistSucceeded = !ShouldPersistAccountBackendTag(
+			result,
+			state.backend)
+		|| _local->persistBackendTag(state.backend);
+	const auto durable = AccountBackendBindPersistOutcome(
+		result,
+		state.backend,
+		persistSucceeded);
+	if (durable != AccountBackendBindResult::Bound) {
+		return durable;
+	}
+	_backend = state.backend;
+	_mtpFields.backend = _backend;
+	return result;
+}
+
+bool Account::hasStoredMtpAuthorizationKeys() const {
+	return !_mtpFields.keys.empty() || !_mtpKeysToDestroy.empty();
 }
 
 void Account::resetAuthorizationKeys() {

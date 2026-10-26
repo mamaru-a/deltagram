@@ -27,6 +27,7 @@ struct Settings;
 namespace Main {
 class Account;
 class SessionSettings;
+enum class AccountBackend : quint8;
 } // namespace Main
 
 namespace Data {
@@ -86,6 +87,7 @@ public:
 	void writeSessionSettings();
 	void writeMtpData();
 	void writeMtpConfig();
+	[[nodiscard]] bool persistBackendTag(Main::AccountBackend backend);
 
 	void registerDraftSource(
 		not_null<History*> history,
@@ -227,6 +229,7 @@ private:
 		Success,
 		IncorrectPasscode,
 		Failed,
+		Missing,
 	};
 	enum class PeerTrustFlag : uchar {
 		NoOpenGame        = (1 << 0),
@@ -261,6 +264,9 @@ private:
 
 	std::unique_ptr<MTP::Config> readMtpConfig();
 	void readMtpData();
+	void applyBackendMigration(bool mapMissing);
+	[[nodiscard]] QByteArray backendStoreIdentity() const;
+	[[nodiscard]] QString backendStorePath() const;
 	std::unique_ptr<Main::SessionSettings> applyReadContext(
 		details::ReadSettingsContext &&context);
 

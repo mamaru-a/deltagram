@@ -173,6 +173,9 @@ public:
 	bool isKeysDestroyer() const {
 		return (_mode == Instance::Mode::KeysDestroyer);
 	}
+	[[nodiscard]] Main::AccountBackend backend() const {
+		return _backend;
+	}
 
 	void scheduleKeyDestroy(ShiftedDcId shiftedDcId);
 	void keyWasPossiblyDestroyed(ShiftedDcId shiftedDcId);
@@ -223,6 +226,7 @@ private:
 
 	const not_null<Instance*> _instance;
 	const Instance::Mode _mode = Instance::Mode::Normal;
+	const Main::AccountBackend _backend = Main::AccountBackend::Unspecified;
 	const std::unique_ptr<Config> _config;
 	const std::shared_ptr<base::NetworkReachability> _networkReachability;
 
@@ -315,6 +319,7 @@ Instance::Private::Private(
 : Sender(instance)
 , _instance(instance)
 , _mode(mode)
+, _backend(fields.backend)
 , _config(std::move(fields.config))
 , _networkReachability(base::NetworkReachability::Instance())
 , _proxySettings(Core::App().settings().proxy()) {
@@ -1896,6 +1901,10 @@ void Instance::setMainDcId(DcId mainDcId) {
 
 DcId Instance::mainDcId() const {
 	return _private->mainDcId();
+}
+
+Main::AccountBackend Instance::backend() const {
+	return _private->backend();
 }
 
 rpl::producer<DcId> Instance::mainDcIdValue() const {

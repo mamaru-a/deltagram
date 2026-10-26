@@ -1506,6 +1506,8 @@ PRIVATE
     layout/layout_document_generic_preview.h
     layout/layout_item_base.cpp
     layout/layout_item_base.h
+    main/account_backend.h
+    main/account_backend_store.h
     main/main_account.cpp
     main/main_account.h
     main/main_app_config.cpp
