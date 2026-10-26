@@ -9,6 +9,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "base/timer.h"
 #include "base/flags.h"
+#include "main/account_storage_namespace.h"
 #include "storage/cache/storage_cache_database.h"
 #include "data/stickers/data_stickers_set.h"
 #include "data/data_drafts.h"
@@ -28,6 +29,7 @@ namespace Main {
 class Account;
 class SessionSettings;
 enum class AccountBackend : quint8;
+enum class AccountBackendRecordKind : quint8;
 } // namespace Main
 
 namespace Data {
@@ -264,7 +266,7 @@ private:
 
 	std::unique_ptr<MTP::Config> readMtpConfig();
 	void readMtpData();
-	void applyBackendMigration(bool mapMissing);
+	void applyBackendMigration(Main::AccountBackendRecordKind record);
 	[[nodiscard]] QByteArray backendStoreIdentity() const;
 	[[nodiscard]] QString backendStorePath() const;
 	std::unique_ptr<Main::SessionSettings> applyReadContext(
@@ -404,5 +406,14 @@ private:
 };
 
 [[nodiscard]] Webview::StorageId TonSiteStorageId();
+
+[[nodiscard]] QString AccountTdataRoot();
+[[nodiscard]] bool AccountStorageNamespaceOccupied(
+	const QString &dataName,
+	int index);
+[[nodiscard]] int ChooseUnusedAccountStorageIndex(
+	const QString &dataName,
+	const QList<int> &activeIndices,
+	int searchLimit = Main::kAccountStorageIndexSearchLimit);
 
 } // namespace Storage

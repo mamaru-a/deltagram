@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "settings/sections/settings_advanced.h"
 
+#include "delta/account_backend.h"
 #include "delta/delta_boxes.h"
 #include "delta/delta_bridge.h"
 
@@ -118,23 +119,25 @@ void BuildDataStorageSection(SectionBuilder &builder) {
 		.keywords = { u"storage"_q, u"data"_q, u"download"_q, u"connection"_q },
 	});
 
-	builder.addButton({
-		.id = u"advanced/app-picker-url"_q,
-		.title = rpl::single(u"App picker URL"_q),
-		.icon = { &st::menuIconBot },
-		.onClick = [=] { Delta::ShowAppPickerUrl(); },
-		.keywords = { u"apps"_q, u"webxdc"_q, u"store"_q },
-	});
+	if (Delta::UsesCoreBackend(session) && Delta::OwnsSession(session)) {
+		builder.addButton({
+			.id = u"advanced/app-picker-url"_q,
+			.title = rpl::single(u"App picker URL"_q),
+			.icon = { &st::menuIconBot },
+			.onClick = [=] { Delta::ShowAppPickerUrl(controller); },
+			.keywords = { u"apps"_q, u"webxdc"_q, u"store"_q },
+		});
 
-	builder.addButton({
-		.id = u"advanced/relays"_q,
-		.title = rpl::single(u"Relays"_q),
-		.icon = { &st::menuIconNetwork },
-		.onClick = [=] { Delta::ShowRelays(); },
-		.keywords = { u"relays"_q, u"transports"_q, u"server"_q, u"chatmail"_q },
-	});
+		builder.addButton({
+			.id = u"advanced/relays"_q,
+			.title = rpl::single(u"Relays"_q),
+			.icon = { &st::menuIconNetwork },
+			.onClick = [=] { Delta::ShowRelays(controller); },
+			.keywords = { u"relays"_q, u"transports"_q, u"server"_q, u"chatmail"_q },
+		});
+	}
 
-	if (!Delta::Active()) {
+	if (Delta::UsesTelegramBackend(session)) {
 		const auto connectionType = [=] {
 			const auto transport = account->mtp().dctransport();
 			if (!Core::App().settings().proxy().isEnabled()) {
@@ -1296,7 +1299,7 @@ void BuildExportSection(SectionBuilder &builder) {
 	builder.addDivider();
 	builder.addSkip();
 
-	if (!Delta::Active()) {
+	if (Delta::UsesTelegramBackend(session)) {
 		builder.addButton({
 			.id = u"advanced/export"_q,
 			.title = tr::lng_settings_export_data(),
@@ -1427,7 +1430,7 @@ void SetupConnectionType(
 		not_null<Window::Controller*> controller,
 		not_null<::Main::Account*> account,
 		not_null<Ui::VerticalLayout*> container) {
-	if (Delta::Active()) {
+	if (Delta::UsesCoreBackend(account)) {
 		return;
 	}
 	const auto connectionType = [=] {

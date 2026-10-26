@@ -3556,6 +3556,220 @@ private slots:
 			12).has_value());
 	}
 
+	void authorOverrideStaysPerMessageAndDoesNotRenameContact() {
+		const auto contact = QJsonObject{
+			{ u"displayName"_s, u"GitHub"_s },
+			{ u"address"_s, u"notifications@github.com"_s },
+		};
+		auto max = QJsonObject{
+			{ u"fromId"_s, 42 },
+			{ u"sender"_s, contact },
+			{ u"overrideSenderName"_s, u"Max Mustermann"_s },
+			{ u"text"_s, u"hello"_s },
+			{ u"subject"_s, u"Re: mailing list"_s },
+		};
+		auto github = max;
+		github.insert(u"overrideSenderName"_s, u"Github"_s);
+		const auto contactName = contact.value(u"displayName"_s).toString();
+		QCOMPARE(contactName, u"GitHub"_s);
+		QCOMPARE(Delta::CoreAuthorDisplayName(
+			contactName,
+			Delta::CoreOverrideSenderName(max)), u"~Max Mustermann"_s);
+		QCOMPARE(Delta::CoreAuthorDisplayName(
+			contactName,
+			Delta::CoreOverrideSenderName(github)), u"~Github"_s);
+		QVERIFY(Delta::CoreAuthorDisplayName(
+			contactName,
+			Delta::CoreOverrideSenderName(max))
+			!= Delta::CoreAuthorDisplayName(
+				contactName,
+				Delta::CoreOverrideSenderName(github)));
+		QCOMPARE(max.value(u"text"_s).toString(), u"hello"_s);
+		QCOMPARE(github.value(u"text"_s).toString(), u"hello"_s);
+		QCOMPARE(max.value(u"subject"_s).toString(), u"Re: mailing list"_s);
+		QCOMPARE(
+			Delta::CoreOverrideSenderName(QJsonObject()),
+			QString());
+		QCOMPARE(
+			Delta::CoreOverrideSenderName(QJsonObject{
+				{ u"overrideSenderName"_s, QJsonValue() },
+			}),
+			QString());
+		QCOMPARE(
+			Delta::CoreOverrideSenderName(QJsonObject{
+				{ u"overrideSenderName"_s, QJsonValue(QJsonValue::Null) },
+			}),
+			QString());
+		QCOMPARE(
+			Delta::CoreOverrideSenderName(QJsonObject{
+				{ u"overrideSenderName"_s, 1 },
+			}),
+			QString());
+		QCOMPARE(
+			Delta::CoreOverrideSenderName(QJsonObject{
+				{ u"overrideSenderName"_s, true },
+			}),
+			QString());
+		QCOMPARE(
+			Delta::CoreOverrideSenderName(QJsonObject{
+				{ u"overrideSenderName"_s, QString() },
+			}),
+			QString());
+		QCOMPARE(
+			Delta::CoreAuthorDisplayName(contactName, QString()),
+			contactName);
+		QCOMPARE(
+			Delta::CoreAuthorDisplayName(contactName, u"~Max"_s),
+			u"~~Max"_s);
+		QCOMPARE(
+			Delta::CoreOverrideSenderName(QJsonObject{
+				{ u"overrideSenderName"_s, u" "_s },
+			}),
+			u" "_s);
+		QCOMPARE(Delta::CoreAuthorDisplayName(contactName, u" "_s), u"~ "_s);
+		QVERIFY(Delta::CoreHasOriginalMsgId(
+			QJsonObject{{ u"originalMsgId"_s, 7 }}));
+		QVERIFY(!Delta::CoreHasOriginalMsgId(
+			QJsonObject{{ u"originalMsgId"_s, 0 }}));
+		QVERIFY(!Delta::CoreHasOriginalMsgId(
+			QJsonObject{{ u"originalMsgId"_s, -1 }}));
+		QVERIFY(!Delta::CoreHasOriginalMsgId(
+			QJsonObject{{ u"originalMsgId"_s, 7.5 }}));
+		QVERIFY(!Delta::CoreHasOriginalMsgId(
+			QJsonObject{{ u"originalMsgId"_s, u"7"_s }}));
+		QVERIFY(!Delta::CoreHasOriginalMsgId(QJsonObject()));
+		QVERIFY(!Delta::CoreHasOriginalMsgId(QJsonObject{
+			{ u"originalMsgId"_s, QJsonValue(QJsonValue::Null) },
+		}));
+		const auto show = [](Delta::CoreAuthorVisibility v) {
+			return Delta::CoreShouldShowAuthor(v);
+		};
+		auto singleOverride = Delta::CoreAuthorVisibility();
+		singleOverride.chatType = Delta::CoreChatType::Single;
+		singleOverride.hasOverride = true;
+		singleOverride.incoming = true;
+		QVERIFY(show(singleOverride));
+		auto singlePlain = Delta::CoreAuthorVisibility();
+		singlePlain.chatType = Delta::CoreChatType::Single;
+		singlePlain.incoming = true;
+		QVERIFY(!show(singlePlain));
+		auto singleOriginal = Delta::CoreAuthorVisibility();
+		singleOriginal.chatType = Delta::CoreChatType::Single;
+		singleOriginal.originalMsgId = true;
+		singleOriginal.incoming = true;
+		QVERIFY(show(singleOriginal));
+		auto selfTalk = Delta::CoreAuthorVisibility();
+		selfTalk.chatType = Delta::CoreChatType::Single;
+		selfTalk.selfTalk = true;
+		selfTalk.incoming = true;
+		QVERIFY(show(selfTalk));
+		auto mailing = Delta::CoreAuthorVisibility();
+		mailing.chatType = Delta::CoreChatType::Mailinglist;
+		mailing.incoming = true;
+		QVERIFY(show(mailing));
+		auto group = Delta::CoreAuthorVisibility();
+		group.chatType = Delta::CoreChatType::Group;
+		group.incoming = true;
+		QVERIFY(show(group));
+		auto broadcast = Delta::CoreAuthorVisibility();
+		broadcast.chatType = Delta::CoreChatType::OutBroadcast;
+		broadcast.incoming = true;
+		QVERIFY(show(broadcast));
+		auto unknownOverride = Delta::CoreAuthorVisibility();
+		unknownOverride.hasOverride = true;
+		unknownOverride.incoming = true;
+		QVERIFY(show(unknownOverride));
+		auto unknownPlain = Delta::CoreAuthorVisibility();
+		unknownPlain.incoming = true;
+		QVERIFY(!show(unknownPlain));
+		auto info = Delta::CoreAuthorVisibility();
+		info.hasOverride = true;
+		info.incoming = true;
+		info.info = true;
+		QVERIFY(!show(info));
+		auto outgoing = Delta::CoreAuthorVisibility();
+		outgoing.chatType = Delta::CoreChatType::Mailinglist;
+		outgoing.hasOverride = true;
+		QVERIFY(!show(outgoing));
+		const auto quote = QJsonObject{
+			{ u"authorDisplayName"_s, u"notifications@github.com"_s },
+			{ u"overrideSenderName"_s, u"Github"_s },
+			{ u"text"_s, u"quoted body"_s },
+			{ u"messageId"_s, 9 },
+		};
+		QCOMPARE(Delta::CoreOverrideSenderName(quote), u"Github"_s);
+		QCOMPARE(Delta::CoreAuthorDisplayName(
+			quote.value(u"authorDisplayName"_s).toString(),
+			Delta::CoreOverrideSenderName(quote)), u"~Github"_s);
+		QCOMPARE(quote.value(u"text"_s).toString(), u"quoted body"_s);
+		QCOMPARE(quote.value(u"messageId"_s).toInt(), 9);
+		const auto unresolved = QJsonObject{
+			{ u"authorDisplayName"_s, u"GitHub"_s },
+		};
+		QCOMPARE(Delta::CoreAuthorDisplayName(
+			unresolved.value(u"authorDisplayName"_s).toString(),
+			Delta::CoreOverrideSenderName(unresolved)), u"GitHub"_s);
+	}
+
+	void coreAuthorPresentationsAttachAtGroupingGate() {
+		const auto contact = u"GitHub"_s;
+		auto max = QJsonObject{
+			{ u"fromId"_s, 42 },
+			{ u"sender"_s, QJsonObject{
+				{ u"displayName"_s, contact },
+			} },
+			{ u"overrideSenderName"_s, u"Max Mustermann"_s },
+		};
+		auto github = max;
+		github.insert(u"overrideSenderName"_s, u"Github"_s);
+		auto plain = max;
+		plain.remove(u"overrideSenderName"_s);
+		const auto sameGithub = github;
+		const auto overrideOf = [](const QJsonObject &json) {
+			return Delta::CoreOverrideSenderName(json);
+		};
+		QVERIFY(Delta::CoreAuthorPresentationsAttach(
+			contact, overrideOf(max), contact, overrideOf(max)));
+		QVERIFY(Delta::CoreAuthorPresentationsAttach(
+			contact, overrideOf(github), contact, overrideOf(sameGithub)));
+		QVERIFY(Delta::CoreAuthorPresentationsAttach(
+			contact, overrideOf(plain), contact, QString()));
+		QVERIFY(Delta::CoreAuthorPresentationsAttach(
+			contact, QString(), contact, QString()));
+		QVERIFY(!Delta::CoreAuthorPresentationsAttach(
+			contact, overrideOf(max), contact, overrideOf(github)));
+		QVERIFY(!Delta::CoreAuthorPresentationsAttach(
+			contact, overrideOf(max), contact, overrideOf(plain)));
+		QVERIFY(!Delta::CoreAuthorPresentationsAttach(
+			contact, overrideOf(github), contact, overrideOf(plain)));
+		QVERIFY(!Delta::CoreAuthorPresentationsAttach(
+			contact, overrideOf(plain), contact, overrideOf(github)));
+		QVERIFY(!Delta::CoreAuthorPresentationsAttach(
+			contact, QString(), contact, contact));
+		QVERIFY(!Delta::CoreAuthorPresentationsAttach(
+			contact,
+			Delta::CoreOverrideSenderName(QJsonObject{
+				{ u"overrideSenderName"_s, u" "_s },
+			}),
+			contact,
+			QString()));
+		QVERIFY(!Delta::CoreAuthorPresentationsAttach(
+			u"~Max"_s, QString(), u"~Max"_s, u"Max"_s));
+		QCOMPARE(
+			Delta::CoreAuthorDisplayName(u"~Max"_s, QString()),
+			Delta::CoreAuthorDisplayName(u"~Max"_s, u"Max"_s));
+		QCOMPARE(
+			Delta::CoreAuthorDisplayName(contact, overrideOf(max)),
+			u"~Max Mustermann"_s);
+		QCOMPARE(
+			Delta::CoreAuthorDisplayName(contact, overrideOf(github)),
+			u"~Github"_s);
+		QCOMPARE(
+			Delta::CoreAuthorDisplayName(contact, overrideOf(plain)),
+			contact);
+		QCOMPARE(contact, u"GitHub"_s);
+	}
+
 	void coreChatCanSendRequiresExactIdAndBoolean_data() {
 		QTest::addColumn<QJsonObject>("reply");
 		QTest::addColumn<int>("expected");

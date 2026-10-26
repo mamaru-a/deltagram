@@ -7,7 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "settings/sections/settings_information.h"
 
-#include "delta/delta_bridge.h"
+#include "delta/account_backend.h"
 
 #include "settings/sections/settings_main.h"
 #include "settings/settings_builder.h"
@@ -290,7 +290,7 @@ void SetupPhoto(
 	upload->chosenImages(
 	) | rpl::on_next([=](Ui::UserpicButton::ChosenImage &&chosen) {
 		auto &image = chosen.image;
-		if (!Delta::Active()) {
+		if (!Delta::UsesCoreBackend(&self->session())) {
 			UpdatePhotoLocally(self, image);
 		}
 		photo->showCustom(base::duplicate(image));
@@ -611,6 +611,84 @@ void SetupRows(
 		{ &st::menuIconProfile });
 	if (targets) {
 		targets->name = nameButton;
+	}
+
+	if (Delta::UsesTelegramBackend(session)) {
+		const auto showChangePhone = [=] {
+			controller->show(
+				Ui::MakeInformBox(tr::lng_change_phone_error()));
+			controller->window().activate();
+		};
+		const auto phoneButton = AddRow(
+			container,
+			tr::lng_settings_phone_label(),
+			Info::Profile::PhoneWithSpoilerValue(
+				self,
+				Info::Profile::PhoneValue(self)),
+			tr::lng_profile_copy_phone(tr::now),
+			showChangePhone,
+			{ &st::menuIconPhone },
+			true,
+			[=](not_null<Ui::PopupMenu*> menu) {
+				Info::Profile::AddPhoneSpoilerMenu(menu, self);
+			},
+			&st::menuIconCopy);
+		if (targets) {
+			targets->phone = phoneButton;
+		}
+
+		auto username = Info::Profile::UsernameValue(self);
+		auto empty = base::duplicate(
+			username
+		) | rpl::map([](const TextWithEntities &username) {
+			return username.text.isEmpty();
+		});
+		auto label = rpl::combine(
+			tr::lng_settings_username_label(),
+			std::move(empty)
+		) | rpl::map([](const QString &label, bool empty) {
+			return empty ? "t.me/username" : label;
+		});
+		auto usernameValue = rpl::combine(
+			std::move(username),
+			tr::lng_settings_username_add()
+		) | rpl::map([](const TextWithEntities &username, const QString &add) {
+			if (!username.text.isEmpty()) {
+				return username;
+			}
+			auto result = TextWithEntities{ add };
+			result.entities.push_back({
+				EntityType::CustomUrl,
+				0,
+				int(add.size()),
+				"internal:edit_username" });
+			return result;
+		});
+		session->api().usernames().requestToCache(session->user());
+		const auto usernameButton = AddRow(
+			container,
+			std::move(label),
+			std::move(usernameValue),
+			tr::lng_context_copy_mention(tr::now),
+			[=] {
+				if (controller->showFrozenError()) {
+					return;
+				}
+				const auto box = controller->show(
+					Box(UsernamesBox, session->user()));
+				box->boxClosing(
+				) | rpl::on_next([=] {
+					session->api().usernames().requestToCache(session->user());
+				}, box->lifetime());
+			},
+			{ &st::menuIconUsername });
+		if (targets) {
+			targets->username = usernameButton;
+		}
+
+		Ui::AddSkip(container);
+		Ui::AddDividerText(container, tr::lng_settings_username_about());
+		return;
 	}
 
 	Ui::AddSkip(container);
@@ -1143,7 +1221,7 @@ void BuildInformationSection(SectionBuilder &builder) {
 			.keywords = { u"name"_q, u"first"_q, u"last"_q },
 		};
 	});
-	if (!Delta::Active()) {
+	if (Delta::UsesTelegramBackend(builder.session())) {
 		builder.add(nullptr, [] {
 			return SearchEntry{
 				.id = u"edit/phone"_q,
@@ -1276,6 +1354,11 @@ void Information::setupContent() {
 		SetupPhoto(container, controller, self, &targets);
 		SetupBio(container, self, &targets);
 		SetupRows(container, controller, self, &targets);
+		if (Delta::UsesTelegramBackend(&self->session())) {
+			SetupPersonalChannel(container, controller, self, &targets);
+			SetupBirthday(container, controller, self, &targets);
+			SetupAccountsWrap(container, controller, &targets);
+		}
 
 		*photo = targets.photo;
 		*uploadPhoto = targets.uploadPhoto;

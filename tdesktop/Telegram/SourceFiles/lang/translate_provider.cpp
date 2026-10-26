@@ -13,10 +13,12 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_msg_id.h"
 #include "data/data_peer.h"
 #include "data/data_session.h"
-#include "delta/delta_bridge.h"
 #include "history/history_item.h"
+#include "lang/lang_backend.h"
 #include "lang/translate_mtproto_provider.h"
 #include "lang/translate_url_provider.h"
+#include "main/main_account.h"
+#include "main/main_session.h"
 #include "platform/platform_translate_provider.h"
 
 namespace {
@@ -62,35 +64,53 @@ public:
 
 namespace Ui {
 
-bool IsTranslateBackendAvailable() {
-	if (!Delta::Active()) {
-		return true;
-	}
-	return TranslateUrlTemplateValid(TranslateUrlTemplate())
-		|| CachedPlatformTranslateAvailable();
+bool IsTranslateBackendAvailable(Main::Account *account) {
+	return Lang::TranslateBackendAvailable(
+		account
+			? account->backend()
+			: Main::AccountBackend::Unspecified,
+		TranslateUrlTemplateValid(TranslateUrlTemplate()),
+		CachedPlatformTranslateAvailable());
+}
+
+bool IsTranslateBackendAvailable(not_null<Main::Account*> account) {
+	return IsTranslateBackendAvailable(account.get());
+}
+
+bool IsTranslateBackendAvailable(not_null<Main::Session*> session) {
+	return IsTranslateBackendAvailable(&session->account());
 }
 
 std::unique_ptr<TranslateProvider> CreateTranslateProvider(
 		not_null<Main::Session*> session) {
 	const auto urlTemplate = TranslateUrlTemplate();
-	if (TranslateUrlTemplateValid(urlTemplate)) {
+	const auto backend = session->account().backend();
+	const auto kind = Lang::PlanTranslateProvider({
+		.backend = backend,
+		.urlTemplateValid = TranslateUrlTemplateValid(urlTemplate),
+		.platformAvailable = (backend == Main::AccountBackend::Telegram)
+			? Platform::IsTranslateProviderAvailable()
+			: CachedPlatformTranslateAvailable(),
+		.usePlatformTranslation
+			= Core::App().settings().usePlatformTranslation(),
+	});
+	switch (kind) {
+	case Lang::TranslateProviderKind::Url:
 		return CreateUrlTranslateProvider(urlTemplate);
-	}
-	const auto core = Delta::Active();
-	const auto usePlatform = Core::App().settings().usePlatformTranslation()
-		|| core;
-	const auto platformAvailable = core
-		? CachedPlatformTranslateAvailable()
-		: Platform::IsTranslateProviderAvailable();
-	if (usePlatform && platformAvailable) {
+	case Lang::TranslateProviderKind::Platform:
 		if (auto provider = Platform::CreateTranslateProvider()) {
 			return provider;
 		}
-	}
-	if (core) {
+		if (backend == Main::AccountBackend::Telegram) {
+			return CreateMTProtoTranslateProvider(session);
+		}
+		return std::make_unique<UnavailableTranslateProvider>();
+	case Lang::TranslateProviderKind::Mtproto:
+		return CreateMTProtoTranslateProvider(session);
+	case Lang::TranslateProviderKind::Unavailable:
 		return std::make_unique<UnavailableTranslateProvider>();
 	}
-	return CreateMTProtoTranslateProvider(session);
+	return std::make_unique<UnavailableTranslateProvider>();
 }
 
 TranslateProviderRequest PrepareTranslateProviderRequest(

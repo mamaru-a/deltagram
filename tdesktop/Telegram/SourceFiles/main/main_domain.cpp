@@ -7,10 +7,13 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "main/main_domain.h"
 
+#include "delta/account_backend.h"
+#include "delta/unread_aggregation.h"
 #include "core/application.h"
 #include "core/core_settings.h"
 #include "core/shortcuts.h"
 #include "core/crash_reports.h"
+#include "main/domain_account_limit.h"
 #include "main/main_account.h"
 #include "main/main_session.h"
 #include "data/data_session.h"
@@ -242,17 +245,21 @@ void Domain::notifyUnreadBadgeChanged() {
 }
 
 void Domain::updateUnreadBadge() {
-	_unreadBadge = 0;
-	_unreadBadgeMuted = true;
+	auto accounts = std::vector<Delta::DomainAccountUnread>();
+	accounts.reserve(_accounts.size());
 	for (const auto &[index, account] : _accounts) {
+		auto row = Delta::DomainAccountUnread{
+			.coreBackend = Delta::UsesCoreBackend(account.get()),
+		};
 		if (const auto session = account->maybeSession()) {
-			const auto data = &session->data();
-			_unreadBadge += data->unreadBadge();
-			if (!data->unreadBadgeMuted()) {
-				_unreadBadgeMuted = false;
-			}
+			row.count = session->data().unreadBadge();
+			row.muted = session->data().unreadBadgeMuted();
 		}
+		accounts.push_back(row);
 	}
+	const auto telegram = Delta::TelegramDomainUnread(accounts);
+	_unreadBadge = telegram.count;
+	_unreadBadgeMuted = telegram.muted;
 	_unreadBadgeChanges.fire({});
 }
 
@@ -292,10 +299,15 @@ not_null<Main::Account*> Domain::add(MTP::Environment environment) {
 			? cloneConfig(Core::App().fallbackProductionConfig())
 			: std::make_unique<MTP::Config>(environment);
 	}();
-	auto index = 0;
-	while (ranges::contains(_accounts, index, &AccountWithIndex::index)) {
-		++index;
+	auto active = QList<int>();
+	active.reserve(int(_accounts.size()));
+	for (const auto &entry : _accounts) {
+		active.push_back(entry.index);
 	}
+	const auto index = Storage::ChooseUnusedAccountStorageIndex(
+		_dataName,
+		active);
+	Expects(index >= 0);
 	_accounts.push_back(AccountWithIndex{
 		.index = index,
 		.account = std::make_unique<Account>(this, _dataName, index)
@@ -316,8 +328,6 @@ not_null<Main::Account*> Domain::add(MTP::Environment environment) {
 }
 
 void Domain::addActivated(MTP::Environment environment, bool newWindow) {
-	// Delta Tel runs a single profile per process.
-	return;
 	const auto added = [&](not_null<Main::Account*> account) {
 		if (newWindow) {
 			Core::App().ensureSeparateWindowFor(account);
@@ -332,11 +342,14 @@ void Domain::addActivated(MTP::Environment environment, bool newWindow) {
 		added(add(environment));
 	} else {
 		for (auto &[index, account] : accounts()) {
-			if (!account->sessionExists()
-				&& account->mtp().environment() == environment) {
-				added(account.get());
-				break;
+			if (!DomainAddActivatedReuseCandidate(
+					account->backend(),
+					account->sessionExists(),
+					account->mtp().environment() == environment)) {
+				continue;
 			}
+			added(account.get());
+			break;
 		}
 	}
 }
@@ -351,17 +364,21 @@ void Domain::watchSession(not_null<Account*> account) {
 			scheduleUpdateUnreadBadge();
 		}, session->lifetime());
 
-		Data::AmPremiumValue(
-			session
-		) | rpl::on_next([=] {
-			_lastMaxAccounts = maxAccounts();
-		}, session->lifetime());
+		_lastMaxAccounts = maxAccounts();
+		if (account->backend() == AccountBackend::Telegram) {
+			Data::AmPremiumValue(
+				session
+			) | rpl::on_next([=] {
+				_lastMaxAccounts = maxAccounts();
+			}, session->lifetime());
+		}
 	}, account->lifetime());
 
 	account->sessionChanges(
 	) | rpl::filter([=](Session *session) {
 		return !session;
 	}) | rpl::on_next([=] {
+		_lastMaxAccounts = maxAccounts();
 		scheduleUpdateUnreadBadge();
 		closeAccountWindows(account);
 		if (!Core::Quitting()) {
@@ -520,7 +537,26 @@ void Domain::scheduleWriteAccounts() {
 }
 
 int Domain::maxAccounts() const {
-	return 1;
+	auto accountStates = std::vector<DomainAccountLimitSlot>();
+	accountStates.reserve(_accounts.size());
+	for (const auto &[index, account] : _accounts) {
+		auto slot = DomainAccountLimitSlot{
+			.backend = account->backend(),
+			.sessionExists = account->sessionExists(),
+		};
+		if (const auto session = account->maybeSession()) {
+			// WHY: Session::premium() is still a Deltagram false stub; donor
+			// premium() is _user->isPremium(), which AmPremiumValue already
+			// tracks. Core/Unspecified accountStates are ignored by the helper.
+			slot.premium = session->user()->isPremium();
+			slot.testMode = session->isTestMode();
+		}
+		accountStates.push_back(slot);
+	}
+	return ResolveDomainMaxAccounts(
+		accountStates,
+		kMaxAccounts,
+		kPremiumMaxAccounts);
 }
 
 rpl::producer<int> Domain::maxAccountsChanges() const {

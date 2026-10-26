@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "boxes/peers/edit_contact_box.h"
 
+#include "delta/account_backend.h"
 #include "delta/core_profile_actions.h"
 #include "delta/delta_bridge.h"
 #include "api/api_peer_photo.h"
@@ -954,12 +955,14 @@ void EditContactBox(
 		not_null<Ui::GenericBox*> box,
 		not_null<Window::SessionController*> window,
 		not_null<UserData*> user) {
-	if (Delta::Active()) {
+	if (Delta::OwnsSession(&user->session())) {
 		Delta::FillCoreContactNameBox(
 			box,
 			window,
 			peerToUser(user->id).bare,
 			!user->isContact());
+		return;
+	} else if (!Delta::UsesTelegramBackend(&user->session())) {
 		return;
 	}
 	box->setWidth(st::boxWideWidth);

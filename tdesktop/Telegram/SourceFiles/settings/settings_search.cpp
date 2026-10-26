@@ -9,7 +9,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "base/event_filter.h"
 #include "core/application.h"
-#include "delta/delta_bridge.h"
+#include "delta/account_backend.h"
 #include "core/click_handler_types.h"
 #include "core/deep_links/deep_links_settings.h"
 #include "lang/lang_keys.h"
@@ -200,7 +200,7 @@ void Search::setupContent() {
 	buildIndex();
 	rebuildResults(QString());
 
-	if (!Delta::Active()) {
+	if (Delta::UsesTelegramBackend(&controller()->session())) {
 		controller()->session().faqSuggestions().loadedValue(
 		) | rpl::filter([](bool loaded) {
 			return loaded;
@@ -269,7 +269,7 @@ void Search::buildIndex() {
 	}
 
 	_faqStartIndex = int(_entries.size());
-	if (Delta::Active()) {
+	if (Delta::UsesCoreBackend(&controller()->session())) {
 		return;
 	}
 
@@ -670,7 +670,8 @@ void Search::rebuildRecentResults() {
 }
 
 void Search::rebuildFaqResults() {
-	if (Delta::Active() || _faqStartIndex >= int(_entries.size())) {
+	if (Delta::UsesCoreBackend(&controller()->session())
+		|| _faqStartIndex >= int(_entries.size())) {
 		return;
 	}
 

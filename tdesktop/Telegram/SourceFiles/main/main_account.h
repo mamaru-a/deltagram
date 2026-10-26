@@ -120,6 +120,8 @@ public:
 	}
 	[[nodiscard]] AccountBackendBindResult bindBackend(
 		AccountBackend backend);
+	[[nodiscard]] AccountBackendBindResult rebuildMtpForBackend(
+		AccountBackend backend);
 	[[nodiscard]] bool hasStoredMtpAuthorizationKeys() const;
 
 	[[nodiscard]] rpl::lifetime &lifetime() {
@@ -134,6 +136,7 @@ private:
 	};
 
 	void startMtp(std::unique_ptr<MTP::Config> config);
+	void rebuildLiveMtp();
 	void createSession(
 		const MTPUser &user,
 		QByteArray serialized,
@@ -154,6 +157,7 @@ private:
 	const std::unique_ptr<Storage::Account> _local;
 
 	std::unique_ptr<MTP::Instance> _mtp;
+	rpl::lifetime _mtpLifetime;
 	rpl::variable<MTP::Instance*> _mtpValue;
 	std::unique_ptr<MTP::Instance> _mtpForKeysDestroy;
 	rpl::event_stream<MTPUpdates> _mtpUpdates;

@@ -63,6 +63,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "settings/cloud_password/settings_cloud_password_login_email.h"
 #include "api/api_cloud_password.h"
 #include "core/core_cloud_password.h"
+#include "delta/account_backend.h"
 #include "delta/delta_boxes.h"
 #include "delta/delta_bridge.h"
 #include "settings/sections/settings_notifications.h"
@@ -86,18 +87,21 @@ namespace {
 Result ShowLanguageBox(const Context &ctx, const QString &highlightId = QString()) {
 	static auto Guard = base::binary_guard();
 	auto id = highlightId;
-	if (Delta::Active()) {
+	const auto account = ctx.controller
+		? &ctx.controller->session().account()
+		: nullptr;
+	if (Delta::UsesCoreBackend(account)) {
 		if (id == u"language/translate-chats"_q
 			|| ((id == u"language/show-button"_q
 					|| id == u"language/do-not-translate"_q)
-				&& !Ui::IsTranslateBackendAvailable())) {
+				&& !Ui::IsTranslateBackendAvailable(account))) {
 			id = QString();
 		}
 	}
 	if (!id.isEmpty() && ctx.controller) {
 		ctx.controller->setHighlightControlId(id);
 	}
-	Guard = LanguageBox::Show(ctx.controller, id);
+	Guard = LanguageBox::Show(ctx.controller, account, id);
 	return Result::Handled;
 }
 
@@ -141,9 +145,31 @@ Result RedirectToSettings(const Context &ctx, ::Settings::Type type) {
 	return Result::Handled;
 }
 
+template <typename Telegram>
+[[nodiscard]] Result WithTelegramSettings(
+		const Context &ctx,
+		::Settings::Type coreRedirect,
+		Telegram &&telegram) {
+	if (!ctx.controller) {
+		return Result::NeedsAuth;
+	}
+	if (Delta::UsesCoreBackend(&ctx.controller->session())) {
+		return RedirectToSettings(ctx, coreRedirect);
+	}
+	if (!Delta::UsesTelegramBackend(&ctx.controller->session())) {
+		return Result::Handled;
+	}
+	return telegram();
+}
+
 Result ShowFaq(const Context &ctx) {
-	if (Delta::Active()) {
-		return RedirectToSettings(ctx, ::Settings::MainId());
+	if (ctx.controller) {
+		if (Delta::UsesCoreBackend(&ctx.controller->session())) {
+			return RedirectToSettings(ctx, ::Settings::MainId());
+		}
+		if (!Delta::UsesTelegramBackend(&ctx.controller->session())) {
+			return Result::Handled;
+		}
 	}
 	::Settings::OpenFaq(
 		ctx.controller ? base::make_weak(ctx.controller) : nullptr);
@@ -163,32 +189,32 @@ Result ShowPeerColorBox(
 		const Context &ctx,
 		PeerColorTab tab,
 		const QString &highlightId = QString()) {
-	if (!ctx.controller) {
-		return Result::NeedsAuth;
-	}
-	if (Delta::Active()) {
-		ctx.controller->showSettings(::Settings::InformationId());
+	return WithTelegramSettings(ctx, ::Settings::InformationId(), [&] {
+		if (!highlightId.isEmpty()) {
+			ctx.controller->setHighlightControlId(highlightId);
+		}
+		ctx.controller->show(Box(
+			EditPeerColorBox,
+			ctx.controller,
+			ctx.controller->session().user(),
+			std::shared_ptr<Ui::ChatStyle>(),
+			std::shared_ptr<Ui::ChatTheme>(),
+			tab));
 		return Result::Handled;
-	}
-	if (!highlightId.isEmpty()) {
-		ctx.controller->setHighlightControlId(highlightId);
-	}
-	ctx.controller->show(Box(
-		EditPeerColorBox,
-		ctx.controller,
-		ctx.controller->session().user(),
-		std::shared_ptr<Ui::ChatStyle>(),
-		std::shared_ptr<Ui::ChatTheme>(),
-		tab));
-	return Result::Handled;
+	});
 }
 
 Result HandleQrCode(const Context &ctx, bool highlightCopy) {
 	if (!ctx.controller) {
 		return Result::NeedsAuth;
 	}
-	if (Delta::Active()) {
-		Delta::ShowInviteQr();
+	if (Delta::UsesCoreBackend(&ctx.controller->session())) {
+		if (Delta::OwnsSession(&ctx.controller->session())) {
+			Delta::ShowInviteQr(ctx.controller);
+		}
+		return Result::Handled;
+	}
+	if (!Delta::UsesTelegramBackend(&ctx.controller->session())) {
 		return Result::Handled;
 	}
 
@@ -225,17 +251,13 @@ Result ShowEditName(
 }
 
 Result ShowEditUsername(const Context &ctx) {
-	if (!ctx.controller) {
-		return Result::NeedsAuth;
-	}
-	if (Delta::Active()) {
-		return RedirectToSettings(ctx, ::Settings::InformationId());
-	}
-	if (ctx.controller->showFrozenError()) {
+	return WithTelegramSettings(ctx, ::Settings::InformationId(), [&] {
+		if (ctx.controller->showFrozenError()) {
+			return Result::Handled;
+		}
+		ctx.controller->show(Box(UsernamesBox, ctx.controller->session().user()));
 		return Result::Handled;
-	}
-	ctx.controller->show(Box(UsernamesBox, ctx.controller->session().user()));
-	return Result::Handled;
+	});
 }
 
 Result OpenInternalUrl(const Context &ctx, const QString &url) {
@@ -251,16 +273,11 @@ Result OpenInternalUrl(const Context &ctx, const QString &url) {
 }
 
 Result ShowMyProfile(const Context &ctx) {
-	if (!ctx.controller) {
-		return Result::NeedsAuth;
-	}
-	if (Delta::Active()) {
-		ctx.controller->showSettings(::Settings::InformationId());
+	return WithTelegramSettings(ctx, ::Settings::InformationId(), [&] {
+		ctx.controller->showSection(
+			Info::Stories::MakeMyProfile(ctx.controller->session().user()));
 		return Result::Handled;
-	}
-	ctx.controller->showSection(
-		Info::Stories::MakeMyProfile(ctx.controller->session().user()));
-	return Result::Handled;
+	});
 }
 
 Result ShowLogOutMenu(const Context &ctx) {
@@ -276,8 +293,11 @@ Result ShowPasskeys(const Context &ctx, bool highlightCreate) {
 	if (!ctx.controller) {
 		return Result::NeedsAuth;
 	}
-	if (Delta::Active()) {
+	if (Delta::UsesCoreBackend(&ctx.controller->session())) {
 		ctx.controller->showSettings(::Settings::PrivacySecurityId());
+		return Result::Handled;
+	}
+	if (!Delta::UsesTelegramBackend(&ctx.controller->session())) {
 		return Result::Handled;
 	}
 	const auto controller = ctx.controller;
@@ -311,24 +331,22 @@ Result ShowPasskeys(const Context &ctx, bool highlightCreate) {
 }
 
 Result ShowAutoDeleteSetCustom(const Context &ctx) {
-	if (!ctx.controller) {
-		return Result::NeedsAuth;
-	}
-	if (Delta::Active()) {
-		ctx.controller->showSettings(::Settings::PrivacySecurityId());
+	return WithTelegramSettings(ctx, ::Settings::PrivacySecurityId(), [&] {
+		ctx.controller->setHighlightControlId(u"auto-delete/set-custom"_q);
+		ctx.controller->showSettings(::Settings::GlobalTTLId());
 		return Result::Handled;
-	}
-	ctx.controller->setHighlightControlId(u"auto-delete/set-custom"_q);
-	ctx.controller->showSettings(::Settings::GlobalTTLId());
-	return Result::Handled;
+	});
 }
 
 Result ShowLoginEmail(const Context &ctx) {
 	if (!ctx.controller) {
 		return Result::NeedsAuth;
 	}
-	if (Delta::Active()) {
+	if (Delta::UsesCoreBackend(&ctx.controller->session())) {
 		ctx.controller->showSettings(::Settings::PrivacySecurityId());
+		return Result::Handled;
+	}
+	if (!Delta::UsesTelegramBackend(&ctx.controller->session())) {
 		return Result::Handled;
 	}
 	const auto controller = ctx.controller;
@@ -373,18 +391,13 @@ Result ShowNotificationType(
 		const Context &ctx,
 		Data::DefaultNotify type,
 		const QString &highlightId = QString()) {
-	if (!ctx.controller) {
-		return Result::NeedsAuth;
-	}
-	if (Delta::Active()) {
-		ctx.controller->showSettings(::Settings::NotificationsId());
+	return WithTelegramSettings(ctx, ::Settings::NotificationsId(), [&] {
+		if (!highlightId.isEmpty()) {
+			ctx.controller->setHighlightControlId(highlightId);
+		}
+		ctx.controller->showSettings(::Settings::NotificationsType::Id(type));
 		return Result::Handled;
-	}
-	if (!highlightId.isEmpty()) {
-		ctx.controller->setHighlightControlId(highlightId);
-	}
-	ctx.controller->showSettings(::Settings::NotificationsType::Id(type));
-	return Result::Handled;
+	});
 }
 
 using PrivacyKey = Api::UserPrivacy::Key;
@@ -395,13 +408,7 @@ Result ShowPrivacyBox(
 		PrivacyKey key,
 		ControllerFactory controllerFactory,
 		const QString &highlightControl = QString()) {
-	if (!ctx.controller) {
-		return Result::NeedsAuth;
-	}
-	if (Delta::Active()) {
-		ctx.controller->showSettings(::Settings::PrivacySecurityId());
-		return Result::Handled;
-	}
+	return WithTelegramSettings(ctx, ::Settings::PrivacySecurityId(), [&] {
 	const auto controller = ctx.controller;
 	const auto session = &controller->session();
 	if (!highlightControl.isEmpty()) {
@@ -421,6 +428,7 @@ Result ShowPrivacyBox(
 	}));
 	session->api().userPrivacy().reload(key);
 	return Result::Handled;
+	});
 }
 
 } // namespace
@@ -471,31 +479,23 @@ void RegisterSettingsHandlers(Router &router) {
 	router.add(u"settings"_q, {
 		.path = u"my-profile/gifts"_q,
 		.action = CodeBlock{ [](const Context &ctx) {
-			if (Delta::Active()) {
-				return RedirectToSettings(ctx, ::Settings::InformationId());
-			}
-			if (!ctx.controller) {
-				return Result::NeedsAuth;
-			}
-			ctx.controller->showSection(
-				Info::PeerGifts::Make(ctx.controller->session().user()));
-			return Result::Handled;
+			return WithTelegramSettings(ctx, ::Settings::InformationId(), [&] {
+				ctx.controller->showSection(
+					Info::PeerGifts::Make(ctx.controller->session().user()));
+				return Result::Handled;
+			});
 		}},
 	});
 
 	router.add(u"settings"_q, {
 		.path = u"my-profile/archived-posts"_q,
 		.action = CodeBlock{ [](const Context &ctx) {
-			if (Delta::Active()) {
-				return RedirectToSettings(ctx, ::Settings::InformationId());
-			}
-			if (!ctx.controller) {
-				return Result::NeedsAuth;
-			}
-			ctx.controller->showSection(Info::Stories::Make(
-				ctx.controller->session().user(),
-				Info::Stories::ArchiveId()));
-			return Result::Handled;
+			return WithTelegramSettings(ctx, ::Settings::InformationId(), [&] {
+				ctx.controller->showSection(Info::Stories::Make(
+					ctx.controller->session().user(),
+					Info::Stories::ArchiveId()));
+				return Result::Handled;
+			});
 		}},
 	});
 
@@ -1014,10 +1014,9 @@ void RegisterSettingsHandlers(Router &router) {
 	router.add(u"settings"_q, {
 		.path = u"privacy/birthday/add"_q,
 		.action = CodeBlock{ [](const Context &ctx) {
-			if (Delta::Active()) {
-				return RedirectToSettings(ctx, ::Settings::InformationId());
-			}
-			return OpenInternalUrl(ctx, u"internal:edit_birthday"_q);
+			return WithTelegramSettings(ctx, ::Settings::InformationId(), [&] {
+				return OpenInternalUrl(ctx, u"internal:edit_birthday"_q);
+			});
 		}},
 	});
 
@@ -1224,48 +1223,36 @@ void RegisterSettingsHandlers(Router &router) {
 	router.add(u"settings"_q, {
 		.path = u"privacy/messages"_q,
 		.action = CodeBlock{ [](const Context &ctx) {
-			if (Delta::Active()) {
-				return RedirectToSettings(ctx, ::Settings::PrivacySecurityId());
-			}
-			if (!ctx.controller) {
-				return Result::NeedsAuth;
-			}
-			ctx.controller->show(Box(EditMessagesPrivacyBox, ctx.controller, QString()));
-			return Result::Handled;
+			return WithTelegramSettings(ctx, ::Settings::PrivacySecurityId(), [&] {
+				ctx.controller->show(Box(EditMessagesPrivacyBox, ctx.controller, QString()));
+				return Result::Handled;
+			});
 		}},
 	});
 
 	router.add(u"settings"_q, {
 		.path = u"privacy/messages/set-price"_q,
 		.action = CodeBlock{ [](const Context &ctx) {
-			if (Delta::Active()) {
-				return RedirectToSettings(ctx, ::Settings::PrivacySecurityId());
-			}
-			if (!ctx.controller) {
-				return Result::NeedsAuth;
-			}
-			ctx.controller->show(Box(
-				EditMessagesPrivacyBox,
-				ctx.controller,
-				u"privacy/set-price"_q));
-			return Result::Handled;
+			return WithTelegramSettings(ctx, ::Settings::PrivacySecurityId(), [&] {
+				ctx.controller->show(Box(
+					EditMessagesPrivacyBox,
+					ctx.controller,
+					u"privacy/set-price"_q));
+				return Result::Handled;
+			});
 		}},
 	});
 
 	router.add(u"settings"_q, {
 		.path = u"privacy/messages/remove-fee"_q,
 		.action = CodeBlock{ [](const Context &ctx) {
-			if (Delta::Active()) {
-				return RedirectToSettings(ctx, ::Settings::PrivacySecurityId());
-			}
-			if (!ctx.controller) {
-				return Result::NeedsAuth;
-			}
-			ctx.controller->show(Box(
-				EditMessagesPrivacyBox,
-				ctx.controller,
-				u"privacy/remove-fee"_q));
-			return Result::Handled;
+			return WithTelegramSettings(ctx, ::Settings::PrivacySecurityId(), [&] {
+				ctx.controller->show(Box(
+					EditMessagesPrivacyBox,
+					ctx.controller,
+					u"privacy/remove-fee"_q));
+				return Result::Handled;
+			});
 		}},
 	});
 
@@ -1363,40 +1350,28 @@ void RegisterSettingsHandlers(Router &router) {
 	router.add(u"settings"_q, {
 		.path = u"data/proxy"_q,
 		.action = CodeBlock{ [](const Context &ctx) {
-			if (Delta::Active()) {
-				return RedirectToSettings(ctx, ::Settings::AdvancedId());
-			}
-			if (!ctx.controller) {
-				return Result::NeedsAuth;
-			}
-			ProxiesBoxController::Show(ctx.controller);
-			return Result::Handled;
+			return WithTelegramSettings(ctx, ::Settings::AdvancedId(), [&] {
+				ProxiesBoxController::Show(ctx.controller);
+				return Result::Handled;
+			});
 		}},
 	});
 	router.add(u"settings"_q, {
 		.path = u"data/proxy/add-proxy"_q,
 		.action = CodeBlock{ [](const Context &ctx) {
-			if (Delta::Active()) {
-				return RedirectToSettings(ctx, ::Settings::AdvancedId());
-			}
-			if (!ctx.controller) {
-				return Result::NeedsAuth;
-			}
-			ProxiesBoxController::Show(ctx.controller, u"proxy/add-proxy"_q);
-			return Result::Handled;
+			return WithTelegramSettings(ctx, ::Settings::AdvancedId(), [&] {
+				ProxiesBoxController::Show(ctx.controller, u"proxy/add-proxy"_q);
+				return Result::Handled;
+			});
 		}},
 	});
 	router.add(u"settings"_q, {
 		.path = u"data/proxy/share-list"_q,
 		.action = CodeBlock{ [](const Context &ctx) {
-			if (Delta::Active()) {
-				return RedirectToSettings(ctx, ::Settings::AdvancedId());
-			}
-			if (!ctx.controller) {
-				return Result::NeedsAuth;
-			}
-			ProxiesBoxController::Show(ctx.controller, u"proxy/share-list"_q);
-			return Result::Handled;
+			return WithTelegramSettings(ctx, ::Settings::AdvancedId(), [&] {
+				ProxiesBoxController::Show(ctx.controller, u"proxy/share-list"_q);
+				return Result::Handled;
+			});
 		}},
 	});
 
@@ -1560,63 +1535,47 @@ void RegisterSettingsHandlers(Router &router) {
 	router.add(u"settings"_q, {
 		.path = u"appearance/stickers-and-emoji/edit"_q,
 		.action = CodeBlock{ [](const Context &ctx) {
-			if (Delta::Active()) {
-				return RedirectToSettings(ctx, ::Settings::ChatId());
-			}
-			if (!ctx.controller) {
-				return Result::NeedsAuth;
-			}
-			ctx.controller->show(Box<StickersBox>(
-				ctx.controller->uiShow(),
-				StickersBox::Section::Installed));
-			return Result::Handled;
+			return WithTelegramSettings(ctx, ::Settings::ChatId(), [&] {
+				ctx.controller->show(Box<StickersBox>(
+					ctx.controller->uiShow(),
+					StickersBox::Section::Installed));
+				return Result::Handled;
+			});
 		}},
 	});
 
 	router.add(u"settings"_q, {
 		.path = u"appearance/stickers-and-emoji/trending"_q,
 		.action = CodeBlock{ [](const Context &ctx) {
-			if (Delta::Active()) {
-				return RedirectToSettings(ctx, ::Settings::ChatId());
-			}
-			if (!ctx.controller) {
-				return Result::NeedsAuth;
-			}
-			ctx.controller->show(Box<StickersBox>(
-				ctx.controller->uiShow(),
-				StickersBox::Section::Featured));
-			return Result::Handled;
+			return WithTelegramSettings(ctx, ::Settings::ChatId(), [&] {
+				ctx.controller->show(Box<StickersBox>(
+					ctx.controller->uiShow(),
+					StickersBox::Section::Featured));
+				return Result::Handled;
+			});
 		}},
 	});
 
 	router.add(u"settings"_q, {
 		.path = u"appearance/stickers-and-emoji/archived"_q,
 		.action = CodeBlock{ [](const Context &ctx) {
-			if (Delta::Active()) {
-				return RedirectToSettings(ctx, ::Settings::ChatId());
-			}
-			if (!ctx.controller) {
-				return Result::NeedsAuth;
-			}
-			ctx.controller->show(Box<StickersBox>(
-				ctx.controller->uiShow(),
-				StickersBox::Section::Archived));
-			return Result::Handled;
+			return WithTelegramSettings(ctx, ::Settings::ChatId(), [&] {
+				ctx.controller->show(Box<StickersBox>(
+					ctx.controller->uiShow(),
+					StickersBox::Section::Archived));
+				return Result::Handled;
+			});
 		}},
 	});
 
 	router.add(u"settings"_q, {
 		.path = u"appearance/stickers-and-emoji/emoji"_q,
 		.action = CodeBlock{ [](const Context &ctx) {
-			if (Delta::Active()) {
-				return RedirectToSettings(ctx, ::Settings::ChatId());
-			}
-			if (!ctx.controller) {
-				return Result::NeedsAuth;
-			}
-			ctx.controller->show(
-				Box<Ui::Emoji::ManageSetsBox>(&ctx.controller->session()));
-			return Result::Handled;
+			return WithTelegramSettings(ctx, ::Settings::ChatId(), [&] {
+				ctx.controller->show(
+					Box<Ui::Emoji::ManageSetsBox>(&ctx.controller->session()));
+				return Result::Handled;
+			});
 		}},
 	});
 
@@ -1705,61 +1664,45 @@ void RegisterSettingsHandlers(Router &router) {
 	router.add(u"settings"_q, {
 		.path = u"stars/top-up"_q,
 		.action = CodeBlock{ [](const Context &ctx) {
-			if (Delta::Active()) {
-				return RedirectToSettings(ctx, ::Settings::MainId());
-			}
-			if (!ctx.controller) {
-				return Result::NeedsAuth;
-			}
-			static auto handler = ::Settings::BuyStarsHandler();
-			handler.handler(ctx.controller->uiShow())();
-			return Result::Handled;
+			return WithTelegramSettings(ctx, ::Settings::MainId(), [&] {
+				static auto handler = ::Settings::BuyStarsHandler();
+				handler.handler(ctx.controller->uiShow())();
+				return Result::Handled;
+			});
 		}},
 	});
 
 	router.add(u"settings"_q, {
 		.path = u"stars/stats"_q,
 		.action = CodeBlock{ [](const Context &ctx) {
-			if (Delta::Active()) {
-				return RedirectToSettings(ctx, ::Settings::MainId());
-			}
-			if (!ctx.controller) {
-				return Result::NeedsAuth;
-			}
-			const auto self = ctx.controller->session().user();
-			ctx.controller->showSection(Info::BotEarn::Make(self));
-			return Result::Handled;
+			return WithTelegramSettings(ctx, ::Settings::MainId(), [&] {
+				const auto self = ctx.controller->session().user();
+				ctx.controller->showSection(Info::BotEarn::Make(self));
+				return Result::Handled;
+			});
 		}},
 	});
 
 	router.add(u"settings"_q, {
 		.path = u"stars/gift"_q,
 		.action = CodeBlock{ [](const Context &ctx) {
-			if (Delta::Active()) {
-				return RedirectToSettings(ctx, ::Settings::MainId());
-			}
-			if (!ctx.controller) {
-				return Result::NeedsAuth;
-			}
-			Ui::ShowGiftCreditsBox(ctx.controller, nullptr);
-			return Result::Handled;
+			return WithTelegramSettings(ctx, ::Settings::MainId(), [&] {
+				Ui::ShowGiftCreditsBox(ctx.controller, nullptr);
+				return Result::Handled;
+			});
 		}},
 	});
 
 	router.add(u"settings"_q, {
 		.path = u"stars/earn"_q,
 		.action = CodeBlock{ [](const Context &ctx) {
-			if (Delta::Active()) {
-				return RedirectToSettings(ctx, ::Settings::MainId());
-			}
-			if (!ctx.controller) {
-				return Result::NeedsAuth;
-			}
-			const auto self = ctx.controller->session().user();
-			if (Info::BotStarRef::Join::Allowed(self)) {
-				ctx.controller->showSection(Info::BotStarRef::Join::Make(self));
-			}
-			return Result::Handled;
+			return WithTelegramSettings(ctx, ::Settings::MainId(), [&] {
+				const auto self = ctx.controller->session().user();
+				if (Info::BotStarRef::Join::Allowed(self)) {
+					ctx.controller->showSection(Info::BotStarRef::Join::Make(self));
+				}
+				return Result::Handled;
+			});
 		}},
 	});
 
@@ -1784,30 +1727,20 @@ void RegisterSettingsHandlers(Router &router) {
 	router.add(u"settings"_q, {
 		.path = u"send-gift"_q,
 		.action = CodeBlock{ [](const Context &ctx) {
-			if (!ctx.controller) {
-				return Result::NeedsAuth;
-			}
-			if (Delta::Active()) {
-				ctx.controller->showSettings(::Settings::MainId());
+			return WithTelegramSettings(ctx, ::Settings::MainId(), [&] {
+				Ui::ChooseStarGiftRecipient(ctx.controller);
 				return Result::Handled;
-			}
-			Ui::ChooseStarGiftRecipient(ctx.controller);
-			return Result::Handled;
+			});
 		}},
 	});
 
 	router.add(u"settings"_q, {
 		.path = u"send-gift/self"_q,
 		.action = CodeBlock{ [](const Context &ctx) {
-			if (!ctx.controller) {
-				return Result::NeedsAuth;
-			}
-			if (Delta::Active()) {
-				ctx.controller->showSettings(::Settings::MainId());
+			return WithTelegramSettings(ctx, ::Settings::MainId(), [&] {
+				Ui::ShowStarGiftBox(ctx.controller, ctx.controller->session().user());
 				return Result::Handled;
-			}
-			Ui::ShowStarGiftBox(ctx.controller, ctx.controller->session().user());
-			return Result::Handled;
+			});
 		}},
 	});
 
@@ -1824,15 +1757,10 @@ void RegisterSettingsHandlers(Router &router) {
 	router.add(u"settings"_q, {
 		.path = u"calls/all"_q,
 		.action = CodeBlock{ [](const Context &ctx) {
-			if (!ctx.controller) {
-				return Result::NeedsAuth;
-			}
-			if (Delta::Active()) {
-				ctx.controller->showSettings(::Settings::CallsId());
+			return WithTelegramSettings(ctx, ::Settings::CallsId(), [&] {
+				Calls::ShowCallsBox(ctx.controller);
 				return Result::Handled;
-			}
-			Calls::ShowCallsBox(ctx.controller);
-			return Result::Handled;
+			});
 		}},
 	});
 
@@ -1845,22 +1773,23 @@ void RegisterSettingsHandlers(Router &router) {
 	router.add(u"settings"_q, {
 		.path = u"ask-question"_q,
 		.action = CodeBlock{ [](const Context &ctx) {
-			if (Delta::Active()) {
-				return RedirectToSettings(ctx, ::Settings::MainId());
-			}
-			if (!ctx.controller) {
-				return Result::NeedsAuth;
-			}
-			::Settings::OpenAskQuestionConfirm(ctx.controller);
-			return Result::Handled;
+			return WithTelegramSettings(ctx, ::Settings::MainId(), [&] {
+				::Settings::OpenAskQuestionConfirm(ctx.controller);
+				return Result::Handled;
+			});
 		}},
 	});
 
 	router.add(u"settings"_q, {
 		.path = u"features"_q,
 		.action = CodeBlock{ [](const Context &ctx) {
-			if (Delta::Active()) {
-				return RedirectToSettings(ctx, ::Settings::MainId());
+			if (ctx.controller) {
+				if (Delta::UsesCoreBackend(&ctx.controller->session())) {
+					return RedirectToSettings(ctx, ::Settings::MainId());
+				}
+				if (!Delta::UsesTelegramBackend(&ctx.controller->session())) {
+					return Result::Handled;
+				}
 			}
 			UrlClickHandler::Open(tr::lng_telegram_features_url(tr::now));
 			return Result::Handled;
@@ -1932,24 +1861,19 @@ void RegisterSettingsHandlers(Router &router) {
 	router.add(u"settings"_q, {
 		.path = u"edit/birthday"_q,
 		.action = CodeBlock{ [](const Context &ctx) {
-			if (Delta::Active()) {
-				return RedirectToSettings(ctx, ::Settings::InformationId());
-			}
-			return OpenInternalUrl(ctx, u"internal:edit_birthday"_q);
+			return WithTelegramSettings(ctx, ::Settings::InformationId(), [&] {
+				return OpenInternalUrl(ctx, u"internal:edit_birthday"_q);
+			});
 		}},
 	});
 	router.add(u"settings"_q, {
 		.path = u"edit/change-number"_q,
 		.action = CodeBlock{ [](const Context &ctx) {
-			if (Delta::Active()) {
-				return RedirectToSettings(ctx, ::Settings::InformationId());
-			}
-			if (!ctx.controller) {
-				return Result::NeedsAuth;
-			}
-			ctx.controller->show(
-				Ui::MakeInformBox(tr::lng_change_phone_error()));
-			return Result::Handled;
+			return WithTelegramSettings(ctx, ::Settings::InformationId(), [&] {
+				ctx.controller->show(
+					Ui::MakeInformBox(tr::lng_change_phone_error()));
+				return Result::Handled;
+			});
 		}},
 	});
 	router.add(u"settings"_q, {
@@ -1985,15 +1909,10 @@ void RegisterSettingsHandlers(Router &router) {
 	router.add(u"settings"_q, {
 		.path = u"calls/start-call"_q,
 		.action = CodeBlock{ [](const Context &ctx) {
-			if (!ctx.controller) {
-				return Result::NeedsAuth;
-			}
-			if (Delta::Active()) {
-				ctx.controller->showSettings(::Settings::CallsId());
+			return WithTelegramSettings(ctx, ::Settings::CallsId(), [&] {
+				Calls::ShowCallsBox(ctx.controller, true);
 				return Result::Handled;
-			}
-			Calls::ShowCallsBox(ctx.controller, true);
-			return Result::Handled;
+			});
 		}},
 	});
 

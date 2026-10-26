@@ -7,6 +7,7 @@ This file is part of Delta Tel, a Telegram Desktop based Delta Chat client.
 #include "delta/startup_state.h"
 #include "delta/profile_setup_actions.h"
 #include "delta/profile_setup_avatar.h"
+#include "delta/backend_choice.h"
 #include "delta/delta_boxes.h"
 #include "delta/delta_bridge.h"
 
@@ -15,6 +16,8 @@ This file is part of Delta Tel, a Telegram Desktop based Delta Chat client.
 #include "core/click_handler_types.h"
 #include "core/file_utilities.h"
 #include "lang/lang_keys.h"
+#include "main/backend_startup.h"
+#include "main/main_account.h"
 #include "ui/boxes/confirm_box.h"
 #include "ui/controls/userpic_button.h"
 #include "ui/layers/generic_box.h"
@@ -237,6 +240,12 @@ void DeltaOnboarding::chooseDataFolder() {
 }
 
 void DeltaOnboarding::startBackend() {
+	if (_account->backend() != Main::AccountBackend::Core) {
+		_startup.failDiscovery(
+			tr::lng_delta_account_core_required(tr::now));
+		syncStartupUi(_startup.error);
+		return;
+	}
 	const auto program = qEnvironmentVariable("DELTA_TEL_RPC");
 	const auto accounts = ResolveAccountsPath();
 	QDir().mkpath(accounts);
@@ -493,6 +502,18 @@ void DeltaOnboarding::openShell(int accountId) {
 		}));
 		return;
 	}
+	const auto otherOwns = Delta::Active()
+		&& (!_account->sessionExists()
+			|| !Delta::OwnsSession(&_account->session()));
+	const auto startCheck = Main::EvaluateCoreSessionStart({
+		_account->backend(),
+		_account->sessionExists(),
+		otherOwns,
+	});
+	if (startCheck != Main::CoreSessionStartResult::Allowed) {
+		failOpen(Delta::CoreSessionStartErrorText(startCheck));
+		return;
+	}
 	_handedOver = true;
 	updateSetupLock();
 	const auto startIo = [=] {
@@ -508,6 +529,18 @@ void DeltaOnboarding::openShell(int accountId) {
 				}
 				const auto name = config.value(u"result"_q).toString();
 				Delta::ProfileSetupNoteOpened(_setupTable, accountId);
+				const auto otherOwns = Delta::Active()
+					&& (!_account->sessionExists()
+						|| !Delta::OwnsSession(&_account->session()));
+				const auto startCheck = Main::EvaluateCoreSessionStart({
+					_account->backend(),
+					_account->sessionExists(),
+					otherOwns,
+				});
+				if (startCheck != Main::CoreSessionStartResult::Allowed) {
+					failOpen(Delta::CoreSessionStartErrorText(startCheck));
+					return;
+				}
 				const auto rpc = std::shared_ptr<DeltaRpc>(_rpc);
 				_rpc = nullptr;
 				rpc->setParent(nullptr);

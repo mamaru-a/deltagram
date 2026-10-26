@@ -36,6 +36,55 @@ inline constexpr auto kAccountBackendStoreStreamVersion = QDataStream::Qt_5_15;
 }
 inline constexpr auto kAccountBackendStoreInvalidTag = ~quint32(0);
 
+[[nodiscard]] inline bool AccountBackendStoreSupportsPosixPrivacy() {
+#if defined(Q_OS_WIN)
+	return false;
+#else
+	return true;
+#endif
+}
+
+[[nodiscard]] inline bool AccountBackendStorePermissionsArePrivate(
+		QFileDevice::Permissions permissions) {
+	if (!permissions.testFlag(QFileDevice::ReadOwner)
+		|| !permissions.testFlag(QFileDevice::WriteOwner)) {
+		return false;
+	}
+	if (!AccountBackendStoreSupportsPosixPrivacy()) {
+		return true;
+	}
+	const auto shared = QFileDevice::ReadGroup
+		| QFileDevice::WriteGroup
+		| QFileDevice::ExeGroup
+		| QFileDevice::ReadOther
+		| QFileDevice::WriteOther
+		| QFileDevice::ExeOther;
+	return !(permissions & shared);
+}
+
+[[nodiscard]] inline bool AccountBackendStoreHasPrivatePermissions(
+		const QString &path) {
+	if (path.isEmpty() || !QFileInfo::exists(path)) {
+		return false;
+	}
+	return AccountBackendStorePermissionsArePrivate(
+		QFileInfo(path).permissions());
+}
+
+[[nodiscard]] inline bool AccountBackendStoreApplyPrivatePermissions(
+		const QString &path) {
+	if (path.isEmpty() || !QFile::exists(path)) {
+		return false;
+	}
+	if (!QFile::setPermissions(path, AccountBackendStoreFilePermissions())) {
+		return false;
+	}
+	if (!AccountBackendStoreSupportsPosixPrivacy()) {
+		return true;
+	}
+	return AccountBackendStoreHasPrivatePermissions(path);
+}
+
 enum class AccountBackendStoreReadStatus : quint8 {
 	Missing = 0,
 	Valid = 1,
@@ -197,10 +246,14 @@ struct AccountBackendStoreRead {
 		if (!existing.open(QIODevice::ReadOnly)) {
 			return AccountBackendStoreWriteStatus::Failed;
 		}
-		if (existing.readAll() == payload) {
+		const auto same = existing.readAll() == payload;
+		existing.close();
+		if (same) {
+			if (!AccountBackendStoreApplyPrivatePermissions(path)) {
+				return AccountBackendStoreWriteStatus::Failed;
+			}
 			return AccountBackendStoreWriteStatus::Unchanged;
 		}
-		existing.close();
 	}
 	const auto directory = QFileInfo(path).absolutePath();
 	if (directory.isEmpty() || !QDir().mkpath(directory)) {
@@ -211,16 +264,21 @@ struct AccountBackendStoreRead {
 	if (!file.open(QIODevice::WriteOnly)) {
 		return AccountBackendStoreWriteStatus::Failed;
 	}
-	file.setPermissions(AccountBackendStoreFilePermissions());
 	if (file.write(payload) != payload.size()) {
+		file.cancelWriting();
+		return AccountBackendStoreWriteStatus::Failed;
+	}
+	if (QFileInfo::exists(path)
+		&& !AccountBackendStoreApplyPrivatePermissions(path)) {
 		file.cancelWriting();
 		return AccountBackendStoreWriteStatus::Failed;
 	}
 	if (!file.commit()) {
 		return AccountBackendStoreWriteStatus::Failed;
 	}
-	QFile committed(path);
-	committed.setPermissions(AccountBackendStoreFilePermissions());
+	if (!AccountBackendStoreApplyPrivatePermissions(path)) {
+		return AccountBackendStoreWriteStatus::Failed;
+	}
 	return AccountBackendStoreWriteStatus::Written;
 }
 

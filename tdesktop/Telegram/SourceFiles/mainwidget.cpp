@@ -51,6 +51,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "chat_helpers/tabbed_selector.h" // TabbedSelector::refreshStickers
 #include "chat_helpers/message_field.h"
 #include "info/info_memento.h"
+#include "delta/account_backend.h"
 #include "delta/delta_boxes.h"
 #include "delta/delta_bridge.h"
 #include "apiwrap.h"
@@ -423,25 +424,28 @@ MainWidget::MainWidget(
 		updateThirdColumnToCurrentChat(key, canWrite);
 	}, lifetime());
 
-	Delta::ChannelStatusValue(1) | rpl::on_next([=](const QString &) {
-		if (!isThreeColumn()
-				|| !Core::App().settings().thirdSectionInfoEnabled()
-				|| _thirdSection) {
-			return;
-		}
-		const auto peer = _controller->activeChatCurrent().peer();
-		if (!peer) {
-			return;
-		}
-		if (auto group = Delta::GroupInfoMementoForPeer(peer)) {
-			_controller->showSection(
-				std::move(group),
-				Window::SectionShow(
-					Window::SectionShow::Way::ClearStack,
-					anim::type::instant,
-					anim::activation::background).withThirdColumn());
-		}
-	}, lifetime());
+	if (Delta::UsesCoreBackend(&_controller->session())) {
+		Delta::ChannelStatusValue(1) | rpl::on_next([=](const QString &) {
+			if (!Delta::OwnsSession(&_controller->session())
+					|| !isThreeColumn()
+					|| !Core::App().settings().thirdSectionInfoEnabled()
+					|| _thirdSection) {
+				return;
+			}
+			const auto peer = _controller->activeChatCurrent().peer();
+			if (!peer) {
+				return;
+			}
+			if (auto group = Delta::GroupInfoMementoForPeer(peer)) {
+				_controller->showSection(
+					std::move(group),
+					Window::SectionShow(
+						Window::SectionShow::Way::ClearStack,
+						anim::type::instant,
+						anim::activation::background).withThirdColumn());
+			}
+		}, lifetime());
+	}
 
 	QCoreApplication::instance()->installEventFilter(this);
 
@@ -2737,9 +2741,15 @@ void MainWidget::updateControlsGeometry() {
 						memento = std::make_shared<Info::Memento>(
 							thread->asSublist());
 					} else if (const auto peer = thread->asHistory()->peer) {
-						memento = Delta::GroupInfoMementoForPeer(peer);
+						const auto owns = Delta::UsesCoreBackend(
+								&_controller->session())
+							&& Delta::OwnsSession(&_controller->session());
+						if (owns) {
+							memento = Delta::GroupInfoMementoForPeer(peer);
+						}
 						if (!memento
-								&& !Delta::UnresolvedCoreGroupPeer(peer)) {
+								&& !(owns
+									&& Delta::UnresolvedCoreGroupPeer(peer))) {
 							memento = Info::Memento::Default(peer);
 						}
 					}
@@ -3012,11 +3022,14 @@ auto MainWidget::thirdSectionForCurrentMainSection(
 		; sublist && sublist->parentChat()) {
 		return std::make_shared<Info::Memento>(sublist);
 	} else if (const auto peer = key.peer()) {
-		if (auto group = Delta::GroupInfoMementoForPeer(peer)) {
-			return group;
-		}
-		if (Delta::UnresolvedCoreGroupPeer(peer)) {
-			return nullptr;
+		if (Delta::UsesCoreBackend(&_controller->session())
+				&& Delta::OwnsSession(&_controller->session())) {
+			if (auto group = Delta::GroupInfoMementoForPeer(peer)) {
+				return group;
+			}
+			if (Delta::UnresolvedCoreGroupPeer(peer)) {
+				return nullptr;
+			}
 		}
 		return Info::Memento::Default(peer);
 	} else if (const auto sublist = key.sublist()) {

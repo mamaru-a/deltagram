@@ -1,5 +1,113 @@
 # Publication validation
 
+### Native complete-message access — 2026-10-27
+
+[Native run 40387188858](https://github.com/omidz4t/deltagram/actions/runs/40387188858)
+succeeds at head `bd1ea60cec099602243c14a21c45a378fb319b06`, merge
+`0807ae50182fae36adcaf64dd037688a79e2abe2`, base
+`b713bff697ad3450bf842da5f24f83b64a9d68e6`. All five artifact hashes match,
+and the bundled test log records 827 passes, zero failures/skips. This compiles
+the complete-message UI and language code generation. It predates the newer
+mixed-backend routing, identity, entitlement and conference changes.
+
+The disposable offline HTML fixture now has a visible Show full message footer.
+Opening history makes zero `get_message_html` calls. One explicit click makes
+one call and renders the HTML-only marker, heading and table; all are selectable
+and copyable. The HTTP link opens a confirmation prompt, which is cancelled.
+A separate synthetic reply containing a long body and image/frame/script
+references to a local HTTP listener displays its first marker and scrolls to
+its final marker with zero listener requests. The first synthetic attempt did
+not open the viewer and is not counted; the second begins from a verified
+history view. Local-file denial remains covered by the renderer tests, not by
+this HTTP-listener observation.
+
+Holding the real HTML reply for 15 seconds and closing Loading after 1.53 seconds
+does not reopen the dialog when the reply arrives. The saved backup draft and
+offline IO policy are preserved. The initial real-body case issues zero send
+or chat-create requests. Private evidence is under
+`/tmp/deltagram-live/backup-search-pager-a19/full-bd1-*`. Profile-switch
+cancellation, mixed Core/Telegram runtime, and real long-mail delivery remain
+separate gates.
+
+### Backend integration checks and native encryption replay — 2026-10-27
+
+A frozen source snapshot of the updated backend metadata, namespace allocation,
+and startup policies passes 44 backend/storage checks and 12 startup checks on
+Qt 6.4.2 / GNU 13.3, as unprivileged UID/GID 65534, with no failures or skips.
+The initial compile found a missing test-fixture `sidecarBytes` accessor; the
+accessor was added before the final build. Sparse namespace allocation beyond
+index 5 preserves occupied map/auth/metadata sentinels. These tests do not run
+native `Storage::Domain::startModern` or `Main::Account` reconstruction.
+The unread aggregation helper separately passes eight checks, zero failures
+or skips; its native menu and badge consumers remain untested.
+
+[Native run 40376361341](https://github.com/omidz4t/deltagram/actions/runs/40376361341)
+succeeded at head `f9c9f6f3fe43f379273e43eb8648f2a453a20ea2`, merge
+`5b56b223e155dcbd83338cab5c10ead29bd093c4`, base
+`b713bff697ad3450bf842da5f24f83b64a9d68e6`. All five artifact checksums match;
+the bundled Qt test log records 751 passes, zero failures/skips. This artifact
+includes the encryption presentation and onboarding layout fixes, but predates
+the backend identity, full-message viewer, and subsequent routing changes.
+
+On that binary, the disposable group Encryption info dialog displays the Core
+header and final fingerprint line. Selecting the body and copying it produces
+the exact 170-character Core plaintext. Full-window default OCR missed most of
+the dialog; cropped, enlarged OCR and visual inspection establish the visible
+lines instead. With the encryption reply held for 15 seconds, closing Loading
+after 1.65 seconds returns to Group Info and the late reply does not reopen the
+dialog. The original fault policy is restored. No fingerprint/address contents
+are included in the result JSON. Private results are
+`/tmp/deltagram-live/native-f9-encryption-result.json` and
+`/tmp/deltagram-live/native-f9-encryption-cancel-result.json`.
+Long-body scrolling, profile-switch cancellation, and mixed-backend native
+behavior remain separate gates. Telegram transport is still under integration;
+these Core checks do not establish real Telegram compatibility.
+
+A separate fresh disposable onboarding root verifies the same binary's avatar
+layout. Personal copy sits below the avatar at 818×642, and the avatar center
+opens the image picker. Team copy, name field, Next and privacy link remain
+visible without overlap at 818×642, 818×480 and 380×480. The upper avatar edge
+also opens the picker in the compact team form. This phase allocates one empty
+local account but makes zero `set_config`, `init_transports`,
+`add_or_update_transport`, or `start_io` requests. No profile is provisioned.
+RTL and other interface scales remain untested. Private evidence is
+`/tmp/deltagram-live/backup-avatar-layout-f9/native-result.json`.
+
+The production-used domain account-limit policy separately passes 15 QtCore
+checks, zero failures/skips. It restores donor 3/6 account capacity while
+excluding Core/Unspecified from Telegram premium/test entitlement. Its initial
+build exposed identifiers named `slots` colliding with Qt's keyword macro;
+those identifiers were renamed before the final build. Native account creation
+and persisted mixed-account restart remain pending.
+
+The working-tree transport restoration now uses the immutable MTP instance
+backend. Exact extracted production methods pass five dispatch checks and eight
+startup/resume checks against recording doubles. Telegram performs one callback
+store and signed registration, including the deferred dependency path. Core and
+Unspecified avoid DC lookup/connection workers, and resume returns safely when
+no private worker exists. Config/CDN/HTTP-time/DNS entry points are backend-gated
+in source, but are not executed by these doubles. No sockets or login are used.
+The extracted method hashes and results are under the ignored
+`data/integrity-live/telegram_transport_harness/restored/` tree. Native compile,
+real test-DC authentication and mixed-session runtime remain pending.
+
+Three focused integrity slots for per-message author names, adjacent-author
+grouping, and existing edit eligibility pass (five QtTest entries including
+setup/cleanup), zero failures/skips. These execute production metadata helpers;
+native HistoryView painting, quote selection, attachment grouping and contact
+click identity are still untested.
+The same frozen source then passes the complete integrity target: 307 checks,
+zero failures/skips, using the pinned Core RPC server and disposable temporary
+databases as UID/GID 65534. This does not compile the native account/UI routing.
+
+The production-used Telegram entitlement helpers pass 11 QtCore checks, zero
+failures/skips. Telegram premium follows the donor user flag, and purchasing
+follows server policy with the donor blocked-by-default and Mac Store behavior.
+Core/Unspecified flags cannot grant Telegram entitlement. Native Main::Session
+consumers and server app-config updates remain untested. Publication audit of
+the current tree checks 13,270 files with zero blocking findings; this checks
+publication hygiene, not backend isolation or protocol behavior.
+
 ### Backend identity and complete-message source validation — 2026-10-26
 
 `c6f3abc` adds explicit per-account backend identity and a separate versioned,

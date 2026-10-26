@@ -8,7 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "settings/settings_builder.h"
 
 #include "apiwrap.h"
-#include "delta/delta_bridge.h"
+#include "delta/account_backend.h"
 #include "lang/lang_keys.h"
 #include "api/api_user_privacy.h"
 #include "boxes/edit_privacy_box.h"
@@ -80,7 +80,7 @@ BuildHelper::BuildHelper(
 		not_null<Window::SessionController*> controller,
 		Fn<void(Type)> showOther,
 		rpl::producer<> showFinished) {
-	if (_meta.available && !_meta.available()) {
+	if (_meta.available && !_meta.available(&controller->session())) {
 		return;
 	}
 	auto &lifetime = container->lifetime();
@@ -136,7 +136,7 @@ std::vector<SearchEntry> SearchRegistry::collectAll(
 		not_null<Main::Session*> session) const {
 	auto result = std::vector<SearchEntry>();
 	for (const auto &[sectionId, meta] : _sections) {
-		if (!sectionAvailable(sectionId)) {
+		if (!sectionAvailable(sectionId, session)) {
 			continue;
 		}
 		if (meta->parentId) {
@@ -148,7 +148,7 @@ std::vector<SearchEntry> SearchRegistry::collectAll(
 		}
 	}
 	for (const auto &entry : _indexers) {
-		if (!sectionAvailable(entry.sectionId)) continue;
+		if (!sectionAvailable(entry.sectionId, session)) continue;
 		auto entries = entry.indexer(session);
 		result.insert(result.end(), entries.begin(), entries.end());
 	}
@@ -160,20 +160,24 @@ QString SearchRegistry::sectionTitle(Type sectionId) const {
 	return (it != _sections.end()) ? (*it->second->title)(tr::now) : QString();
 }
 
-bool SearchRegistry::sectionAvailable(Type sectionId) const {
-	if (Delta::Active() && CloudPasswordOrLoginEmailSection(sectionId)) {
+bool SearchRegistry::sectionAvailable(
+		Type sectionId,
+		not_null<Main::Session*> session) const {
+	if (Delta::UsesCoreBackend(session)
+		&& CloudPasswordOrLoginEmailSection(sectionId)) {
 		return false;
 	}
-	if (Delta::Active() && CoreUnregisteredAllowlisted(sectionId)) {
+	if (Delta::UsesCoreBackend(session)
+		&& CoreUnregisteredAllowlisted(sectionId)) {
 		return true;
 	}
 	while (sectionId) {
 		const auto i = _sections.find(sectionId);
 		if (i == _sections.end()) {
-			return !Delta::Active();
+			return !Delta::UsesCoreBackend(session);
 		}
 		const auto meta = i->second;
-		if (meta->available && !meta->available()) return false;
+		if (meta->available && !meta->available(session)) return false;
 		sectionId = meta->parentId;
 	}
 	return true;
@@ -197,7 +201,7 @@ QString SearchRegistry::sectionPath(Type sectionId, bool parentsOnly) const {
 
 std::vector<SearchEntry> BuildHelper::index(
 		not_null<Main::Session*> session) const {
-	if (_meta.available && !_meta.available()) {
+	if (_meta.available && !_meta.available(session)) {
 		return {};
 	}
 	auto entries = std::vector<SearchEntry>();

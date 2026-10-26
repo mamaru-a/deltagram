@@ -44,6 +44,8 @@ This file is part of Delta Tel, a Telegram Desktop based Delta Chat client.
 #include "history/history.h"
 #include "history/history_item.h"
 #include "history/history_item.h"
+#include "main/backend_session_identity.h"
+#include "main/backend_startup.h"
 #include "main/main_account.h"
 #include "main/main_session.h"
 #include "main/main_session_settings.h"
@@ -98,7 +100,8 @@ public:
 
 namespace {
 
-constexpr auto kSelfUserId = 1'000'000;
+constexpr int kSelfUserId = int(Main::kCoreSessionSelfBare);
+static_assert(kSelfUserId == 1'000'000);
 [[nodiscard]] qint64 MessageMediaId(int messageId);
 
 [[nodiscard]] bool HasError(const QJsonObject &reply) {
@@ -155,6 +158,7 @@ QHash<int, int> ChannelViews;
 QHash<int, QJsonObject> SharedContacts;
 QSet<uint64> GroupChats;
 QSet<uint64> DirectChats;
+QHash<uint64, CoreChatType> CoreChatTypes;
 QHash<uint64, ContactRow> SenderContacts;
 rpl::variable<int> ChannelRevision = 0;
 rpl::variable<int> AccountViewRevision = 0;
@@ -817,6 +821,10 @@ bool RememberCoreChat(uint64 userId, const QJsonObject &json) {
 		GlobalSystemUsers.insert(userId);
 		ComposerRevision = ComposerRevision.current() + 1;
 	}
+	if (const auto type = CoreJsonKnownChatType(
+			json.value(u"chatType"_q))) {
+		CoreChatTypes.insert(userId, *type);
+	}
 	return true;
 }
 
@@ -868,6 +876,7 @@ public:
 			GlobalSelfAvatarColor = QColor();
 			CoreMessages.clear();
 			CoreReadReceipts.clear();
+			CoreChatTypes.clear();
 		}
 	}
 
@@ -2349,6 +2358,7 @@ public:
 		SharedContacts.clear();
 		GroupChats.clear();
 		DirectChats.clear();
+		CoreChatTypes.clear();
 		SenderContacts.clear();
 		CoreMessages.clear();
 		CoreReadReceipts.clear();
@@ -4619,11 +4629,14 @@ bool IsSystemUser(uint64 userId) {
 	return GlobalSystemUsers.contains(userId);
 }
 
-rpl::producer<int> Connectivity() {
-	if (!GlobalBridge) {
+rpl::producer<int> Connectivity(not_null<Main::Session*> session) {
+	if (!OwnsSession(session)) {
 		return rpl::single(0);
 	}
-	return GlobalBridge->connectivity();
+	const auto weak = base::make_weak(session);
+	return GlobalBridge->connectivity() | rpl::map([=](int value) {
+		return (weak && OwnsSession(weak.get())) ? value : 0;
+	});
 }
 
 QImage AvatarImage(quint64 photoId) {
@@ -4747,7 +4760,7 @@ void DownloadMessage(int messageId) {
 }
 
 void ApplyMessageData(not_null<HistoryItem*> item) {
-	if (!Active()) {
+	if (!OwnsSession(&item->history()->session())) {
 		return;
 	}
 	const auto data = CoreMessages.value(item->id.bare);
@@ -4768,6 +4781,13 @@ void ApplyMessageData(not_null<HistoryItem*> item) {
 		user->setName(contact.name, QString(), QString(), QString());
 		item->setBackendSender(user);
 	}
+	const auto quote = data.value(u"quote"_q).toObject();
+	item->setBackendAuthorPresentation(
+		CoreOverrideSenderName(data),
+		CoreHasOriginalMsgId(data),
+		data.value(u"isInfo"_q).toBool(),
+		quote.value(u"authorDisplayName"_q).toString(),
+		CoreOverrideSenderName(quote));
 	const auto path = data.value(u"file"_q).toString();
 	const auto mime = data.value(u"fileMime"_q).toString();
 	const auto kind = data.value(u"viewType"_q).toString();
@@ -4808,6 +4828,47 @@ void ApplyMessageData(not_null<HistoryItem*> item) {
 	item->history()->owner().requestItemViewRefresh(item);
 }
 
+QString MessageAuthorOverride(not_null<HistoryItem*> item) {
+	if (!OwnsSession(&item->history()->session())) {
+		return {};
+	}
+	return item->backendAuthorOverride();
+}
+
+bool MessageShowsCoreAuthor(not_null<HistoryItem*> item) {
+	if (!OwnsSession(&item->history()->session())) {
+		return false;
+	}
+	auto visibility = CoreAuthorVisibility();
+	const auto type = CoreChatTypes.constFind(
+		item->history()->peer->id.value);
+	if (type != CoreChatTypes.cend()) {
+		visibility.chatType = *type;
+	}
+	visibility.hasOverride = !item->backendAuthorOverride().isEmpty();
+	visibility.originalMsgId = item->backendAuthorOriginalMsg();
+	visibility.selfTalk = item->history()->peer->isSelf();
+	visibility.incoming = !item->out() && !item->isService();
+	visibility.info = item->backendAuthorInfo();
+	return CoreShouldShowAuthor(visibility);
+}
+
+QString QuoteAuthorName(
+		not_null<HistoryItem*> quoting,
+		HistoryItem *resolved) {
+	if (!OwnsSession(&quoting->history()->session())) {
+		return {};
+	} else if (resolved) {
+		const auto from = resolved->displayFrom();
+		return CoreAuthorDisplayName(
+			from ? from->name() : resolved->author()->name(),
+			resolved->backendAuthorOverride());
+	}
+	return CoreAuthorDisplayName(
+		quoting->backendQuoteAuthorDisplayName(),
+		quoting->backendQuoteAuthorOverride());
+}
+
 QColor SelfAvatarColor() {
 	return GlobalSelfAvatarColor;
 }
@@ -4831,19 +4892,34 @@ void FetchUrl(const QString &url, Fn<void(QByteArray, QString)> done) {
 	GlobalBridge->fetchUrl(url, std::move(done));
 }
 
-void FetchConnectivityHtml(Fn<void(QString)> done) {
-	if (!GlobalBridge) {
+void FetchConnectivityHtml(
+		not_null<Main::Session*> session,
+		Fn<void(QString)> done) {
+	if (!OwnsSession(session)) {
 		done(QString());
 		return;
 	}
-	GlobalBridge->fetchConnectivityHtml(std::move(done));
+	const auto generation = AccountGeneration();
+	const auto current = CaptureAccountGuard();
+	const auto weak = base::make_weak(session);
+	GlobalBridge->fetchConnectivityHtml([=](QString html) {
+		if (!weak
+			|| (current && !current())
+			|| generation != AccountGeneration()
+			|| !OwnsSession(weak.get())) {
+			return;
+		}
+		done(html);
+	});
 }
 
 void AnswerRequest(
 		not_null<MTP::Instance*> instance,
 		mtpRequestId requestId,
 		const mtpBuffer &request) {
-	if (GlobalBridge) {
+	if (instance->backend() == Main::AccountBackend::Core
+		&& GlobalBridge
+		&& &GlobalBridge->_session->mtp() == instance.get()) {
 		GlobalBridge->answer(instance, requestId, request);
 		return;
 	}
@@ -5121,12 +5197,23 @@ void LoadSearchResults(
 	GlobalBridge->loadSearchResults(ids, std::move(done));
 }
 
-void ListTransports(Fn<void(QJsonArray, QString)> done) {
-	if (!GlobalBridge) {
+void ListTransports(
+		not_null<Main::Session*> session,
+		Fn<void(QJsonArray, QString)> done) {
+	if (!OwnsSession(session)) {
 		done({}, u"Delta Chat is not running."_q);
 		return;
 	}
-	GlobalBridge->listTransports(std::move(done));
+	const auto generation = AccountGeneration();
+	const auto current = CaptureAccountGuard();
+	GlobalBridge->listTransports([=](QJsonArray transports, QString error) {
+		if ((current && !current())
+			|| generation != AccountGeneration()
+			|| !OwnsSession(session)) {
+			return;
+		}
+		done(std::move(transports), std::move(error));
+	});
 }
 
 void UpdateTransport(const QJsonObject &transport, Fn<void(QString)> done) {
@@ -5428,8 +5515,23 @@ void StartSession(
 		std::shared_ptr<DeltaRpc> rpc,
 		int accountId,
 		const QString &displayName) {
-	crl::on_main([=] {
-		if (account->sessionExists()) {
+	const auto otherOwns = [=] {
+		return GlobalBridge
+			&& (!account->sessionExists()
+				|| !OwnsSession(&account->session()));
+	};
+	const auto allowed = [=] {
+		return Main::EvaluateCoreSessionStart({
+			account->backend(),
+			account->sessionExists(),
+			otherOwns(),
+		}) == Main::CoreSessionStartResult::Allowed;
+	};
+	if (!allowed()) {
+		return;
+	}
+	crl::on_main(account.get(), [=] {
+		if (!allowed() || account->sessionExists()) {
 			return;
 		}
 		// WHY: The donor suggestion file has no Core account identity. Do not

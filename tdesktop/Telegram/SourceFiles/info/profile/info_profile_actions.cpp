@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "info/profile/info_profile_actions.h"
 
+#include "delta/account_backend.h"
 #include "delta/delta_bridge.h"
 #include "delta/delta_boxes.h"
 #include "delta/core_profile_actions.h"
@@ -1518,7 +1519,9 @@ Section DetailsFiller::makeInfo() {
 					}
 				}
 			}
-			if (Ui::SkipTranslate(selected ? full : about)) {
+			if (Ui::SkipTranslate(
+					selected ? full : about,
+					&peer->session())) {
 				return;
 			}
 			auto item = (selected
@@ -2341,18 +2344,31 @@ Section DetailsFiller::makeAddAsContact(not_null<UserData*> user) {
 		parent,
 		object_ptr<Ui::VerticalLayout>(parent));
 	const auto raw = wrap.data();
+	const auto core = Delta::UsesCoreBackend(&user->session());
+	const auto owns = Delta::OwnsSession(&user->session());
+	const auto telegram = Delta::UsesTelegramBackend(&user->session());
+	if ((core && !owns) || (!core && !telegram)) {
+		raw->toggleOn(rpl::single(false));
+		return Section{
+			.widget = std::move(wrap),
+			.shown = raw->toggledValue(),
+		};
+	}
 	AddMainButton(
 		raw->entity(),
-		Delta::Active()
+		core
 			? rpl::producer<QString>(rpl::single(Delta::kCoreEditNameLabel))
 			: tr::lng_info_add_as_contact(),
 		CanAddContactValue(user),
 		[=, controller = _controller->parentController()] {
-			if (Delta::Active()) {
+			if (Delta::UsesCoreBackend(&user->session())) {
 				Delta::ShowCoreContactNameBox(
 					controller,
 					peerToUser(user->id).bare,
 					true);
+				return;
+			}
+			if (!Delta::UsesTelegramBackend(&user->session())) {
 				return;
 			}
 			controller->uiShow()->show(
@@ -2944,13 +2960,22 @@ void ActionsFiller::addShareContactAction(not_null<UserData*> user) {
 }
 
 void ActionsFiller::addEditContactAction(not_null<UserData*> user) {
+	if (Delta::UsesCoreBackend(&user->session())) {
+		if (!Delta::OwnsSession(&user->session())) {
+			return;
+		}
+	} else if (!Delta::UsesTelegramBackend(&user->session())) {
+		return;
+	}
 	const auto controller = _controller->parentController();
 	const auto edit = [=] {
-		if (Delta::Active()) {
+		if (Delta::UsesCoreBackend(&user->session())) {
 			Delta::ShowCoreContactNameBox(
 				controller,
 				peerToUser(user->id).bare,
 				false);
+			return;
+		} else if (!Delta::UsesTelegramBackend(&user->session())) {
 			return;
 		} else if (controller->showFrozenError()) {
 			return;
@@ -2959,7 +2984,7 @@ void ActionsFiller::addEditContactAction(not_null<UserData*> user) {
 	};
 	AddActionButton(
 		_wrap,
-		Delta::Active()
+		Delta::UsesCoreBackend(&user->session())
 			? rpl::producer<QString>(rpl::single(Delta::kCoreEditNameLabel))
 			: tr::lng_info_edit_contact(),
 		IsContactValue(user),
@@ -2968,16 +2993,26 @@ void ActionsFiller::addEditContactAction(not_null<UserData*> user) {
 }
 
 void ActionsFiller::addDeleteContactAction(not_null<UserData*> user) {
+	if (Delta::UsesCoreBackend(&user->session())) {
+		if (!Delta::OwnsSession(&user->session())) {
+			return;
+		}
+	} else if (!Delta::UsesTelegramBackend(&user->session())) {
+		return;
+	}
 	const auto controller = _controller->parentController();
 	AddActionButton(
 		_wrap,
 		tr::lng_info_delete_contact(),
 		IsContactValue(user),
 		[=] {
-			if (Delta::Active()) {
+			if (Delta::UsesCoreBackend(&user->session())) {
 				Delta::ShowCoreContactDeleteBox(
 					controller,
 					peerToUser(user->id).bare);
+				return;
+			}
+			if (!Delta::UsesTelegramBackend(&user->session())) {
 				return;
 			}
 			Window::PeerMenuDeleteContact(controller, user);
@@ -3117,7 +3152,10 @@ void ActionsFiller::addReportAction() {
 
 void ActionsFiller::addBlockAction(not_null<UserData*> user) {
 	const auto controller = _controller->parentController();
-	if (Delta::Active()) {
+	if (Delta::UsesCoreBackend(&user->session())) {
+		if (!Delta::OwnsSession(&user->session())) {
+			return;
+		}
 		const auto id = peerToUser(user->id).bare;
 		if (!Delta::CanManageContactBlocking(id)) {
 			return;
@@ -3129,6 +3167,9 @@ void ActionsFiller::addBlockAction(not_null<UserData*> user) {
 			[=] { Delta::ManageContactBlocking(controller, id); },
 			&st::infoIconBlock,
 			st::infoBlockButton);
+		return;
+	}
+	if (!Delta::UsesTelegramBackend(&user->session())) {
 		return;
 	}
 	const auto window = &controller->window();
@@ -3227,12 +3268,13 @@ void ActionsFiller::fillUserActions(not_null<UserData*> user) {
 		addInviteToGroupAction(user);
 	}
 	const auto id = peerToUser(user->id).bare;
-	const auto system = Delta::IsSystemUser(id);
-	const auto group = Delta::Active() && Delta::IsGroup(id);
+	const auto owns = Delta::OwnsSession(&user->session());
+	const auto system = owns && Delta::IsSystemUser(id);
+	const auto group = owns && Delta::IsGroup(id);
 	if (!user->isSelf() && !system && !group) {
 		addEditContactAction(user);
 		addDeleteContactAction(user);
-		if (Delta::Active()) {
+		if (owns) {
 			const auto controller = _controller->parentController();
 			AddActionButton(
 				_wrap,

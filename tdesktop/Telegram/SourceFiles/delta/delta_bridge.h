@@ -100,6 +100,11 @@ enum class DeliveryState { Pending, Failed, Sent, Read };
 [[nodiscard]] std::optional<DeliveryState> MessageDelivery(int messageId);
 [[nodiscard]] bool CanEditMessage(int messageId);
 void ApplyMessageData(not_null<HistoryItem*> item);
+[[nodiscard]] QString MessageAuthorOverride(not_null<HistoryItem*> item);
+[[nodiscard]] bool MessageShowsCoreAuthor(not_null<HistoryItem*> item);
+[[nodiscard]] QString QuoteAuthorName(
+	not_null<HistoryItem*> quoting,
+	HistoryItem *resolved);
 [[nodiscard]] bool CanDownloadMessage(int messageId);
 void DownloadMessage(int messageId);
 [[nodiscard]] bool OwnsSession(not_null<Main::Session*> session);
@@ -130,8 +135,11 @@ void JoinInviteChat(const QString &qr, Fn<void(int chatId, QString error)> done)
 [[nodiscard]] std::shared_ptr<DeltaRpc> SharedRpc();
 [[nodiscard]] QString SelfAddress();
 [[nodiscard]] bool IsSystemUser(uint64 userId);
-[[nodiscard]] rpl::producer<int> Connectivity();
-void FetchConnectivityHtml(Fn<void(QString html)> done);
+[[nodiscard]] rpl::producer<int> Connectivity(
+	not_null<Main::Session*> session);
+void FetchConnectivityHtml(
+	not_null<Main::Session*> session,
+	Fn<void(QString html)> done);
 void FetchUrl(const QString &url, Fn<void(QByteArray body, QString error)> done);
 [[nodiscard]] QImage PhotoImage(uint64 photoId);
 
@@ -161,7 +169,9 @@ void LoadSearchResults(
 void LoadInviteQr(
 	Fn<void(QString name, QString text, QString svg, QString error)> done);
 
-void ListTransports(Fn<void(QJsonArray transports, QString error)> done);
+void ListTransports(
+	not_null<Main::Session*> session,
+	Fn<void(QJsonArray transports, QString error)> done);
 void UpdateTransport(const QJsonObject &transport, Fn<void(QString error)> done);
 void DeleteTransport(const QString &addr, Fn<void(QString error)> done);
 void AddTransportFromQr(const QString &qr, Fn<void(QString error)> done);

@@ -396,6 +396,9 @@ void Instance::Private::start() {
 }
 
 void Instance::Private::resolveProxyDomain(const QString &host) {
+	if (_backend != Main::AccountBackend::Telegram) {
+		return;
+	}
 	if (!_domainResolver) {
 		_domainResolver = std::make_unique<DomainResolver>([=](
 				const QString &host,
@@ -453,6 +456,9 @@ void Instance::Private::applyDomainIps(
 void Instance::Private::setGoodProxyDomain(
 		const QString &host,
 		const QString &ip) {
+	if (_backend != Main::AccountBackend::Telegram) {
+		return;
+	}
 	const auto applyToProxy = [&](ProxyData &proxy) {
 		if (!proxy.tryCustomResolve() || proxy.host != host) {
 			return false;
@@ -519,8 +525,9 @@ rpl::producer<DcId> Instance::Private::mainDcIdValue() const {
 }
 
 void Instance::Private::requestConfig() {
-	// Delta Tel never fetches the Telegram config.
-	return;
+	if (_backend != Main::AccountBackend::Telegram) {
+		return;
+	}
 	if (_configLoader || isKeysDestroyer()) {
 		return;
 	}
@@ -551,6 +558,9 @@ void Instance::Private::badConfigurationError() {
 }
 
 void Instance::Private::syncHttpUnixtime() {
+	if (_backend != Main::AccountBackend::Telegram) {
+		return;
+	}
 	if (base::unixtime::http_valid() || _httpUnixtimeLoader) {
 		return;
 	}
@@ -600,6 +610,9 @@ void Instance::Private::requestConfigIfExpired() {
 }
 
 void Instance::Private::requestCDNConfig() {
+	if (_backend != Main::AccountBackend::Telegram) {
+		return;
+	}
 	if (_cdnConfigLoadRequestId || !hasMainDcId()) {
 		return;
 	}
@@ -1027,10 +1040,12 @@ void Instance::Private::sendRequest(
 		bool needsLayer,
 		mtpRequestId afterRequestId) {
 	request->requestId = requestId;
-	storeRequest(requestId, request, std::move(callbacks));
-	registerRequest(requestId, shiftedDcId);
-	Delta::AnswerRequest(_instance, requestId, *request);
-	return;
+	if (_backend != Main::AccountBackend::Telegram) {
+		storeRequest(requestId, request, std::move(callbacks));
+		registerRequest(requestId, shiftedDcId);
+		Delta::AnswerRequest(_instance, requestId, *request);
+		return;
+	}
 
 	const auto session = getSession(shiftedDcId);
 
@@ -1041,6 +1056,8 @@ void Instance::Private::sendRequest(
 
 	request->lastSentTime = crl::now();
 	request->needsLayer = needsLayer;
+
+	storeRequest(requestId, request, std::move(callbacks));
 
 	if (afterRequestId) {
 		request->after = getRequest(afterRequestId);
@@ -1980,7 +1997,10 @@ void Instance::restart(ShiftedDcId shiftedDcId) {
 }
 
 int32 Instance::dcstate(ShiftedDcId shiftedDcId) {
-	return ConnectedState;
+	if (_private->backend() != Main::AccountBackend::Telegram) {
+		return ConnectedState;
+	}
+	return _private->dcstate(shiftedDcId);
 }
 
 QString Instance::dctransport(ShiftedDcId shiftedDcId) {

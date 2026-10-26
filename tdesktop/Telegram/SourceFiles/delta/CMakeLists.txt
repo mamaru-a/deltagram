@@ -95,6 +95,46 @@ if (BUILD_TESTING)
     target_link_libraries(delta_account_backend_tests PRIVATE Qt6::Core Qt6::Test)
     add_test(NAME delta_account_backend COMMAND delta_account_backend_tests)
     set_tests_properties(delta_account_backend PROPERTIES TIMEOUT 30)
+    add_executable(delta_backend_startup_tests tests/backend_startup_tests.cpp)
+    target_include_directories(delta_backend_startup_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_CURRENT_SOURCE_DIR}/..)
+    target_link_libraries(delta_backend_startup_tests PRIVATE Qt6::Core Qt6::Test)
+    add_test(NAME delta_backend_startup COMMAND delta_backend_startup_tests)
+    set_tests_properties(delta_backend_startup PROPERTIES TIMEOUT 30)
+    add_executable(delta_domain_account_limit_tests tests/domain_account_limit_tests.cpp)
+    target_include_directories(delta_domain_account_limit_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_CURRENT_SOURCE_DIR}/..)
+    target_link_libraries(delta_domain_account_limit_tests PRIVATE Qt6::Core Qt6::Test)
+    add_test(NAME delta_domain_account_limit COMMAND delta_domain_account_limit_tests)
+    set_tests_properties(delta_domain_account_limit PROPERTIES TIMEOUT 30)
+    add_executable(delta_session_backend_features_tests tests/session_backend_features_tests.cpp)
+    target_include_directories(delta_session_backend_features_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_CURRENT_SOURCE_DIR}/..)
+    target_link_libraries(delta_session_backend_features_tests PRIVATE Qt6::Core Qt6::Test)
+    add_test(NAME delta_session_backend_features COMMAND delta_session_backend_features_tests)
+    set_tests_properties(delta_session_backend_features PROPERTIES TIMEOUT 30)
+    add_executable(delta_backend_session_identity_tests tests/backend_session_identity_tests.cpp)
+    target_include_directories(delta_backend_session_identity_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_CURRENT_SOURCE_DIR}/..)
+    target_link_libraries(delta_backend_session_identity_tests PRIVATE Qt6::Core Qt6::Test)
+    add_test(NAME delta_backend_session_identity COMMAND delta_backend_session_identity_tests)
+    set_tests_properties(delta_backend_session_identity PROPERTIES TIMEOUT 30)
+    add_executable(delta_lang_backend_tests tests/lang_backend_tests.cpp)
+    target_include_directories(delta_lang_backend_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_CURRENT_SOURCE_DIR}/..)
+    target_link_libraries(delta_lang_backend_tests PRIVATE Qt6::Core Qt6::Test)
+    add_test(NAME delta_lang_backend COMMAND delta_lang_backend_tests)
+    set_tests_properties(delta_lang_backend PROPERTIES TIMEOUT 30)
+    add_executable(delta_unread_aggregation_tests tests/unread_aggregation_tests.cpp)
+    target_include_directories(delta_unread_aggregation_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_link_libraries(delta_unread_aggregation_tests PRIVATE Qt6::Core Qt6::Test)
+    add_test(NAME delta_unread_aggregation COMMAND delta_unread_aggregation_tests)
+    set_tests_properties(delta_unread_aggregation PROPERTIES TIMEOUT 30)
     add_executable(delta_full_message_tests tests/full_message_tests.cpp)
     target_include_directories(delta_full_message_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     target_link_libraries(delta_full_message_tests PRIVATE Qt6::Core Qt6::Test)

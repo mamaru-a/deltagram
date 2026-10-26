@@ -1,12 +1,16 @@
 #include "../../main/account_backend.h"
 #include "../../main/account_backend_store.h"
+#include "../../main/account_storage_namespace.h"
 
 #include <QtCore/QDir>
 #include <QtCore/QFile>
 #include <QtCore/QFileDevice>
 #include <QtCore/QFileInfo>
+#include <QtCore/QList>
 #include <QtCore/QTemporaryDir>
 #include <QtTest/QtTest>
+
+#include <limits>
 
 using Main::AccountBackend;
 using Main::AccountBackendBindResult;
@@ -119,6 +123,70 @@ struct StoreFixture {
 	[[nodiscard]] bool sentinelsUnchanged() const {
 		return ReadAll(mapPath()) == mapSentinel
 			&& ReadAll(authPath()) == authSentinel;
+	}
+};
+
+struct NamespaceFixture {
+	QTemporaryDir dir;
+	QString dataName = QStringLiteral("data");
+	QByteArray mapSentinel = QByteArrayLiteral("MAP-SENTINEL-BYTES");
+	QByteArray authSentinel = QByteArrayLiteral("AUTH-SENTINEL-BYTES");
+
+	[[nodiscard]] QString tdataRoot() const {
+		return dir.path() + QStringLiteral("/tdata");
+	}
+	[[nodiscard]] QByteArray identityFor(int index) const {
+		return Main::AccountStorageIdentity(
+			Main::ComposeAccountStorageDataName(dataName, index));
+	}
+	[[nodiscard]] QString sidecarPath(int index) const {
+		return Main::AccountBackendStorePath(tdataRoot(), identityFor(index));
+	}
+	[[nodiscard]] QByteArray sidecarBytes(int index) const {
+		return ReadAll(sidecarPath(index));
+	}
+	[[nodiscard]] QString mapPath(int index) const {
+		return Main::AccountStorageMapDirectory(
+			tdataRoot(),
+			identityFor(index)) + QStringLiteral("map0");
+	}
+	[[nodiscard]] QString authPath(int index) const {
+		return Main::AccountStorageAuthStem(
+			tdataRoot(),
+			identityFor(index)) + QLatin1Char('0');
+	}
+
+	bool occupy(
+			int index,
+			AccountBackend backend,
+			bool withMapAuth = true) {
+		if (withMapAuth
+			&& (!WriteAll(mapPath(index), mapSentinel)
+				|| !WriteAll(authPath(index), authSentinel))) {
+			return false;
+		}
+		if (!Main::IsBoundAccountBackend(backend)) {
+			return true;
+		}
+		return Main::WriteAccountBackendStore(
+			sidecarPath(index),
+			identityFor(index),
+			backend) == AccountBackendStoreWriteStatus::Written;
+	}
+
+	[[nodiscard]] bool occupancyUnchanged(int index) const {
+		return ReadAll(mapPath(index)) == mapSentinel
+			&& ReadAll(authPath(index)) == authSentinel;
+	}
+
+	[[nodiscard]] int choose(
+			const QList<int> &active,
+			int limit = Main::kAccountStorageIndexSearchLimit) const {
+		return Main::ChooseUnusedAccountStorageIndex(
+			tdataRoot(),
+			dataName,
+			active,
+			limit);
 	}
 };
 
@@ -716,6 +784,285 @@ private slots:
 		QCOMPARE(migration.need, AccountBackendMigrationNeed::Chooser);
 		QVERIFY(!migration.needsProvenLegacyCoreMarker);
 		QVERIFY(!QFile::exists(fx.path()));
+	}
+
+	void newDomainSlotIgnoresOrphanSidecarAndUnreadKeys() {
+		auto evidence = Fresh();
+		evidence.record = AccountBackendRecordKind::NewDomainSlot;
+		evidence.tagPresent = true;
+		evidence.storedTag = Main::EncodeAccountBackendTag(
+			AccountBackend::Core);
+		evidence.telegramAuthorizationKeysPresent = true;
+		const auto core = Main::ResolveStoredAccountBackend(evidence);
+		QCOMPARE(core.backend, AccountBackend::Unspecified);
+		QCOMPARE(core.need, AccountBackendMigrationNeed::Chooser);
+		QVERIFY(!core.needsProvenLegacyCoreMarker);
+
+		evidence.storedTag = Main::EncodeAccountBackendTag(
+			AccountBackend::Telegram);
+		const auto telegram = Main::ResolveStoredAccountBackend(evidence);
+		QCOMPARE(telegram.backend, AccountBackend::Unspecified);
+		QCOMPARE(telegram.need, AccountBackendMigrationNeed::Chooser);
+	}
+
+	void newDomainSlotLeavesOrphanCoreAndTelegramBytes() {
+		StoreFixture fx;
+		QVERIFY(fx.dir.isValid());
+		QVERIFY(fx.writeSentinels());
+		QCOMPARE(
+			Main::WriteAccountBackendStore(
+				fx.path(),
+				fx.identity,
+				AccountBackend::Core),
+			AccountBackendStoreWriteStatus::Written);
+		const auto coreBytes = ReadAll(fx.path());
+		QVERIFY(!coreBytes.isEmpty());
+		const auto ignored = Main::ResolveStoredAccountBackend(
+			Main::MakeAccountBackendMigrationEvidence(
+				AccountBackendRecordKind::NewDomainSlot,
+				Main::ReadAccountBackendStore(fx.path(), fx.identity),
+				true,
+				false));
+		QCOMPARE(ignored.backend, AccountBackend::Unspecified);
+		QCOMPARE(ignored.need, AccountBackendMigrationNeed::Chooser);
+		QCOMPARE(ReadAll(fx.path()), coreBytes);
+		QVERIFY(fx.sentinelsUnchanged());
+
+		QCOMPARE(
+			Main::WriteAccountBackendStore(
+				fx.path(),
+				fx.identity,
+				AccountBackend::Telegram),
+			AccountBackendStoreWriteStatus::Written);
+		const auto telegramBytes = ReadAll(fx.path());
+		QVERIFY(telegramBytes != coreBytes);
+		const auto ignoredTelegram = Main::ResolveStoredAccountBackend(
+			Main::MakeAccountBackendMigrationEvidence(
+				AccountBackendRecordKind::NewDomainSlot,
+				Main::ReadAccountBackendStore(fx.path(), fx.identity),
+				false,
+				false));
+		QCOMPARE(ignoredTelegram.backend, AccountBackend::Unspecified);
+		QCOMPARE(ReadAll(fx.path()), telegramBytes);
+		QVERIFY(fx.sentinelsUnchanged());
+	}
+
+	void emptyNamespaceIsChosenWhenNothingIsOccupied() {
+		NamespaceFixture fx;
+		QVERIFY(fx.dir.isValid());
+		QCOMPARE(fx.choose(QList<int>{}), 0);
+		QVERIFY(!Main::AccountStorageNamespaceOccupied(
+			fx.tdataRoot(),
+			fx.dataName,
+			0));
+		QCOMPARE(
+			Main::ComposeAccountStorageDataName(fx.dataName, 0),
+			fx.dataName);
+		QCOMPARE(
+			Main::ComposeAccountStorageDataName(fx.dataName, 1),
+			fx.dataName + QStringLiteral("#2"));
+		QVERIFY(fx.identityFor(0) != fx.identityFor(1));
+		QCOMPARE(fx.identityFor(0).size(), 16);
+		QVERIFY(Main::IsSafeAccountBackendStoreIdentity(fx.identityFor(0)));
+		QVERIFY(Main::IsSafeAccountBackendStoreIdentity(fx.identityFor(1)));
+	}
+
+	void orphanCoreRecordDoesNotBindOnFreshAllocation() {
+		NamespaceFixture fx;
+		QVERIFY(fx.dir.isValid());
+		QVERIFY(fx.occupy(0, AccountBackend::Core));
+		const auto sidecar = fx.sidecarBytes(0);
+		QVERIFY(!sidecar.isEmpty());
+		QCOMPARE(fx.choose(QList<int>{}), 1);
+		QVERIFY(Main::AccountStorageNamespaceOccupied(
+			fx.tdataRoot(),
+			fx.dataName,
+			0));
+		QVERIFY(!Main::AccountStorageNamespaceOccupied(
+			fx.tdataRoot(),
+			fx.dataName,
+			1));
+		QVERIFY(fx.occupancyUnchanged(0));
+		QCOMPARE(fx.sidecarBytes(0), sidecar);
+		QVERIFY(!QFile::exists(fx.sidecarPath(1)));
+		QVERIFY(!QFile::exists(fx.mapPath(1)));
+		QVERIFY(!QFile::exists(fx.authPath(1)));
+		const auto recovered = Main::ResolveStoredAccountBackend(
+			Main::MakeAccountBackendMigrationEvidence(
+				AccountBackendRecordKind::FreshMissing,
+				Main::ReadAccountBackendStore(
+					fx.sidecarPath(0),
+					fx.identityFor(0)),
+				false,
+				false));
+		QCOMPARE(recovered.backend, AccountBackend::Core);
+		const auto newSlot = Main::ResolveStoredAccountBackend(
+			Main::MakeAccountBackendMigrationEvidence(
+				AccountBackendRecordKind::NewDomainSlot,
+				Main::ReadAccountBackendStore(
+					fx.sidecarPath(1),
+					fx.identityFor(1)),
+				false,
+				false));
+		QCOMPARE(newSlot.backend, AccountBackend::Unspecified);
+		QCOMPARE(newSlot.need, AccountBackendMigrationNeed::Chooser);
+	}
+
+	void orphanTelegramRecordDoesNotBindOnFreshAllocation() {
+		NamespaceFixture fx;
+		QVERIFY(fx.dir.isValid());
+		QVERIFY(fx.occupy(0, AccountBackend::Telegram));
+		const auto sidecar = fx.sidecarBytes(0);
+		QCOMPARE(fx.choose(QList<int>{}), 1);
+		QVERIFY(fx.occupancyUnchanged(0));
+		QCOMPARE(fx.sidecarBytes(0), sidecar);
+		QVERIFY(!QFile::exists(fx.sidecarPath(1)));
+		const auto recovered = Main::ResolveStoredAccountBackend(
+			Main::MakeAccountBackendMigrationEvidence(
+				AccountBackendRecordKind::FreshMissing,
+				Main::ReadAccountBackendStore(
+					fx.sidecarPath(0),
+					fx.identityFor(0)),
+				false,
+				false));
+		QCOMPARE(recovered.backend, AccountBackend::Telegram);
+		const auto newSlot = Main::ResolveStoredAccountBackend(
+			Main::MakeAccountBackendMigrationEvidence(
+				AccountBackendRecordKind::NewDomainSlot,
+				Main::ReadAccountBackendStore(
+					fx.sidecarPath(1),
+					fx.identityFor(1)),
+				true,
+				false));
+		QCOMPARE(newSlot.backend, AccountBackend::Unspecified);
+		QCOMPARE(newSlot.need, AccountBackendMigrationNeed::Chooser);
+		QVERIFY(fx.occupancyUnchanged(0));
+	}
+
+	void activeIndexIsSkippedEvenWhenEmpty() {
+		NamespaceFixture fx;
+		QVERIFY(fx.dir.isValid());
+		QVERIFY(fx.occupy(1, AccountBackend::Core));
+		const auto sidecar = fx.sidecarBytes(1);
+		QCOMPARE(fx.choose(QList<int>{ 0 }), 2);
+		QVERIFY(!Main::AccountStorageNamespaceOccupied(
+			fx.tdataRoot(),
+			fx.dataName,
+			0));
+		QVERIFY(Main::AccountStorageNamespaceOccupied(
+			fx.tdataRoot(),
+			fx.dataName,
+			1));
+		QVERIFY(!Main::AccountStorageNamespaceOccupied(
+			fx.tdataRoot(),
+			fx.dataName,
+			2));
+		QVERIFY(fx.occupancyUnchanged(1));
+		QCOMPARE(fx.sidecarBytes(1), sidecar);
+		QVERIFY(!QFile::exists(fx.mapPath(0)));
+		QVERIFY(!QFile::exists(fx.authPath(0)));
+		QVERIFY(!QFile::exists(fx.sidecarPath(2)));
+	}
+
+	void mapOrAuthAloneOccupiesNamespace() {
+		NamespaceFixture fx;
+		QVERIFY(fx.dir.isValid());
+		QVERIFY(fx.occupy(0, AccountBackend::Unspecified));
+		QVERIFY(Main::AccountStorageNamespaceOccupied(
+			fx.tdataRoot(),
+			fx.dataName,
+			0));
+		QCOMPARE(fx.choose(QList<int>{}), 1);
+		QVERIFY(fx.occupancyUnchanged(0));
+		QVERIFY(!QFile::exists(fx.sidecarPath(0)));
+	}
+
+	void occupiedRangeReturnsNoIndexInsideLimit() {
+		NamespaceFixture fx;
+		QVERIFY(fx.dir.isValid());
+		QVERIFY(fx.occupy(0, AccountBackend::Core));
+		QVERIFY(fx.occupy(1, AccountBackend::Telegram));
+		QCOMPARE(fx.choose(QList<int>{}, 2), -1);
+		QCOMPARE(fx.choose(QList<int>{}, 3), 2);
+		QVERIFY(fx.occupancyUnchanged(0));
+		QVERIFY(fx.occupancyUnchanged(1));
+	}
+
+	void sparseIndexPastDonorCapIsChosenWithoutTouchingOccupied() {
+		NamespaceFixture fx;
+		QVERIFY(fx.dir.isValid());
+		for (auto i = 0; i != 6; ++i) {
+			QVERIFY(fx.occupy(
+				i,
+				(i % 2)
+					? AccountBackend::Telegram
+					: AccountBackend::Core));
+		}
+		QCOMPARE(fx.choose(QList<int>{}, 6), -1);
+		QCOMPARE(fx.choose(QList<int>{}), 6);
+		QVERIFY(Main::IsRepresentableAccountStorageIndex(0));
+		QVERIFY(Main::IsRepresentableAccountStorageIndex(6));
+		QVERIFY(Main::IsRepresentableAccountStorageIndex(
+			Main::kMaxAccountStorageIndex));
+		QVERIFY(!Main::IsRepresentableAccountStorageIndex(-1));
+		QVERIFY(!Main::IsRepresentableAccountStorageIndex(
+			std::numeric_limits<int>::max()));
+		QVERIFY(Main::AccountStorageNamespaceOccupied(
+			fx.tdataRoot(),
+			fx.dataName,
+			-1));
+		QVERIFY(Main::AccountStorageNamespaceOccupied(
+			fx.tdataRoot(),
+			fx.dataName,
+			std::numeric_limits<int>::max()));
+		QVERIFY(fx.occupy(6, AccountBackend::Core));
+		for (auto i = 0; i != 6; ++i) {
+			QVERIFY(fx.occupancyUnchanged(i));
+		}
+		QCOMPARE(
+			Main::ComposeAccountStorageDataName(fx.dataName, 6),
+			fx.dataName + QStringLiteral("#7"));
+		QVERIFY(fx.identityFor(6) != fx.identityFor(0));
+		QVERIFY(Main::AccountStorageNamespaceOccupied(
+			fx.tdataRoot(),
+			fx.dataName,
+			6));
+		QCOMPARE(fx.choose(QList<int>{ 6 }), 7);
+	}
+
+	void storeSamePayloadInsecurePermissionsAreNotUnchanged() {
+		StoreFixture fx;
+		QVERIFY(fx.dir.isValid());
+		QCOMPARE(
+			Main::WriteAccountBackendStore(
+				fx.path(),
+				fx.identity,
+				AccountBackend::Core),
+			AccountBackendStoreWriteStatus::Written);
+		const auto payload = ReadAll(fx.path());
+		QVERIFY(!payload.isEmpty());
+#if !defined(Q_OS_WIN)
+		QVERIFY(QFile::setPermissions(
+			fx.path(),
+			QFileDevice::ReadOwner
+				| QFileDevice::WriteOwner
+				| QFileDevice::ReadGroup
+				| QFileDevice::ReadOther));
+		QVERIFY(!IsOwnerPrivate(fx.path()));
+		const auto status = Main::WriteAccountBackendStore(
+			fx.path(),
+			fx.identity,
+			AccountBackend::Core);
+		QVERIFY(
+			status == AccountBackendStoreWriteStatus::Unchanged
+			|| status == AccountBackendStoreWriteStatus::Failed);
+		if (status == AccountBackendStoreWriteStatus::Unchanged) {
+			QVERIFY(IsOwnerPrivate(fx.path()));
+		} else {
+			QVERIFY(!IsOwnerPrivate(fx.path()));
+		}
+		QCOMPARE(ReadAll(fx.path()), payload);
+#endif
 	}
 
 };

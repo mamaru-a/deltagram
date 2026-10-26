@@ -409,6 +409,9 @@ private:
 } // namespace
 
 void ShowChannelSubscribers(not_null<Main::Session*> session, int userId, Fn<void()> done) {
+	if (!OwnsSession(session)) {
+		return;
+	}
 	auto controller = std::make_unique<ChannelSubscribersController>(session, userId);
 	Ui::show(Box<PeerListBox>(std::move(controller), [=](not_null<PeerListBox*> box) {
 		const auto weak = QPointer<PeerListBox>(box.get());
@@ -463,8 +466,12 @@ void FillChannelInfo(
 	const auto session = &controller->session();
 	const auto status = box->add(object_ptr<Ui::FlatLabel>(box, u"Loading…"_q, st::aboutLabel), st::boxRowPadding);
 	const auto weak = QPointer<Ui::VerticalLayout>(box.get());
+	if (!OwnsSession(session)) {
+		status->setText(u"This channel cannot be opened."_q);
+		return;
+	}
 	ChannelRequest(userId, u"get_full_chat_by_id"_q, {}, [=](QJsonValue value, QString error) {
-		if (!weak) return;
+		if (!weak || !OwnsSession(session)) return;
 		if (!error.isEmpty()) { status->setText(error); return; }
 		const auto info = value.toObject();
 		const auto nameValue = box->lifetime().make_state<QString>(info.value(u"name"_q).toString());
@@ -697,12 +704,15 @@ void FillGroupInfo(
 	const auto status = box->add(object_ptr<Ui::FlatLabel>(box, u"Loading…"_q, st::aboutLabel), st::boxRowPadding);
 	const auto weak = QPointer<Ui::VerticalLayout>(box.get());
 	const auto current = CaptureAccountGuard();
-	if (!current || userId <= 9 || !CoreGroupChatId(userId)) {
+	if (!OwnsSession(session)
+		|| !current
+		|| userId <= 9
+		|| !CoreGroupChatId(userId)) {
 		status->setText(kGroupInfoUnavailable);
 		return;
 	}
 	ChannelRequest(userId, u"get_full_chat_by_id"_q, {}, [=](QJsonValue value, QString error) {
-		if (!weak || !current || !current()) return;
+		if (!weak || !OwnsSession(session) || !current || !current()) return;
 		if (!error.isEmpty()) { status->setText(error); return; }
 		const auto parsed = CoreGroupChatFromJson(value.toObject(), uint64(userId));
 		if (parsed.kind == CoreGroupRead::NotGroup) {
@@ -1148,11 +1158,17 @@ std::shared_ptr<Window::SectionMemento> GroupInfoSection::createMemento() {
 
 void ShowChannelInfo(not_null<Window::SessionController*> controller, int userId,
 		const Window::SectionShow &params) {
+	if (!OwnsSession(&controller->session())) {
+		return;
+	}
 	controller->showSection(std::make_shared<ChannelInfoMemento>(userId), params);
 }
 
 void ShowGroupInfo(not_null<Window::SessionController*> controller, int userId,
 		const Window::SectionShow &params) {
+	if (!OwnsSession(&controller->session())) {
+		return;
+	}
 	controller->showSection(std::make_shared<GroupInfoMemento>(userId), params);
 }
 
@@ -1162,7 +1178,7 @@ std::shared_ptr<Window::SectionMemento> MakeGroupInfoMemento(int chatId) {
 
 std::shared_ptr<Window::SectionMemento> GroupInfoMementoForPeer(
 		not_null<PeerData*> peer) {
-	if (!Active() || !peer->isUser()) {
+	if (!OwnsSession(&peer->session()) || !peer->isUser()) {
 		return nullptr;
 	}
 	const auto userId = peerToUser(peer->id).bare;
@@ -1177,7 +1193,7 @@ std::shared_ptr<Window::SectionMemento> GroupInfoMementoForPeer(
 }
 
 bool UnresolvedCoreGroupPeer(not_null<PeerData*> peer) {
-	if (!Active() || !peer->isUser() || peer->isSelf()) {
+	if (!OwnsSession(&peer->session()) || !peer->isUser() || peer->isSelf()) {
 		return false;
 	}
 	const auto userId = peerToUser(peer->id).bare;
@@ -1196,7 +1212,10 @@ bool TryShowGroupInfo(
 		not_null<Window::SessionController*> controller,
 		not_null<PeerData*> peer,
 		const Window::SectionShow &params) {
-	if (!Active() || !peer->isUser() || peer->isSelf()) {
+	if (!OwnsSession(&controller->session())
+		|| &peer->session() != &controller->session()
+		|| !peer->isUser()
+		|| peer->isSelf()) {
 		return false;
 	}
 	const auto userId = peerToUser(peer->id).bare;
@@ -1223,7 +1242,9 @@ bool TryShowGroupInfo(
 		u"get_full_chat_by_id"_q,
 		{},
 		crl::guard(controller, [=](QJsonValue value, QString error) {
-			if (!current || !current()) {
+			if (!OwnsSession(&controller->session())
+				|| !current
+				|| !current()) {
 				return;
 			}
 			const auto fail = [=](const QString &text) {
@@ -1274,6 +1295,9 @@ bool TryShowGroupInfo(
 }
 
 void ShowChannelInvite(not_null<Main::Session*> session, int userId) {
+	if (!OwnsSession(session)) {
+		return;
+	}
 	Ui::show(Box([=](not_null<Ui::GenericBox*> box) {
 		box->setTitle(rpl::single(u"Invite to Channel"_q));
 		const auto canvas = box->addRow(object_ptr<Ui::FixedHeightWidget>(box, 280), st::boxRowPadding);
@@ -1333,6 +1357,9 @@ void ShowChannelInvite(not_null<Main::Session*> session, int userId) {
 }
 
 void ChooseContactToSend(not_null<Main::Session*> session, int userId) {
+	if (!OwnsSession(session)) {
+		return;
+	}
 	const auto holder = std::make_shared<QPointer<PeerListBox>>();
 	const auto busy = std::make_shared<bool>(false);
 	auto controller = std::make_unique<ContactListController>(session, Fn<void(int)>(), false,
@@ -1353,6 +1380,9 @@ void ChooseContactToSend(not_null<Main::Session*> session, int userId) {
 }
 
 void ShowJoinInvite(not_null<Window::SessionController*> controller, const QString &url) {
+	if (!OwnsSession(&controller->session())) {
+		return;
+	}
 	controller->show(Box([=](not_null<Ui::GenericBox*> box) {
 		box->setTitle(rpl::single(u"Invitation"_q));
 		const auto status = box->addRow(object_ptr<Ui::FlatLabel>(box, u"Checking invitation…"_q, st::aboutLabel), st::boxRowPadding);
@@ -1401,6 +1431,9 @@ void ShowJoinInvite(not_null<Window::SessionController*> controller, const QStri
 }
 
 void ShowSharedContact(not_null<Window::SessionController*> controller, int messageId) {
+	if (!OwnsSession(&controller->session())) {
+		return;
+	}
 	const auto card = SharedContactData(messageId);
 	controller->show(Box([=](not_null<Ui::GenericBox*> box) {
 		box->setTitle(tr::lng_contact_details_title());
@@ -1462,6 +1495,9 @@ void ShowSharedContact(not_null<Window::SessionController*> controller, int mess
 
 void ChooseGroupMembers(not_null<Main::Session*> session,
 		Fn<void(std::vector<int>, Fn<void(QString)>)> create) {
+	if (!OwnsSession(session)) {
+		return;
+	}
 	auto controller = std::make_unique<ContactListController>(session, Fn<void(int)>(), true);
 	const auto raw = controller.get();
 	Ui::show(Box<PeerListBox>(std::move(controller), [=](not_null<PeerListBox*> box) {
@@ -1482,17 +1518,28 @@ void ChooseGroupMembers(not_null<Main::Session*> session,
 	}), Ui::LayerOption::KeepOther);
 }
 
-void ShowContacts(not_null<Main::Session*> session, Fn<void(int)> done) {
+void ShowContacts(
+		not_null<Window::SessionController*> controller,
+		Fn<void(int)> done) {
+	if (!OwnsSession(&controller->session())) {
+		return;
+	}
+	const auto session = &controller->session();
 	const auto holder = std::make_shared<QPointer<PeerListBox>>();
-	auto controller = std::make_unique<ContactListController>(session, [=](int id) {
+	auto list = std::make_unique<ContactListController>(session, [=](int id) {
 		if (*holder) (*holder)->closeBox();
+		if (!OwnsSession(&controller->session())) {
+			return;
+		}
 		done(id);
 	});
-	const auto raw = controller.get();
-	Ui::show(Box<PeerListBox>(std::move(controller), [=](not_null<PeerListBox*> box) {
+	const auto raw = list.get();
+	controller->show(Box<PeerListBox>(std::move(list), [=](not_null<PeerListBox*> box) {
 		*holder = box.get();
 		box->addButton(tr::lng_close(), [=] { box->closeBox(); });
-		box->addLeftButton(tr::lng_profile_add_contact(), [=] { ShowInviteQr(); });
+		box->addLeftButton(tr::lng_profile_add_contact(), [=] {
+			ShowInviteQr(controller);
+		});
 		const auto sort = box->lifetime().make_state<QPointer<Ui::IconButton>>();
 		*sort = box->addTopButton(st::contactsSortButton, [=] {
 			const auto alphabet = raw->toggleSort();
@@ -1556,8 +1603,13 @@ void AskChoice(
 	}));
 }
 
-void ShowInviteQr() {
-	Ui::show(Box([=](not_null<Ui::GenericBox*> box) {
+void ShowInviteQr(not_null<Window::SessionController*> controller) {
+	if (!OwnsSession(&controller->session())) {
+		return;
+	}
+	const auto current = CaptureAccountGuard();
+	const auto window = base::make_weak(controller);
+	controller->show(Box([=](not_null<Ui::GenericBox*> box) {
 		box->setTitle(rpl::single(u"QR Invite Code"_q));
 		const auto tabs = box->addRow(
 			object_ptr<Ui::FixedHeightWidget>(box, 48),
@@ -1752,13 +1804,23 @@ void ShowInviteQr() {
 				field->showError();
 				return;
 			}
+			if (!window
+				|| (current && !current())
+				|| !OwnsSession(&controller->session())) {
+				return;
+			}
 			*joining = true;
 			cameraTimeout->stop();
 			camera->stop();
 			canvasWrap->toggle(false, anim::type::instant);
 			status->setText(u"Joining…"_q);
 			JoinInviteQr(qr, [=](QString error) {
-				if (!weak) return;
+				if (!weak
+					|| !window
+					|| (current && !current())
+					|| !OwnsSession(&controller->session())) {
+					return;
+				}
 				*joining = false;
 				if (!error.isEmpty()) {
 					status->setText(error);
@@ -1798,7 +1860,12 @@ void ShowInviteQr() {
 				QString code,
 				QString svg,
 				QString error) {
-			if (!weak) return;
+			if (!weak
+				|| !window
+				|| (current && !current())
+				|| !OwnsSession(&controller->session())) {
+				return;
+			}
 			if (!error.isEmpty()) {
 				*caption = error;
 				if (!*scanning) status->setText(error);
@@ -1820,8 +1887,13 @@ void ShowInviteQr() {
 	}));
 }
 
-void ShowSecondDevice() {
-	Ui::show(Box([=](not_null<Ui::GenericBox*> box) {
+void ShowSecondDevice(not_null<Window::SessionController*> controller) {
+	if (!OwnsSession(&controller->session())) {
+		return;
+	}
+	const auto current = CaptureAccountGuard();
+	const auto window = base::make_weak(controller);
+	controller->show(Box([=](not_null<Ui::GenericBox*> box) {
 		struct State {
 			rpl::variable<bool> busy = false;
 			int generation = 0;
@@ -1862,12 +1934,21 @@ void ShowSecondDevice() {
 		const auto weak = base::make_weak(box);
 		const auto start = box->addButton(rpl::single(u"Continue"_q), [=] {
 			if (state->busy.current()) return;
+			if (!window
+				|| (current && !current())
+				|| !OwnsSession(&controller->session())) {
+				return;
+			}
 			state->busy = true;
 			const auto generation = ++state->generation;
 			status->setText(u"Preparing account…"_q);
 			state->cancel = StartSecondDevice(
 				[=](QString svg, QString error) {
-					if (!weak || generation != state->generation) {
+					if (!weak
+						|| !window
+						|| generation != state->generation
+						|| (current && !current())
+						|| !OwnsSession(&controller->session())) {
 						return;
 					}
 					if (!error.isEmpty() || svg.isEmpty()) {
@@ -1891,7 +1972,11 @@ void ShowSecondDevice() {
 						u"Install Delta Chat on the other device, use the same network, then tap Scan QR Code."_q);
 				},
 				[=](QString error) {
-					if (!weak || generation != state->generation) {
+					if (!weak
+						|| !window
+						|| generation != state->generation
+						|| (current && !current())
+						|| !OwnsSession(&controller->session())) {
 						return;
 					}
 					++state->generation;
@@ -1924,8 +2009,16 @@ void ShowSecondDevice() {
 	}));
 }
 
-void ShowRelayEditor(QJsonObject transport, Fn<void()> refreshed) {
-	Ui::show(Box([=](not_null<Ui::GenericBox*> box) {
+void ShowRelayEditor(
+		not_null<Window::SessionController*> controller,
+		QJsonObject transport,
+		Fn<void()> refreshed) {
+	if (!OwnsSession(&controller->session())) {
+		return;
+	}
+	const auto current = CaptureAccountGuard();
+	const auto window = base::make_weak(controller);
+	controller->show(Box([=](not_null<Ui::GenericBox*> box) {
 		const auto addr = transport.value(u"addr"_q).toString();
 		box->setTitle(rpl::single(u"Edit Relay"_q));
 		const auto weak = base::make_weak(box);
@@ -2003,8 +2096,16 @@ void ShowRelayEditor(QJsonObject transport, Fn<void()> refreshed) {
 		box->addLeftButton(
 			rpl::single(u"Delete"_q),
 			[=] {
+				if (!window
+					|| (current && !current())
+					|| !OwnsSession(&controller->session())) {
+					return;
+				}
 				DeleteTransport(addr, [=](QString error) {
-					if (!weak) {
+					if (!weak
+						|| !window
+						|| (current && !current())
+						|| !OwnsSession(&controller->session())) {
 						return;
 					}
 					if (!error.isEmpty()) {
@@ -2044,9 +2145,17 @@ void ShowRelayEditor(QJsonObject transport, Fn<void()> refreshed) {
 			put(smtpUser->getLastText(), u"smtpUser"_q, false);
 			put(smtpPassword->getLastText(), u"smtpPassword"_q, false);
 			put(smtpSecurity->getLastText(), u"smtpSecurity"_q, false);
+			if (!window
+				|| (current && !current())
+				|| !OwnsSession(&controller->session())) {
+				return;
+			}
 			status->setText(u"Saving…"_q);
 			UpdateTransport(next, [=](QString error) {
-				if (!weak) {
+				if (!weak
+					|| !window
+					|| (current && !current())
+					|| !OwnsSession(&controller->session())) {
 					return;
 				}
 				if (!error.isEmpty()) {
@@ -2063,8 +2172,13 @@ void ShowRelayEditor(QJsonObject transport, Fn<void()> refreshed) {
 	}));
 }
 
-void ShowRelays() {
-	Ui::show(Box([=](not_null<Ui::GenericBox*> box) {
+void ShowRelays(not_null<Window::SessionController*> controller) {
+	if (!OwnsSession(&controller->session())) {
+		return;
+	}
+	const auto current = CaptureAccountGuard();
+	const auto window = base::make_weak(controller);
+	controller->show(Box([=](not_null<Ui::GenericBox*> box) {
 		box->setTitle(rpl::single(u"Relays"_q));
 		const auto list = box->addRow(
 			object_ptr<Ui::VerticalLayout>(box),
@@ -2085,8 +2199,11 @@ void ShowRelays() {
 		const auto weak = base::make_weak(box);
 		const auto reload = std::make_shared<Fn<void()>>();
 		*reload = [=] {
-			ListTransports([=](QJsonArray transports, QString error) {
-				if (!weak) {
+			ListTransports(&controller->session(), [=](QJsonArray transports, QString error) {
+				if (!weak
+					|| !window
+					|| (current && !current())
+					|| !OwnsSession(&controller->session())) {
 					return;
 				}
 				for (const auto &row : *rows) {
@@ -2111,8 +2228,16 @@ void ShowRelays() {
 						st::settingsButtonNoIcon));
 					rows->push_back(button);
 					button->setClickedCallback([=] {
-						ShowRelayEditor(transport, [=] {
-							if (weak) {
+						if (!window
+							|| (current && !current())
+							|| !OwnsSession(&controller->session())) {
+							return;
+						}
+						ShowRelayEditor(controller, transport, [=] {
+							if (weak
+								&& window
+								&& (!current || current())
+								&& OwnsSession(&controller->session())) {
 								(*reload)();
 							}
 						});
@@ -2127,9 +2252,17 @@ void ShowRelays() {
 				field->showError();
 				return;
 			}
+			if (!window
+				|| (current && !current())
+				|| !OwnsSession(&controller->session())) {
+				return;
+			}
 			status->setText(u"Adding relay…"_q);
 			AddTransportFromQr(qr, [=](QString error) {
-				if (!weak) {
+				if (!weak
+					|| !window
+					|| (current && !current())
+					|| !OwnsSession(&controller->session())) {
 					return;
 				}
 				if (!error.isEmpty()) {
@@ -2294,6 +2427,9 @@ std::unique_ptr<AppsBrowser> AppsWindow;
 } // namespace
 
 void ShowApps(not_null<Main::Session*> session) {
+	if (!OwnsSession(session)) {
+		return;
+	}
 	auto url = AppPickerUrl().trimmed();
 	if (url.isEmpty()) {
 		url = QString::fromUtf8(kDefaultAppPickerUrl);
@@ -2307,8 +2443,11 @@ void ShowApps(not_null<Main::Session*> session) {
 	AppsWindow->open(url);
 }
 
-void ShowAppPickerUrl() {
-	Ui::show(Box([=](not_null<Ui::GenericBox*> box) {
+void ShowAppPickerUrl(not_null<Window::SessionController*> controller) {
+	if (!OwnsSession(&controller->session())) {
+		return;
+	}
+	controller->show(Box([=](not_null<Ui::GenericBox*> box) {
 		box->setTitle(rpl::single(u"App picker URL"_q));
 		box->addRow(
 			object_ptr<Ui::FlatLabel>(
@@ -2537,6 +2676,9 @@ void ShowCreateGroup(Fn<void(int)> done) {
 
 void ConfirmContactBlocking(not_null<Window::SessionController*> controller,
 		int contactId, QString name, bool blocked, Fn<void()> changed) {
+	if (!OwnsSession(&controller->session())) {
+		return;
+	}
 	const auto current = CaptureAccountGuard();
 	controller->show(Ui::MakeConfirmBox({
 		.text = blocked
@@ -2558,6 +2700,9 @@ void ConfirmContactBlocking(not_null<Window::SessionController*> controller,
 }
 
 void ChooseContactToBlock(not_null<Window::SessionController*> controller, Fn<void()> changed) {
+	if (!OwnsSession(&controller->session())) {
+		return;
+	}
 	const auto current = CaptureAccountGuard();
 	const auto holder = std::make_shared<QPointer<PeerListBox>>();
 	auto list = std::make_unique<ContactListController>(&controller->session(), nullptr, false,
@@ -2579,6 +2724,9 @@ bool CanManageContactBlocking(uint64 userId) {
 }
 
 void ManageContactBlocking(not_null<Window::SessionController*> controller, uint64 userId) {
+	if (!OwnsSession(&controller->session())) {
+		return;
+	}
 	const auto current = CaptureAccountGuard();
 	const auto inspect = crl::guard(controller, [=](int id) {
 		if (!current || !current() || id <= 9) return;
@@ -2613,6 +2761,9 @@ void ManageContactBlocking(not_null<Window::SessionController*> controller, uint
 }
 
 void ShowSavedReplies(not_null<Window::SessionController*> controller) {
+	if (!OwnsSession(&controller->session())) {
+		return;
+	}
 	const auto current = CaptureAccountGuard();
 	LoadSavedReplies(crl::guard(controller, [=](std::vector<SavedReply> replies, QString error) {
 		if (!current || !current()) return;
@@ -2694,6 +2845,9 @@ void ShowSavedReplies(not_null<Window::SessionController*> controller) {
 }
 
 void ShowMessageInfo(not_null<Window::SessionController*> controller, int messageId) {
+	if (!OwnsSession(&controller->session())) {
+		return;
+	}
 	controller->show(Box([=](not_null<Ui::GenericBox*> box) {
 		box->setTitle(rpl::single(u"Message info"_q));
 		box->setMaxHeight(style::ConvertScale(480));

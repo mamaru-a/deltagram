@@ -3392,7 +3392,10 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 					[=] { copySelectedText(); },
 					&st::menuIconCopy);
 			}
-			if (item && !Ui::SkipTranslate(selectedText.rich)) {
+			if (item
+				&& !Ui::SkipTranslate(
+					selectedText.rich,
+					&item->history()->session())) {
 				const auto peer = item->history()->peer;
 				_menu->addAction(tr::lng_context_translate_selected({}), [=] {
 					_controller->show(Box(
@@ -3554,7 +3557,10 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 					[=] { copySelectedText(); },
 					&st::menuIconCopy);
 			}
-			if (item && !Ui::SkipTranslate(selectedText.rich)) {
+			if (item
+				&& !Ui::SkipTranslate(
+					selectedText.rich,
+					&item->history()->session())) {
 				const auto peer = item->history()->peer;
 				_menu->addAction(tr::lng_context_translate_selected({}), [=] {
 					_controller->show(Box(
@@ -3680,7 +3686,9 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 								.append(item->originalText()))
 							: item->originalText();
 						if (!translate.text.isEmpty()
-							&& !Ui::SkipTranslate(translate)) {
+							&& !Ui::SkipTranslate(
+								translate,
+								&item->history()->session())) {
 							_menu->addAction(tr::lng_context_translate(tr::now), [=] {
 								_controller->show(Box(
 									Ui::TranslateBox,
@@ -3840,7 +3848,10 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 				}
 			}), &st::menuIconSend);
 	}
-	if (Delta::Active() && infoItem && infoItem->id.bare > 0 && isUponSelected <= 0) {
+	if (infoItem
+		&& infoItem->id.bare > 0
+		&& isUponSelected <= 0
+		&& Delta::OwnsSession(&infoItem->history()->session())) {
 		const auto infoId = infoItem->id.bare;
 		if (Delta::CanDownloadMessage(infoId)) {
 			const auto generation = Delta::AccountGeneration();

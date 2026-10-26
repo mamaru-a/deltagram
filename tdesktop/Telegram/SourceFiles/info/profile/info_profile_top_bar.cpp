@@ -1038,7 +1038,7 @@ void TopBar::setupActions(not_null<Window::SessionController*> controller) {
 		_actions->add(message);
 	}
 	if (!peer->isSelf()
-		&& !(Delta::Active()
+		&& !(Delta::OwnsSession(&peer->session())
 			&& Delta::IsSenderUserId(peerToUser(peer->id).bare))) {
 		const auto notifications = Ui::CreateChild<TopBarActionButton>(
 			this,

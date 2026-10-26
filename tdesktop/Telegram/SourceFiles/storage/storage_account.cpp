@@ -8,6 +8,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "storage/storage_account.h"
 #include "main/account_backend.h"
 #include "main/account_backend_store.h"
+#include "main/account_storage_namespace.h"
+#include "delta/account_backend.h"
 #include "delta/delta_bridge.h"
 
 #include "storage/localstorage.h"
@@ -118,16 +120,6 @@ auto EmptyMessageDraftSources()
 	return result;
 }
 
-[[nodiscard]] FileKey ComputeDataNameKey(const QString &dataName) {
-	// We dropped old test authorizations when migrated to multi auth.
-	//const auto testAddition = (cTestMode() ? u":/test/"_q : QString());
-	const auto testAddition = QString();
-	const auto dataNameUtf8 = (dataName + testAddition).toUtf8();
-	FileKey dataNameHash[2] = { 0 };
-	hashMd5(dataNameUtf8.constData(), dataNameUtf8.size(), dataNameHash);
-	return dataNameHash[0];
-}
-
 [[nodiscard]] QString BaseGlobalPath() {
 	return cWorkingDir() + u"tdata/"_q;
 }
@@ -176,8 +168,10 @@ auto EmptyMessageDraftSources()
 Account::Account(not_null<Main::Account*> owner, const QString &dataName)
 : _owner(owner)
 , _dataName(dataName)
-, _dataNameKey(ComputeDataNameKey(dataName))
-, _basePath(BaseGlobalPath() + ToFilePart(_dataNameKey) + QChar('/'))
+, _dataNameKey(Main::AccountStorageDataNameKey(dataName))
+, _basePath(BaseGlobalPath()
+	+ Main::AccountStorageFilePart(_dataNameKey)
+	+ QChar('/'))
 , _tempPath(BaseGlobalPath() + "temp_" + _dataName + QChar('/'))
 , _databasePath(ComputeDatabasePath(dataName))
 , _cacheTotalSizeLimit(Database::Settings().totalSizeLimit)
@@ -220,7 +214,9 @@ StartResult Account::legacyStart(const QByteArray &passcode) {
 		return StartResult::IncorrectPasscodeLegacy;
 	}
 	clearLegacyFiles();
-	applyBackendMigration(result == ReadMapResult::Missing);
+	applyBackendMigration(result == ReadMapResult::Missing
+		? Main::AccountBackendRecordKind::FreshMissing
+		: Main::AccountBackendRecordKind::LegacyExisting);
 	return StartResult::Success;
 }
 
@@ -229,7 +225,9 @@ std::unique_ptr<MTP::Config> Account::start(MTP::AuthKeyPtr localKey) {
 
 	_localKey = std::move(localKey);
 	const auto mapResult = readMapWith(_localKey);
-	applyBackendMigration(mapResult == ReadMapResult::Missing);
+	applyBackendMigration(mapResult == ReadMapResult::Missing
+		? Main::AccountBackendRecordKind::FreshMissing
+		: Main::AccountBackendRecordKind::LegacyExisting);
 	clearLegacyFiles();
 	return readMtpConfig();
 }
@@ -239,7 +237,7 @@ void Account::startAdded(MTP::AuthKeyPtr localKey) {
 
 	_localKey = std::move(localKey);
 	clearLegacyFiles();
-	applyBackendMigration(true);
+	applyBackendMigration(Main::AccountBackendRecordKind::NewDomainSlot);
 }
 
 void Account::clearLegacyFiles() {
@@ -1160,7 +1158,7 @@ std::unique_ptr<Main::SessionSettings> Account::applyReadContext(
 }
 
 QByteArray Account::backendStoreIdentity() const {
-	return ToFilePart(_dataNameKey).toUtf8();
+	return Main::AccountStorageIdentityFromKey(_dataNameKey);
 }
 
 QString Account::backendStorePath() const {
@@ -1188,14 +1186,12 @@ bool Account::persistBackendTag(Main::AccountBackend backend) {
 	return false;
 }
 
-void Account::applyBackendMigration(bool mapMissing) {
+void Account::applyBackendMigration(Main::AccountBackendRecordKind record) {
 	const auto identity = backendStoreIdentity();
 	const auto path = backendStorePath();
 	const auto store = Main::ReadAccountBackendStore(path, identity);
 	const auto evidence = Main::MakeAccountBackendMigrationEvidence(
-		mapMissing
-			? Main::AccountBackendRecordKind::FreshMissing
-			: Main::AccountBackendRecordKind::LegacyExisting,
+		record,
 		store,
 		_owner->hasStoredMtpAuthorizationKeys(),
 		false);
@@ -1216,7 +1212,9 @@ void Account::writeMtpData() {
 	const auto serialized = _owner->serializeMtpAuthorization();
 	const auto size = sizeof(quint32) + Serialize::bytearraySize(serialized);
 
-	FileWriteDescriptor mtp(ToFilePart(_dataNameKey), BaseGlobalPath());
+	FileWriteDescriptor mtp(
+		Main::AccountStorageFilePart(_dataNameKey),
+		BaseGlobalPath());
 	EncryptedDescriptor data(size);
 	data.stream << quint32(dbiMtpAuthorization) << serialized;
 	mtp.writeEncrypted(data, _localKey);
@@ -1226,7 +1224,11 @@ void Account::readMtpData() {
 	auto context = prepareReadSettingsContext();
 
 	FileReadDescriptor mtp;
-	if (!ReadEncryptedFile(mtp, ToFilePart(_dataNameKey), BaseGlobalPath(), _localKey)) {
+	if (!ReadEncryptedFile(
+			mtp,
+			Main::AccountStorageFilePart(_dataNameKey),
+			BaseGlobalPath(),
+			_localKey)) {
 		if (_localKey) {
 			Local::readOldMtpData(true, context);
 			applyReadContext(std::move(context));
@@ -1349,7 +1351,7 @@ void Account::unregisterDraftSource(
 }
 
 void Account::writeDrafts(not_null<History*> history) {
-	if (Delta::Active()) {
+	if (Delta::UsesCoreBackend(_owner)) {
 		auto text = QString();
 		auto replyId = MsgId();
 		if (const auto draft = history->localDraft({}, {})) {
@@ -1468,7 +1470,7 @@ void Account::writeDrafts(not_null<History*> history) {
 }
 
 void Account::writeDraftCursors(not_null<History*> history) {
-	if (Delta::Active()) return;
+	if (Delta::UsesCoreBackend(_owner)) return;
 	const auto peerId = history->peer->id;
 	const auto &map = history->draftsMap();
 	const auto supportMode = history->session().supportMode();
@@ -1619,7 +1621,7 @@ void Account::readDraftCursorsLegacy(
 }
 
 void Account::readDraftsWithCursors(not_null<History*> history, Fn<void()> loaded) {
-	if (Delta::Active()) {
+	if (Delta::UsesCoreBackend(_owner)) {
 		Delta::LoadDraft(int(history->peer->id.value), [=](Delta::ComposeDraft draft) {
 			if (!history->localDraft({}, {})) {
 				history->setLocalDraft(std::make_unique<Data::Draft>(
@@ -3837,6 +3839,30 @@ Webview::StorageId TonSiteStorageId() {
 		Core::App().saveSettingsDelayed();
 	}
 	return result;
+}
+
+QString AccountTdataRoot() {
+	return BaseGlobalPath();
+}
+
+bool AccountStorageNamespaceOccupied(
+		const QString &dataName,
+		int index) {
+	return Main::AccountStorageNamespaceOccupied(
+		AccountTdataRoot(),
+		dataName,
+		index);
+}
+
+int ChooseUnusedAccountStorageIndex(
+		const QString &dataName,
+		const QList<int> &activeIndices,
+		int searchLimit) {
+	return Main::ChooseUnusedAccountStorageIndex(
+		AccountTdataRoot(),
+		dataName,
+		activeIndices,
+		searchLimit);
 }
 
 void Account::clearPref(std::string_view key) {

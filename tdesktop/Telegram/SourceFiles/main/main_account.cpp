@@ -8,6 +8,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "main/main_account.h"
 
 #include "main/account_backend.h"
+#include "main/account_storage_namespace.h"
+#include "main/backend_session_identity.h"
+#include "main/backend_startup.h"
 #include "base/platform/base_platform_info.h"
 #include "core/application.h"
 #include "storage/storage_account.h"
@@ -34,22 +37,13 @@ namespace {
 
 constexpr auto kWideIdsTag = ~uint64(0);
 
-[[nodiscard]] QString ComposeDataString(const QString &dataName, int index) {
-	auto result = dataName;
-	result.replace('#', QString());
-	if (index > 0) {
-		result += '#' + QString::number(index + 1);
-	}
-	return result;
-}
-
 } // namespace
 
 Account::Account(not_null<Domain*> domain, const QString &dataName, int index)
 : _domain(domain)
 , _local(std::make_unique<Storage::Account>(
 	this,
-	ComposeDataString(dataName, index))) {
+	ComposeAccountStorageDataName(dataName, index))) {
 }
 
 Account::~Account() {
@@ -125,12 +119,14 @@ void Account::watchSessionChanges() {
 }
 
 uint64 Account::willHaveSessionUniqueId(MTP::Config *config) const {
-	// See also Session::uniqueId.
-	if (!_sessionUserId) {
-		return 0;
-	}
-	return _sessionUserId.bare
-		| (config && config->isTestMode() ? 0x0100'0000'0000'0000ULL : 0ULL);
+	// See also Session::uniqueId. Core uses PredictSessionUniqueId so a
+	// missing or leftover stored donor self still names the runtime
+	// kCoreSessionSelfBare container; Telegram keeps exact stored userId.
+	return PredictSessionUniqueId({
+		.backend = backend(),
+		.storedSelfBare = _sessionUserId.bare,
+		.testMode = config && config->isTestMode(),
+	});
 }
 
 void Account::createSession(
@@ -427,10 +423,16 @@ void Account::setMtpAuthorization(const QByteArray &serialized) {
 void Account::startMtp(std::unique_ptr<MTP::Config> config) {
 	Expects(!_mtp);
 
+	_mtpLifetime.destroy();
+
 	auto fields = base::take(_mtpFields);
 	fields.config = std::move(config);
-	fields.deviceModel = Platform::DeviceModelPretty();
-	fields.systemVersion = Platform::SystemVersionPretty();
+	fields.deviceModel = fields.deviceModel.isEmpty()
+		? Platform::DeviceModelPretty()
+		: fields.deviceModel;
+	fields.systemVersion = fields.systemVersion.isEmpty()
+		? Platform::SystemVersionPretty()
+		: fields.systemVersion;
 	fields.backend = _backend;
 	_mtp = std::make_unique<MTP::Instance>(
 		MTP::Instance::Mode::Normal,
@@ -448,7 +450,7 @@ void Account::startMtp(std::unique_ptr<MTP::Config> config) {
 		});
 	}, _mtp->lifetime());
 
-	const auto writingConfig = _lifetime.make_state<bool>(false);
+	const auto writingConfig = _mtpLifetime.make_state<bool>(false);
 	rpl::merge(
 		_mtp->config().updates(),
 		_mtp->dcOptions().changed() | rpl::to_empty
@@ -460,7 +462,7 @@ void Account::startMtp(std::unique_ptr<MTP::Config> config) {
 			local().writeMtpConfig();
 			*writingConfig = false;
 		});
-	}, _lifetime);
+	}, _mtpLifetime);
 
 	_mtpFields.mainDcId = _mtp->mainDcId();
 	_mtpFields.backend = _mtp->backend();
@@ -491,7 +493,10 @@ void Account::startMtp(std::unique_ptr<MTP::Config> config) {
 		destroyMtpKeys(base::take(_mtpKeysToDestroy));
 	}
 
-	if (_sessionUserId) {
+	const auto decision = ResolveAccountStartupSession(
+		_backend,
+		_sessionUserId != 0);
+	if (decision.action == AccountStartupSessionAction::PublishStoredTelegram) {
 		createSession(
 			_sessionUserId,
 			base::take(_sessionUserSerialized),
@@ -499,8 +504,16 @@ void Account::startMtp(std::unique_ptr<MTP::Config> config) {
 			(_storedSessionSettings
 				? std::move(_storedSessionSettings)
 				: std::make_unique<SessionSettings>()));
+		_storedSessionSettings = nullptr;
+	} else if (decision.action
+			== AccountStartupSessionAction::SkipDonorSelfForCore) {
+		_sessionUserId = 0;
+		_sessionUserSerialized = {};
+		_sessionUserStreamVersion = 0;
+		_storedSessionSettings.reset();
+	} else if (decision.action != AccountStartupSessionAction::HoldPending) {
+		_storedSessionSettings = nullptr;
 	}
-	_storedSessionSettings = nullptr;
 
 	if (const auto session = maybeSession()) {
 		// Skip all pending self updates so that we won't local().writeSelf.
@@ -636,6 +649,7 @@ AccountBackendBindResult Account::bindBackend(AccountBackend backend) {
 	AccountBackendBindState state;
 	state.backend = _backend;
 	state.mtpAlreadyExists = (_mtp != nullptr);
+	state.mtpAuthorizationKeysPresent = hasStoredMtpAuthorizationKeys();
 	const auto result = TryBindAccountBackend(state, backend);
 	if (result != AccountBackendBindResult::Bound) {
 		return result;
@@ -656,8 +670,69 @@ AccountBackendBindResult Account::bindBackend(AccountBackend backend) {
 	return result;
 }
 
+AccountBackendBindResult Account::rebuildMtpForBackend(AccountBackend backend) {
+	const auto result = EvaluateAccountBackendRebuild({
+		_backend,
+		backend,
+		_mtp != nullptr,
+		sessionExists(),
+		hasStoredMtpAuthorizationKeys(),
+	});
+	if (result != AccountBackendBindResult::Bound) {
+		return result;
+	}
+	const auto persistSucceeded = !ShouldPersistAccountBackendTag(
+			result,
+			backend)
+		|| _local->persistBackendTag(backend);
+	const auto durable = AccountBackendBindPersistOutcome(
+		result,
+		backend,
+		persistSucceeded);
+	if (durable != AccountBackendBindResult::Bound) {
+		return durable;
+	}
+	_backend = backend;
+	_mtpFields.backend = _backend;
+	if (_mtp) {
+		rebuildLiveMtp();
+	}
+	return result;
+}
+
+void Account::rebuildLiveMtp() {
+	Expects(_mtp != nullptr);
+	Expects(!sessionExists());
+
+	auto old = base::take(_mtp);
+	_mtpLifetime.destroy();
+	_mtpFields = MTP::Instance::Fields();
+	_mtpFields.mainDcId = old->mainDcId();
+	_mtpFields.keys = old->getKeysForWrite();
+	_mtpFields.deviceModel = old->deviceModel();
+	_mtpFields.systemVersion = old->systemVersion();
+	_mtpFields.backend = _backend;
+	if (_mtpForKeysDestroy) {
+		auto extra = _mtpForKeysDestroy->getKeysForWrite();
+		for (auto &key : extra) {
+			_mtpKeysToDestroy.push_back(std::move(key));
+		}
+		_mtpForKeysDestroy = nullptr;
+	}
+	auto config = std::make_unique<MTP::Config>(old->config());
+	startMtp(std::move(config));
+}
+
 bool Account::hasStoredMtpAuthorizationKeys() const {
-	return !_mtpFields.keys.empty() || !_mtpKeysToDestroy.empty();
+	if (!_mtpFields.keys.empty() || !_mtpKeysToDestroy.empty()) {
+		return true;
+	} else if (_mtp && !_mtp->getKeysForWrite().empty()) {
+		return true;
+	} else if (_mtpForKeysDestroy
+		&& !_mtpForKeysDestroy->getKeysForWrite().empty()) {
+		return true;
+	}
+	return false;
 }
 
 void Account::resetAuthorizationKeys() {

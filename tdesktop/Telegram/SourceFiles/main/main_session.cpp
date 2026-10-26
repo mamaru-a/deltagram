@@ -15,6 +15,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "main/main_domain.h"
 #include "main/main_session_settings.h"
 #include "main/main_app_config.h"
+#include "main/backend_session_identity.h"
+#include "main/session_backend_features.h"
 #include "main/session/send_as_peers.h"
 #include "mtproto/mtproto_config.h"
 #include "chat_helpers/stickers_emoji_pack.h"
@@ -283,7 +285,16 @@ void Session::appConfigRefreshed() {
 		.appealUrl = config.get<QString>(u"freeze_appeal_url"_q, QString()),
 	};
 
+#ifndef OS_MAC_STORE
+	_premiumPossible = SessionPremiumPurchaseAllowedFromAppConfig({
+		.backend = account().backend(),
+		.premiumPurchaseBlocked = config.get<bool>(
+			u"premium_purchase_blocked"_q,
+			true),
+	});
+#else // OS_MAC_STORE
 	_premiumPossible = false;
+#endif // OS_MAC_STORE
 
 	_messagePrimaryEditedDate = config.get<bool>(
 		u"message_primary_edited_date"_q,
@@ -347,11 +358,14 @@ rpl::producer<> Session::downloaderTaskFinished() const {
 }
 
 bool Session::premium() const {
-	return false;
+	return SessionPremiumActive({
+		.backend = account().backend(),
+		.userIsPremium = _user->isPremium(),
+	});
 }
 
 bool Session::premiumPossible() const {
-	return false;
+	return premium() || premiumCanBuy();
 }
 
 bool Session::premiumBadgesShown() const {
@@ -365,16 +379,27 @@ rpl::producer<bool> Session::premiumPossibleValue() const {
 	) | rpl::filter([=](UserData::Flags::Change change) {
 		return (change.diff & UserDataFlag::Premium);
 	}) | rpl::map([=] {
-		return _user->isPremium();
+		return SessionPremiumActive({
+			.backend = account().backend(),
+			.userIsPremium = _user->isPremium(),
+		});
 	});
 	return rpl::combine(
 		std::move(premium),
-		_premiumPossible.value(),
+		_premiumPossible.value() | rpl::map([=](bool allowed) {
+			return SessionPremiumCanBuy({
+				.backend = account().backend(),
+				.premiumPurchaseAllowed = allowed,
+			});
+		}),
 		_1 || _2);
 }
 
 bool Session::premiumCanBuy() const {
-	return false;
+	return SessionPremiumCanBuy({
+		.backend = account().backend(),
+		.premiumPurchaseAllowed = _premiumPossible.current(),
+	});
 }
 
 bool Session::isTestMode() const {
@@ -383,8 +408,12 @@ bool Session::isTestMode() const {
 
 uint64 Session::uniqueId() const {
 	// See also Account::willHaveSessionUniqueId.
-	return userId().bare
-		| (isTestMode() ? 0x0100'0000'0000'0000ULL : 0ULL);
+	static_assert(kSessionUniqueIdUserMask == PeerId::kChatTypeMask);
+	return PredictSessionUniqueId({
+		.backend = account().backend(),
+		.storedSelfBare = userId().bare,
+		.testMode = isTestMode(),
+	});
 }
 
 UserId Session::userId() const {

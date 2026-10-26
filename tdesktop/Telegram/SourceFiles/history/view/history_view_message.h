@@ -551,6 +551,8 @@ private:
 	mutable std::unique_ptr<TranscribeButton> _summarize;
 
 	mutable Ui::Text::String _fromName;
+	mutable QString _fromNameOverride;
+	mutable uint32 _fromNameAuthorRevision = 0;
 	mutable std::unique_ptr<FromNameStatus> _fromNameStatus;
 	mutable std::unique_ptr<Ui::RoundCheckbox> _selectionRoundCheckbox;
 	mutable uint32 _fromNameVersion : 16 = 0;

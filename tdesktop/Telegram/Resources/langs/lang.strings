@@ -45,6 +45,17 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_full_message_limited" = "Images and formatting may look different from the original message.";
 "lng_full_message_plain" = "The original images and formatting could not be shown. The message text is below.";
 "lng_full_message_link_denied" = "This link cannot be opened.";
+"lng_delta_account_choice_title" = "Choose an account type";
+"lng_delta_account_choice_about" = "Chatmail keeps a local profile on this device. Telegram signs in to a Telegram account.";
+"lng_delta_account_choice_core" = "Chatmail";
+"lng_delta_account_choice_telegram" = "Telegram";
+"lng_delta_account_persist_failed" = "This account type could not be saved. Try again.";
+"lng_delta_account_core_keys_denied" = "This account already has Telegram login data, so it cannot be used for Chatmail.";
+"lng_delta_account_change_denied" = "This account type cannot be changed.";
+"lng_delta_account_session_denied" = "This account is already signed in.";
+"lng_delta_account_core_required" = "Chatmail profiles can be added only from a Chatmail account.";
+"lng_delta_account_core_busy" = "A Chatmail profile is already open in this app.";
+"lng_delta_account_start_failed" = "This account could not be started. Try again.";
 "lng_minimize_to_tray" = "Minimize to Tray";
 "lng_quit_from_tray" = "Quit Telegram";
 "lng_deltagram_quit_from_tray" = "Quit Deltagram";

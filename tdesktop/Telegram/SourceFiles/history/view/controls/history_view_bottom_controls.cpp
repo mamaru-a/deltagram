@@ -8,6 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/view/controls/history_view_bottom_controls.h"
 
 #include "apiwrap.h"
+#include "delta/account_backend.h"
 #include "delta/delta_bridge.h"
 #include "boxes/star_gift_box.h"
 #include "chat_helpers/message_field.h"
@@ -569,6 +570,7 @@ bool BottomControls::isMuteUnmute() const {
 		return false;
 	}
 	if (_peer->isUser()
+		&& Delta::OwnsSession(&_peer->session())
 		&& Delta::IsSystemUser(peerToUser(_peer->id).bare)) {
 		return true;
 	}

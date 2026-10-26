@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "window/window_peer_menu.h"
 
+#include "delta/account_backend.h"
 #include "delta/delta_bridge.h"
 #include "delta/delta_boxes.h"
 #include "delta/core_profile_actions.h"
@@ -935,13 +936,19 @@ void Filler::addBlockUser() {
 		|| user->isVerifyCodes()) {
 		return;
 	}
-	if (Delta::Active()) {
+	if (Delta::UsesCoreBackend(&user->session())) {
+		if (!Delta::OwnsSession(&user->session())) {
+			return;
+		}
 		const auto id = peerToUser(user->id).bare;
 		if (!Delta::CanManageContactBlocking(id)) return;
 		const auto controller = _controller;
 		_addAction(u"Contact blocking"_q, [=] {
 			Delta::ManageContactBlocking(controller, id);
 		}, &st::menuIconBlock);
+		return;
+	}
+	if (!Delta::UsesTelegramBackend(&user->session())) {
 		return;
 	}
 	const auto window = _controller;
@@ -1093,7 +1100,7 @@ void Filler::addExportChat() {
 }
 
 void Filler::addTranslate() {
-	if (Delta::Active()
+	if (!Delta::UsesTelegramBackend(&_peer->session())
 		|| _peer->translationFlag() != PeerData::TranslationFlag::Disabled
 		|| !_peer->session().premium()
 		|| !Core::App().settings().translateChatEnabled()) {
@@ -1136,12 +1143,19 @@ void Filler::addNewContact() {
 	}
 	const auto controller = _controller;
 	const auto id = peerToUser(user->id).bare;
-	if (Delta::Active() && (Delta::IsGroup(id) || Delta::IsSystemUser(id))) {
+	const auto owns = Delta::OwnsSession(&user->session());
+	if (Delta::UsesCoreBackend(&user->session())) {
+		if (!owns || Delta::IsGroup(id) || Delta::IsSystemUser(id)) {
+			return;
+		}
+	} else if (!Delta::UsesTelegramBackend(&user->session())) {
 		return;
 	}
 	const auto edit = [=] {
-		if (Delta::Active()) {
+		if (Delta::OwnsSession(&user->session())) {
 			Delta::ShowCoreContactNameBox(controller, id, true);
+			return;
+		} else if (!Delta::UsesTelegramBackend(&user->session())) {
 			return;
 		} else if (controller->showFrozenError()) {
 			return;
@@ -1149,7 +1163,7 @@ void Filler::addNewContact() {
 		controller->show(Box(EditContactBox, controller, user));
 	};
 	_addAction(
-		Delta::Active()
+		owns
 			? Delta::kCoreEditNameLabel
 			: tr::lng_info_add_as_contact(tr::now),
 		edit,
@@ -1175,12 +1189,19 @@ void Filler::addEditContact() {
 	}
 	const auto controller = _controller;
 	const auto id = peerToUser(user->id).bare;
-	if (Delta::Active() && (Delta::IsGroup(id) || Delta::IsSystemUser(id))) {
+	const auto owns = Delta::OwnsSession(&user->session());
+	if (Delta::UsesCoreBackend(&user->session())) {
+		if (!owns || Delta::IsGroup(id) || Delta::IsSystemUser(id)) {
+			return;
+		}
+	} else if (!Delta::UsesTelegramBackend(&user->session())) {
 		return;
 	}
 	const auto edit = [=] {
-		if (Delta::Active()) {
+		if (Delta::OwnsSession(&user->session())) {
 			Delta::ShowCoreContactNameBox(controller, id, false);
+			return;
+		} else if (!Delta::UsesTelegramBackend(&user->session())) {
 			return;
 		} else if (controller->showFrozenError()) {
 			return;
@@ -1188,7 +1209,7 @@ void Filler::addEditContact() {
 		controller->show(Box(EditContactBox, controller, user));
 	};
 	_addAction(
-		Delta::Active()
+		owns
 			? Delta::kCoreEditNameLabel
 			: tr::lng_info_edit_contact(tr::now),
 		edit,
@@ -1239,14 +1260,22 @@ void Filler::addDeleteContact() {
 	}
 	const auto controller = _controller;
 	const auto id = peerToUser(user->id).bare;
-	if (Delta::Active() && (Delta::IsGroup(id) || Delta::IsSystemUser(id))) {
+	const auto owns = Delta::OwnsSession(&user->session());
+	if (Delta::UsesCoreBackend(&user->session())) {
+		if (!owns || Delta::IsGroup(id) || Delta::IsSystemUser(id)) {
+			return;
+		}
+	} else if (!Delta::UsesTelegramBackend(&user->session())) {
 		return;
 	}
 	_addAction({
 		.text = tr::lng_info_delete_contact(tr::now),
 		.handler = [=] {
-			if (Delta::Active()) {
+			if (Delta::OwnsSession(&user->session())) {
 				Delta::ShowCoreContactDeleteBox(controller, id);
+				return;
+			}
+			if (!Delta::UsesTelegramBackend(&user->session())) {
 				return;
 			}
 			PeerMenuDeleteContact(controller, user);
@@ -1441,7 +1470,8 @@ SendMenu::Details Filler::createSendMenuDetails() const {
 }
 
 void Filler::addCreatePoll() {
-	if (Delta::Active() || skipCreateActions()) {
+	if (!Delta::UsesTelegramBackend(&_peer->session())
+		|| skipCreateActions()) {
 		return;
 	}
 	const auto can = _topic
@@ -1511,7 +1541,7 @@ void Filler::addCreateTodoList() {
 }
 
 void Filler::addThemeEdit() {
-	if (Delta::Active()) {
+	if (!Delta::UsesTelegramBackend(&_peer->session())) {
 		return;
 	}
 	if (_peer->isVerifyCodes() || _peer->isRepliesChat()) {
@@ -1616,7 +1646,7 @@ void ShowDisableSharingBox(
 }
 
 void Filler::addToggleNoForwards() {
-	if (Delta::Active()) {
+	if (!Delta::UsesTelegramBackend(&_peer->session())) {
 		return;
 	}
 	const auto user = _peer->asUser();
@@ -2001,7 +2031,7 @@ void Filler::fillHistoryActions() {
 void Filler::fillProfileActions() {
 	addTTLSubmenu(true);
 	addSupportInfo();
-	if (Delta::Active()) {
+	if (Delta::OwnsSession(&_peer->session())) {
 		if (const auto user = _peer->asUser()) {
 			const auto id = peerToUser(user->id).bare;
 			if (!user->isSelf()
@@ -2266,10 +2296,13 @@ void PeerMenuExportTopic(
 void PeerMenuDeleteContact(
 		not_null<Window::SessionController*> controller,
 		not_null<UserData*> user) {
-	if (Delta::Active()) {
+	if (Delta::UsesCoreBackend(&user->session())) {
 		Delta::ShowCoreContactDeleteBox(
 			controller,
 			peerToUser(user->id).bare);
+		return;
+	}
+	if (!Delta::UsesTelegramBackend(&user->session())) {
 		return;
 	}
 	if (controller->showFrozenError()) {

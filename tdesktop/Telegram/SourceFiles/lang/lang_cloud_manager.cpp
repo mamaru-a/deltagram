@@ -7,13 +7,14 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "lang/lang_cloud_manager.h"
 
+#include "lang/lang_backend.h"
 #include "lang/lang_instance.h"
 #include "lang/lang_file_parser.h"
 #include "lang/lang_text_entity.h"
 #include "mtproto/mtp_instance.h"
 #include "storage/localstorage.h"
 #include "core/application.h"
-#include "delta/delta_bridge.h"
+#include "delta/account_backend.h"
 #include "main/main_account.h"
 #include "main/main_domain.h"
 #include "ui/boxes/confirm_box.h"
@@ -157,21 +158,144 @@ Language ParseLanguage(const MTPLangPackLanguage &data) {
 	});
 }
 
+namespace {
+
+[[nodiscard]] Main::AccountBackend AccountBackendOf(Main::Account *account) {
+	return account
+		? account->backend()
+		: Main::AccountBackend::Unspecified;
+}
+
+} // namespace
+
 CloudManager::CloudManager(Instance &langpack)
 : _langpack(langpack) {
-	const auto mtpLifetime = _lifetime.make_state<rpl::lifetime>();
 	Core::App().domain().activeValue(
-	) | rpl::filter([=](Main::Account *account) {
-		return (account != nullptr);
-	}) | rpl::on_next_done([=](Main::Account *account) {
-		*mtpLifetime = account->mtpMainSessionValue(
-		) | rpl::on_next([=](not_null<MTP::Instance*> instance) {
-			_api.emplace(instance);
-			resendRequests();
-		});
-	}, [=] {
-		_api.reset();
+	) | rpl::on_next([=](Main::Account *account) {
+		_activeAccount = base::make_weak(account);
+		refreshBackingAccount();
 	}, _lifetime);
+	Core::App().domain().accountsChanges(
+	) | rpl::on_next([=] {
+		refreshBackingAccount();
+	}, _lifetime);
+	refreshBackingAccount();
+}
+
+Main::AccountBackend CloudManager::backingBackend() const {
+	return AccountBackendOf(_backingAccount.get());
+}
+
+bool CloudManager::allowsCloudRequest(
+		Main::Account *initiating,
+		LanguageRequestOrigin origin) const {
+	return PlanLanguageCloudRequest({
+		.origin = origin,
+		.initiating = AccountBackendOf(initiating),
+		.backing = backingBackend(),
+	}) == LanguageCloudRequestPolicy::Allow;
+}
+
+void CloudManager::failPendingValueRequests() {
+	auto pending = base::take(_getValueForLangRequests);
+	for (auto &[requestKey, request] : pending) {
+		if (const auto onstack = request.callback) {
+			onstack(QString());
+		}
+	}
+}
+
+void CloudManager::markInFlightForResend() {
+	const auto pend = [](mtpRequestId &id) {
+		if (id > 0) {
+			id = -1;
+		}
+	};
+	pend(_langPackRequestId);
+	pend(_langPackBaseRequestId);
+	pend(_languagesRequestId);
+	pend(_switchingToLanguageRequest);
+	pend(_getKeysForSwitchRequestId);
+	for (auto &[requestKey, request] : _getValueForLangRequests) {
+		if (request.requestId > 0) {
+			request.requestId = -1;
+		}
+	}
+}
+
+void CloudManager::bindBackingAccount(Main::Account *account) {
+	const auto current = _backingAccount.get();
+	if (current && current == account) {
+		return;
+	}
+	if (!current && !account && !_api) {
+		_backingAccount = nullptr;
+		return;
+	}
+	++_backingGeneration;
+	_backingLifetime.destroy();
+	_api.reset();
+	markInFlightForResend();
+	_backingAccount = base::make_weak(account);
+	if (!account) {
+		failPendingValueRequests();
+		return;
+	}
+	account->mtpMainSessionValue(
+	) | rpl::on_next([=](not_null<MTP::Instance*> instance) {
+		if (_backingAccount.get() != account) {
+			return;
+		}
+		++_backingGeneration;
+		markInFlightForResend();
+		_api.emplace(instance);
+		resendRequests();
+	}, _backingLifetime);
+}
+
+void CloudManager::refreshBackingAccount() {
+	const auto active = _activeAccount.get();
+	auto existing = _backingAccount.get();
+	if (!Delta::UsesTelegramBackend(existing)) {
+		existing = nullptr;
+	}
+	Main::Account *firstTelegram = nullptr;
+	auto existingLive = false;
+	for (const auto &entry : Core::App().domain().accounts()) {
+		const auto account = entry.account.get();
+		if (!Delta::UsesTelegramBackend(account)) {
+			continue;
+		}
+		if (!firstTelegram) {
+			firstTelegram = account;
+		}
+		if (existing == account) {
+			existingLive = true;
+		}
+	}
+	if (!existingLive) {
+		existing = nullptr;
+	}
+	Main::Account *chosen = nullptr;
+	switch (PlanLanguageBacking({
+		.active = AccountBackendOf(active),
+		.existingBackingIsLiveTelegram = (existing != nullptr),
+		.telegramAccountAvailable = (firstTelegram != nullptr),
+	})) {
+	case LanguageBackingPick::ActiveTelegram:
+		chosen = Delta::UsesTelegramBackend(active) ? active : firstTelegram;
+		break;
+	case LanguageBackingPick::KeepExistingTelegram:
+		chosen = existing;
+		break;
+	case LanguageBackingPick::FirstTelegram:
+		chosen = firstTelegram;
+		break;
+	case LanguageBackingPick::None:
+		chosen = nullptr;
+		break;
+	}
+	bindBackingAccount(chosen);
 }
 
 Pack CloudManager::packTypeFromId(const QString &id) const {
@@ -214,7 +338,8 @@ mtpRequestId CloudManager::packRequestId(Pack pack) const {
 }
 
 void CloudManager::requestLangPackDifference(Pack pack) {
-	if (Delta::Active() || !_api) {
+	if (!allowsCloudRequest(nullptr, LanguageRequestOrigin::System)
+		|| !_api) {
 		return;
 	}
 	_api->request(base::take(packRequestId(pack))).cancel();
@@ -227,15 +352,22 @@ void CloudManager::requestLangPackDifference(Pack pack) {
 	if (code.isEmpty()) {
 		return;
 	}
+	const auto generation = _backingGeneration;
 	if (version > 0) {
 		packRequestId(pack) = _api->request(MTPlangpack_GetDifference(
 			MTP_string(CloudLangPackName()),
 			MTP_string(code),
 			MTP_int(version)
 		)).done([=](const MTPLangPackDifference &result) {
+			if (generation != _backingGeneration) {
+				return;
+			}
 			packRequestId(pack) = 0;
 			applyLangPackDifference(result);
 		}).fail([=] {
+			if (generation != _backingGeneration) {
+				return;
+			}
 			packRequestId(pack) = 0;
 		}).send();
 	} else {
@@ -243,9 +375,15 @@ void CloudManager::requestLangPackDifference(Pack pack) {
 			MTP_string(CloudLangPackName()),
 			MTP_string(code)
 		)).done([=](const MTPLangPackDifference &result) {
+			if (generation != _backingGeneration) {
+				return;
+			}
 			packRequestId(pack) = 0;
 			applyLangPackDifference(result);
 		}).fail([=] {
+			if (generation != _backingGeneration) {
+				return;
+			}
 			packRequestId(pack) = 0;
 		}).send();
 	}
@@ -305,22 +443,32 @@ void CloudManager::applyLangPackDifference(
 	}
 }
 
-void CloudManager::requestLanguageList() {
+void CloudManager::requestLanguageList(Main::Account *initiating) {
 	if (_languages.empty()) {
 		_languages.push_back(DefaultLanguage());
 		_languageListChanged.fire({});
 	}
-	if (Delta::Active()) {
+	const auto origin = initiating
+		? LanguageRequestOrigin::ExplicitAccount
+		: LanguageRequestOrigin::System;
+	if (!allowsCloudRequest(initiating, origin)) {
+		if (AccountBackendOf(initiating) == Main::AccountBackend::Telegram) {
+			_languagesRequestId = -1;
+		}
 		return;
 	}
 	if (!_api) {
 		_languagesRequestId = -1;
 		return;
 	}
+	const auto generation = _backingGeneration;
 	_api->request(base::take(_languagesRequestId)).cancel();
 	_languagesRequestId = _api->request(MTPlangpack_GetLanguages(
 		MTP_string(CloudLangPackName())
 	)).done([=](const MTPVector<MTPLangPackLanguage> &result) {
+		if (generation != _backingGeneration) {
+			return;
+		}
 		auto languages = Languages();
 		for (const auto &language : result.v) {
 			languages.push_back(ParseLanguage(language));
@@ -331,6 +479,9 @@ void CloudManager::requestLanguageList() {
 		}
 		_languagesRequestId = 0;
 	}).fail([=] {
+		if (generation != _backingGeneration) {
+			return;
+		}
 		_languagesRequestId = 0;
 		if (_languages.empty()) {
 			_languages.push_back(DefaultLanguage());
@@ -418,29 +569,35 @@ void CloudManager::resetToDefault() {
 	performSwitch(DefaultLanguage());
 }
 
-void CloudManager::switchToLanguage(const QString &id) {
-	requestLanguageAndSwitch(id, false);
+void CloudManager::switchToLanguage(
+		const QString &id,
+		Main::Account *initiating) {
+	requestLanguageAndSwitch(id, false, initiating);
 }
 
-void CloudManager::switchWithWarning(const QString &id) {
-	requestLanguageAndSwitch(id, true);
+void CloudManager::switchWithWarning(
+		const QString &id,
+		Main::Account *initiating) {
+	requestLanguageAndSwitch(id, true, initiating);
 }
 
 void CloudManager::requestLanguageAndSwitch(
 		const QString &id,
-		bool warning) {
+		bool warning,
+		Main::Account *initiating) {
 	Expects(!id.isEmpty());
 
 	if (LanguageIdOrDefault(_langpack.id()) == id) {
 		Ui::show(Ui::MakeInformBox(tr::lng_language_already()));
 		return;
 	} else if (id == u"#custom"_q) {
-		performSwitchToCustom();
+		performSwitchToCustom(initiating);
 		return;
 	}
-	if (Delta::Active()) {
+	if (initiating
+		&& PlanLanguagePicker(initiating->backend()).localCatalog) {
 		if (LanguageIdOrDefault(id) == DefaultLanguageId()) {
-			switchToLanguage(DefaultLanguage());
+			switchToLanguage(DefaultLanguage(), initiating);
 			return;
 		}
 		Ui::show(Ui::MakeInformBox(
@@ -450,11 +607,14 @@ void CloudManager::requestLanguageAndSwitch(
 
 	_switchingToLanguageId = id;
 	_switchingToLanguageWarning = warning;
+	_switchingToLanguageInitiating = initiating;
 	sendSwitchingToLanguageRequest();
 }
 
 void CloudManager::sendSwitchingToLanguageRequest() {
-	if (Delta::Active()) {
+	if (!allowsCloudRequest(
+			_switchingToLanguageInitiating.get(),
+			LanguageRequestOrigin::ExplicitAccount)) {
 		_switchingToLanguageRequest = 0;
 		return;
 	}
@@ -462,11 +622,15 @@ void CloudManager::sendSwitchingToLanguageRequest() {
 		_switchingToLanguageRequest = -1;
 		return;
 	}
+	const auto generation = _backingGeneration;
 	_api->request(_switchingToLanguageRequest).cancel();
 	_switchingToLanguageRequest = _api->request(MTPlangpack_GetLanguage(
 		MTP_string(Lang::CloudLangPackName()),
 		MTP_string(_switchingToLanguageId)
 	)).done([=](const MTPLangPackLanguage &result) {
+		if (generation != _backingGeneration) {
+			return;
+		}
 		_switchingToLanguageRequest = 0;
 		const auto language = Lang::ParseLanguage(result);
 		const auto finalize = [=] {
@@ -488,6 +652,9 @@ void CloudManager::sendSwitchingToLanguageRequest() {
 			}
 		});
 	}).fail([=](const MTP::Error &error) {
+		if (generation != _backingGeneration) {
+			return;
+		}
 		_switchingToLanguageRequest = 0;
 		if (error.type() == "LANG_CODE_NOT_SUPPORTED") {
 			Ui::show(Ui::MakeInformBox(tr::lng_language_not_found()));
@@ -495,17 +662,22 @@ void CloudManager::sendSwitchingToLanguageRequest() {
 	}).send();
 }
 
-void CloudManager::switchToLanguage(const Language &data) {
+void CloudManager::switchToLanguage(
+		const Language &data,
+		Main::Account *initiating) {
 	if (_langpack.id() == data.id && data.id != u"#custom"_q) {
 		return;
 	}
-	if (Delta::Active()) {
-		if (data.id == u"#custom"_q) {
-			performSwitchToCustom();
-			return;
-		}
+	if (data.id == u"#custom"_q) {
+		performSwitchToCustom(initiating);
+		return;
+	}
+	if (initiating
+		&& PlanLanguagePicker(initiating->backend()).localCatalog) {
 		if (LanguageIdOrDefault(data.id) == DefaultLanguageId()) {
-			performSwitchAndAddToRecent(DefaultLanguage());
+			Local::pushRecentLanguage(DefaultLanguage());
+			_restartAfterSwitch = false;
+			_langpack.switchToId(DefaultLanguage());
 			Local::writeLangPack();
 			if (!canApplyWithoutRestart(DefaultLanguage().id)) {
 				Core::Restart();
@@ -521,11 +693,10 @@ void CloudManager::switchToLanguage(const Language &data) {
 	}
 
 	_api->request(base::take(_getKeysForSwitchRequestId)).cancel();
-	if (data.id == u"#custom"_q) {
-		performSwitchToCustom();
-	} else if (canApplyWithoutRestart(data.id)) {
+	if (canApplyWithoutRestart(data.id)) {
 		performSwitchAndAddToRecent(data);
 	} else {
+		const auto generation = _backingGeneration;
 		QVector<MTPstring> keys;
 		keys.reserve(3);
 		keys.push_back(MTP_string("lng_sure_save_language"));
@@ -534,6 +705,9 @@ void CloudManager::switchToLanguage(const Language &data) {
 			MTP_string(data.id),
 			MTP_vector<MTPstring>(std::move(keys))
 		)).done([=](const MTPVector<MTPLangPackString> &result) {
+			if (generation != _backingGeneration) {
+				return;
+			}
 			_getKeysForSwitchRequestId = 0;
 			const auto values = Instance::ParseStrings(result);
 			const auto getValue = [&](ushort key) {
@@ -553,14 +727,19 @@ void CloudManager::switchToLanguage(const Language &data) {
 				}),
 				Ui::LayerOption::KeepOther);
 		}).fail([=] {
+			if (generation != _backingGeneration) {
+				return;
+			}
 			_getKeysForSwitchRequestId = 0;
 		}).send();
 	}
 }
 
-void CloudManager::performSwitchToCustom() {
+void CloudManager::performSwitchToCustom(Main::Account *initiating) {
 	auto filter = u"Language files (*.strings)"_q;
 	auto title = u"Choose language .strings file"_q;
+	const auto confirm = PlanLanguageCustomConfirm(
+		AccountBackendOf(initiating));
 	FileDialog::GetOpenPath(Core::App().getFileDialogParent(), title, filter, [=, weak = base::make_weak(this)](const FileDialog::OpenResult &result) {
 		if (!weak || result.paths.isEmpty()) {
 			return;
@@ -589,16 +768,18 @@ void CloudManager::performSwitchToCustom() {
 						? GetOriginalValue(key)
 						: it.value();
 				};
-				const auto current = Delta::Active()
+				const auto current = (confirm
+						== LanguageCustomConfirmCopy::CoreRestart)
 					? tr::lng_delta_sure_save_language(tr::now)
 					: tr::lng_sure_save_language(tr::now);
 				const auto target = getValue(
-					Delta::Active()
+					(confirm == LanguageCustomConfirmCopy::CoreRestart)
 						? tr::lng_delta_sure_save_language.base
 						: tr::lng_sure_save_language.base);
-				const auto text = (Delta::Active() && current == target)
-					? current
-					: current + "\n\n" + target;
+				const auto text = CombineLanguageRestartCopy(
+					confirm,
+					current,
+					target);
 				const auto change = [=] {
 					_langpack.switchToCustomFile(filePath);
 					Core::Restart();
@@ -620,10 +801,16 @@ void CloudManager::performSwitchToCustom() {
 	});
 }
 
-void CloudManager::switchToTestLanguage() {
+void CloudManager::switchToTestLanguage(Main::Account *initiating) {
 	const auto testLanguageId = (_langpack.id() == u"#TEST_X"_q)
 		? u"#TEST_0"_q
 		: u"#TEST_X"_q;
+	if (!initiating
+		|| PlanLanguagePicker(initiating->backend()).localCatalog) {
+		_restartAfterSwitch = false;
+		switchLangPackId({ testLanguageId });
+		return;
+	}
 	performSwitch({ testLanguageId });
 }
 
@@ -677,7 +864,7 @@ void CloudManager::getValueForLang(
 		const QString &key,
 		const QString &langId,
 		Fn<void(const QString &)> callback) {
-	if (Delta::Active()) {
+	if (!allowsCloudRequest(nullptr, LanguageRequestOrigin::System)) {
 		callback(QString());
 		return;
 	}
@@ -688,6 +875,7 @@ void CloudManager::getValueForLang(
 		request.requestId = -1;
 		return;
 	}
+	const auto generation = _backingGeneration;
 	_api->request(base::take(request.requestId)).cancel();
 	request.requestId = _api->request(
 		MTPlangpack_GetStrings(
@@ -695,6 +883,9 @@ void CloudManager::getValueForLang(
 			MTP_string(langId),
 			MTP_vector<MTPstring>(1, MTP_string(key))
 	)).done([=](const MTPVector<MTPLangPackString> &result) {
+		if (generation != _backingGeneration) {
+			return;
+		}
 		const auto it = _getValueForLangRequests.find(requestKey);
 		if (it != _getValueForLangRequests.end()) {
 			const auto onstack = it->second.callback;
@@ -707,6 +898,9 @@ void CloudManager::getValueForLang(
 			onstack(QString());
 		}
 	}).fail([=] {
+		if (generation != _backingGeneration) {
+			return;
+		}
 		const auto it = _getValueForLangRequests.find(requestKey);
 		if (it != _getValueForLangRequests.end()) {
 			const auto onstack = it->second.callback;

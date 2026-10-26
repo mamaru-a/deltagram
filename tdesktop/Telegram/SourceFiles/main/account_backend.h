@@ -34,6 +34,7 @@ static_assert(quint32(AccountBackend::Telegram)
 enum class AccountBackendRecordKind : quint8 {
 	FreshMissing = 0,
 	LegacyExisting = 1,
+	NewDomainSlot = 2,
 };
 
 enum class AccountBackendMigrationNeed : quint8 {
@@ -49,6 +50,8 @@ enum class AccountBackendBindResult : quint8 {
 	RejectedLiveMtp = 4,
 	RejectedInvalid = 5,
 	RejectedPersistFailed = 6,
+	RejectedLiveSession = 7,
+	RejectedCoreWithKeys = 8,
 };
 
 struct AccountBackendDecodedTag {
@@ -74,11 +77,21 @@ struct AccountBackendBindRequest {
 	AccountBackend current = AccountBackend::Unspecified;
 	AccountBackend requested = AccountBackend::Unspecified;
 	bool mtpAlreadyExists = false;
+	bool mtpAuthorizationKeysPresent = false;
 };
 
 struct AccountBackendBindState {
 	AccountBackend backend = AccountBackend::Unspecified;
 	bool mtpAlreadyExists = false;
+	bool mtpAuthorizationKeysPresent = false;
+};
+
+struct AccountBackendRebuildRequest {
+	AccountBackend current = AccountBackend::Unspecified;
+	AccountBackend requested = AccountBackend::Unspecified;
+	bool mtpAlreadyExists = false;
+	bool sessionExists = false;
+	bool mtpAuthorizationKeysPresent = false;
 };
 
 [[nodiscard]] inline bool IsBoundAccountBackend(AccountBackend backend) {
@@ -129,6 +142,11 @@ struct AccountBackendBindState {
 [[nodiscard]] inline AccountBackendMigration ResolveStoredAccountBackend(
 		const AccountBackendMigrationEvidence &evidence) {
 	AccountBackendMigration result;
+	if (evidence.record == AccountBackendRecordKind::NewDomainSlot) {
+		// WHY: Domain::add must not inherit orphan sidecar or unread Telegram keys.
+		result.need = AccountBackendMigrationNeed::Chooser;
+		return result;
+	}
 	const auto keys = evidence.telegramAuthorizationKeysPresent;
 	const auto coreMarker = evidence.provenLegacyCoreMarker;
 	const auto legacyUntagged = !evidence.tagPresent
@@ -171,21 +189,52 @@ struct AccountBackendBindState {
 	return result;
 }
 
-[[nodiscard]] inline AccountBackendBindResult EvaluateAccountBackendBind(
-		const AccountBackendBindRequest &request) {
-	if (!IsValidAccountBackend(request.requested)
-		|| !IsValidAccountBackend(request.current)) {
+[[nodiscard]] inline AccountBackendBindResult EvaluateAccountBackendBindBase(
+		AccountBackend current,
+		AccountBackend requested) {
+	if (!IsValidAccountBackend(requested)
+		|| !IsValidAccountBackend(current)) {
 		return AccountBackendBindResult::RejectedInvalid;
-	} else if (request.requested == AccountBackend::Unspecified) {
-		return (request.current == AccountBackend::Unspecified)
+	} else if (requested == AccountBackend::Unspecified) {
+		return (current == AccountBackend::Unspecified)
 			? AccountBackendBindResult::Unchanged
 			: AccountBackendBindResult::RejectedClear;
-	} else if (request.current == request.requested) {
+	} else if (current == requested) {
 		return AccountBackendBindResult::Unchanged;
-	} else if (request.current != AccountBackend::Unspecified) {
+	} else if (current != AccountBackend::Unspecified) {
 		return AccountBackendBindResult::RejectedChange;
+	}
+	return AccountBackendBindResult::Bound;
+}
+
+[[nodiscard]] inline AccountBackendBindResult EvaluateAccountBackendBind(
+		const AccountBackendBindRequest &request) {
+	const auto result = EvaluateAccountBackendBindBase(
+		request.current,
+		request.requested);
+	if (result != AccountBackendBindResult::Bound) {
+		return result;
+	} else if (request.requested == AccountBackend::Core
+		&& request.mtpAuthorizationKeysPresent) {
+		return AccountBackendBindResult::RejectedCoreWithKeys;
 	} else if (request.mtpAlreadyExists) {
 		return AccountBackendBindResult::RejectedLiveMtp;
+	}
+	return AccountBackendBindResult::Bound;
+}
+
+[[nodiscard]] inline AccountBackendBindResult EvaluateAccountBackendRebuild(
+		const AccountBackendRebuildRequest &request) {
+	const auto result = EvaluateAccountBackendBindBase(
+		request.current,
+		request.requested);
+	if (result != AccountBackendBindResult::Bound) {
+		return result;
+	} else if (request.sessionExists) {
+		return AccountBackendBindResult::RejectedLiveSession;
+	} else if (request.requested == AccountBackend::Core
+		&& request.mtpAuthorizationKeysPresent) {
+		return AccountBackendBindResult::RejectedCoreWithKeys;
 	}
 	return AccountBackendBindResult::Bound;
 }
@@ -197,6 +246,7 @@ struct AccountBackendBindState {
 		state.backend,
 		requested,
 		state.mtpAlreadyExists,
+		state.mtpAuthorizationKeysPresent,
 	});
 	if (result == AccountBackendBindResult::Bound) {
 		state.backend = requested;
@@ -227,6 +277,12 @@ struct AccountBackendBindState {
 [[nodiscard]] inline bool AccountBackendBindNeedsMtpRebuild(
 		AccountBackendBindResult result) {
 	return result == AccountBackendBindResult::RejectedLiveMtp;
+}
+
+[[nodiscard]] inline bool AccountBackendBindActivates(
+		AccountBackendBindResult result) {
+	return result == AccountBackendBindResult::Bound
+		|| result == AccountBackendBindResult::Unchanged;
 }
 
 } // namespace Main

@@ -7,7 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "settings/sections/settings_local_storage.h"
 
-#include "delta/delta_bridge.h"
+#include "delta/account_backend.h"
 #include "settings.h"
 #include "settings/settings_common.h"
 #include "data/data_session.h"
@@ -1019,7 +1019,7 @@ void LocalStorage::Chart::paintEvent(QPaintEvent *e) {
 
 class LocalStorage::DeviceBar final : public Ui::RpWidget {
 public:
-	explicit DeviceBar(QWidget *parent);
+	DeviceBar(QWidget *parent, bool coreCopy);
 
 	void setCache(int64 cache);
 
@@ -1039,6 +1039,7 @@ private:
 
 	object_ptr<Ui::FlatLabel> _subtitle;
 	std::unique_ptr<Ui::ImportantTooltip> _tooltip;
+	const bool _coreCopy = false;
 	int64 _reported = 0;
 	int64 _cache = 0;
 	int64 _total = 0;
@@ -1046,9 +1047,11 @@ private:
 
 };
 
-LocalStorage::DeviceBar::DeviceBar(QWidget *parent)
+LocalStorage::DeviceBar::DeviceBar(QWidget *parent, bool coreCopy)
 : RpWidget(parent)
-, _subtitle(this, QString(), st::localStorageUsageSubtitle) {
+, _subtitle(this, QString(), st::localStorageUsageSubtitle)
+, _tooltip()
+, _coreCopy(coreCopy) {
 	_subtitle->setAttribute(Qt::WA_TransparentForMouseEvents);
 	setMouseTracking(true);
 	refresh();
@@ -1072,7 +1075,7 @@ void LocalStorage::DeviceBar::refresh() {
 void LocalStorage::DeviceBar::apply() {
 	const auto used = std::max(_total - _free, int64());
 	_cache = std::min(_reported, used);
-	_subtitle->setText(Delta::Active()
+	_subtitle->setText(_coreCopy
 		? tr::lng_delta_local_storage_device_usage(
 			tr::now,
 			lt_percent,
@@ -1169,7 +1172,7 @@ TextWithEntities LocalStorage::DeviceBar::tooltipText() const {
 		result.append(label).append(u": "_q).append(
 			Ui::Text::Bold(FormatStorageSize(size)));
 	};
-	line(Delta::Active()
+	line(_coreCopy
 		? tr::lng_delta_local_storage_device_cache(tr::now)
 		: tr::lng_local_storage_device_telegram(tr::now), _cache);
 	line(tr::lng_local_storage_device_other(tr::now), other);
@@ -1912,7 +1915,9 @@ void LocalStorage::setupControls(not_null<Ui::VerticalLayout*> container) {
 		return result;
 	});
 
-	_deviceBar = container->add(object_ptr<DeviceBar>(container));
+	_deviceBar = container->add(object_ptr<DeviceBar>(
+		container,
+		Delta::UsesCoreBackend(_session)));
 
 	_categoriesWrap = AddIslandWrap(container);
 	const auto categoriesIsland = _categoriesWrap->entity();
@@ -1939,7 +1944,7 @@ void LocalStorage::setupControls(not_null<Ui::VerticalLayout*> container) {
 		label->setAttribute(Qt::WA_TransparentForMouseEvents);
 	};
 
-	addAbout(Delta::Active()
+	addAbout(Delta::UsesCoreBackend(_session)
 		? tr::lng_delta_local_storage_about()
 		: tr::lng_local_storage_about());
 
@@ -1947,7 +1952,7 @@ void LocalStorage::setupControls(not_null<Ui::VerticalLayout*> container) {
 	setupLimits(settingsIsland);
 	Ui::AddSkip(settingsIsland, st::localStorageIslandPadding);
 
-	addAbout(Delta::Active()
+	addAbout(Delta::UsesCoreBackend(_session)
 		? tr::lng_delta_local_storage_max_size_about()
 		: tr::lng_local_storage_max_size_about());
 

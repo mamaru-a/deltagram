@@ -1425,8 +1425,10 @@ void AddMessageActions(
 				}
 			}), &st::menuIconSend);
 	}
-	if (Delta::Active() && request.item && request.selectedItems.empty()
-		&& request.item->id.bare > 0) {
+	if (request.item
+		&& request.selectedItems.empty()
+		&& request.item->id.bare > 0
+		&& Delta::OwnsSession(&request.item->history()->session())) {
 		const auto controller = list->controller();
 		const auto id = request.item->id.bare;
 		if (Delta::CanDownloadMessage(id)) {
@@ -1876,7 +1878,9 @@ void FillContextMenuItems(
 	}
 	if (request.overSelection
 		&& view
-		&& !Ui::SkipTranslate(list->getSelectedText().rich)) {
+		&& !Ui::SkipTranslate(
+			list->getSelectedText().rich,
+			&view->history()->session())) {
 		const auto owner = &view->history()->owner();
 		result->addAction(tr::lng_context_translate_selected(tr::now), [=] {
 			if (const auto item = owner->message(itemId)) {
@@ -1973,7 +1977,9 @@ void FillContextMenuItems(
 				: item->originalText();
 			if ((!item->translation() || !item->history()->translatedTo())
 				&& !translate.text.isEmpty()
-				&& !Ui::SkipTranslate(translate)) {
+				&& !Ui::SkipTranslate(
+					translate,
+					&item->history()->session())) {
 				result->addAction(tr::lng_context_translate(tr::now), [=] {
 					if (const auto item = owner->message(itemId)) {
 						list->controller()->show(Box(
@@ -2398,7 +2404,7 @@ void AddPollActions(
 		for (const auto &answer : poll->answers) {
 			text.append('\n').append(radio).append(answer.text);
 		}
-		if (!Ui::SkipTranslate(text)) {
+		if (!Ui::SkipTranslate(text, &item->history()->session())) {
 			menu->addAction(tr::lng_context_translate(tr::now), [=] {
 				controller->show(Box(
 					Ui::TranslateBox,

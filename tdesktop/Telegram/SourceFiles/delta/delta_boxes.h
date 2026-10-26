@@ -46,18 +46,20 @@ void AskChoice(
 	const QString &title,
 	std::vector<std::pair<QString, Fn<void()>>> options);
 
-void ShowInviteQr();
-void ShowSecondDevice();
-void ShowRelays();
+void ShowInviteQr(not_null<Window::SessionController*> controller);
+void ShowSecondDevice(not_null<Window::SessionController*> controller);
+void ShowRelays(not_null<Window::SessionController*> controller);
 void ShowApps(not_null<Main::Session*> session);
 [[nodiscard]] QString AppPickerUrl();
 void SetAppPickerUrl(const QString &url);
-void ShowAppPickerUrl();
+void ShowAppPickerUrl(not_null<Window::SessionController*> controller);
 
 void ShowCreateGroup(Fn<void(int chatId)> done);
 void ChooseGroupMembers(not_null<Main::Session*> session,
 	Fn<void(std::vector<int>, Fn<void(QString)>)> create);
-void ShowContacts(not_null<Main::Session*> session, Fn<void(int chatId)> done);
+void ShowContacts(
+	not_null<Window::SessionController*> controller,
+	Fn<void(int chatId)> done);
 void ShowChannelSubscribers(not_null<Main::Session*> session, int userId, Fn<void()> done = nullptr);
 void ShowChannelInfo(not_null<Window::SessionController*> controller, int userId,
 	const Window::SectionShow &params);

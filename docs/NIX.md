@@ -73,9 +73,23 @@ without Nix or installed Qt/GTK. These checks do not prove network messaging or
 compatibility with every graphics driver and Linux distribution.
 
 The dependency closure supplies tg_owt and tlottie from pinned nixpkgs.
-Telegram tde2e is excluded and conference attempts are refused; Chatmail Core
-handles messaging encryption. GitHub Actions builds and publishes experimental releases on `main`; see
+Telegram conference encryption uses tde2e from the donor's exact tdlib commit
+`51743dfd01dff6179e2d8f7095729caa4e2222e9`, built with `TD_E2E_ONLY=ON`.
+The dependency and native `td_tde2e` wrapper compile; the restored conference
+sources and live conference behavior still require native validation.
+Core profiles continue to use Chatmail Core for encryption and cannot start
+Telegram calls. GitHub Actions builds experimental releases on `main`; see
 [the release guide](RELEASING.md). Local release commands only create artifacts.
+
+GUI validation defaults to `DELTA_TEL_API_MODE=test`, the donor's limited test
+application credentials. That flag does not select Telegram's TestDC environment.
+Production configuration requires `DELTA_TEL_API_MODE=production` and private
+environment values `TDESKTOP_API_ID` / `TDESKTOP_API_HASH`; missing or malformed
+values fail before CMake. Do not put them in source or command arguments.
+Changing API mode reconfigures the existing CMake tree without deleting Ninja
+or ccache records. Production constants remain in the build cache and binary;
+those build outputs must be handled accordingly. Publication guards are under
+integration; a test-mode validation binary is not a production Telegram release.
 
 QR scanning uses the pinned ZXing decoder and Qt Multimedia packages from the
 Nix shell. Their include paths apply only to the scan implementation, avoiding

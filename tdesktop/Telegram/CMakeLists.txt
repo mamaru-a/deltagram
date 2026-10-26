@@ -35,6 +35,7 @@ include(cmake/td_iv.cmake)
 include(cmake/td_lang.cmake)
 include(cmake/td_mtproto.cmake)
 include(cmake/td_scheme.cmake)
+include(cmake/td_tde2e.cmake)
 include(cmake/td_ui.cmake)
 include(cmake/td_webauthn.cmake)
 include(cmake/telegram_apple_swift_runtime.cmake)
@@ -81,6 +82,7 @@ PRIVATE
     tdesktop::td_lang
     tdesktop::td_mtproto
     tdesktop::td_scheme
+    tdesktop::td_tde2e
     tdesktop::td_ui
     tdesktop::td_webauthn
     desktop-app::lib_webrtc
@@ -1447,6 +1449,10 @@ PRIVATE
     delta/search_failure.h
     delta/core_profile_actions.cpp
     delta/core_profile_actions.h
+    delta/account_backend.h
+    delta/unread_aggregation.h
+    delta/backend_choice.cpp
+    delta/backend_choice.h
     delta/full_message.h
     delta/full_message_box.cpp
     delta/full_message_box.h
@@ -1492,6 +1498,7 @@ PRIVATE
     iv/iv_rich_message_serializer.h
     iv/iv_rich_page.cpp
     iv/iv_rich_page.h
+    lang/lang_backend.h
     lang/lang_cloud_manager.cpp
     lang/lang_cloud_manager.h
     lang/lang_instance.cpp
@@ -1512,6 +1519,11 @@ PRIVATE
     layout/layout_item_base.h
     main/account_backend.h
     main/account_backend_store.h
+    main/account_storage_namespace.h
+    main/backend_startup.h
+    main/domain_account_limit.h
+    main/session_backend_features.h
+    main/backend_session_identity.h
     main/main_account.cpp
     main/main_account.h
     main/main_app_config.cpp
@@ -2020,6 +2032,8 @@ PRIVATE
     support/support_preload.h
     support/support_templates.cpp
     support/support_templates.h
+    tde2e/tde2e_integration.cpp
+    tde2e/tde2e_integration.h
     test/test_activation.cpp
     test/test_activation.h
     test/test_agent.cpp

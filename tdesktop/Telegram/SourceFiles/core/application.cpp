@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "core/application.h"
 #include "delta/delta_bridge.h"
+#include "delta/unread_aggregation.h"
 
 #include "data/data_abstract_structure.h"
 #include "data/data_channel.h"
@@ -1198,11 +1199,21 @@ bool Application::preventsQuit(QuitReason reason) {
 }
 
 int Application::unreadBadge() const {
-	return Delta::Active() ? Delta::TotalProfileUnreadCount() : _domain->unreadBadge();
+	return Delta::CombineUnread(
+		{ .count = Delta::TotalProfileUnreadCount() },
+		{
+			.count = _domain->unreadBadge(),
+			.muted = _domain->unreadBadgeMuted(),
+		}).count;
 }
 
 bool Application::unreadBadgeMuted() const {
-	return !Delta::Active() && _domain->unreadBadgeMuted();
+	return Delta::CombineUnread(
+		{ .count = Delta::TotalProfileUnreadCount() },
+		{
+			.count = _domain->unreadBadge(),
+			.muted = _domain->unreadBadgeMuted(),
+		}).muted;
 }
 
 rpl::producer<> Application::unreadBadgeChanges() const {

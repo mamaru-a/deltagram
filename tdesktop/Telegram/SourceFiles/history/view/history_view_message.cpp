@@ -6,8 +6,10 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "history/view/history_view_message.h"
+#include "delta/account_backend.h"
 #include "delta/delta_bridge.h"
 #include "delta/full_message_box.h"
+#include "delta/message_capabilities.h"
 
 #include "api/api_suggest_post.h"
 #include "api/api_transcribes.h"
@@ -1894,7 +1896,11 @@ void Message::draw(Painter &p, const PaintContext &context) const {
 	}
 	if (bubble) {
 		const auto from = displayFromName() ? displayFrom() : nullptr;
-		if (from && (_fromNameVersion < from->nameVersion())) {
+		if (from
+			&& (_fromNameVersion < from->nameVersion()
+				|| _fromNameOverride != Delta::MessageAuthorOverride(item)
+				|| _fromNameAuthorRevision
+					!= item->backendAuthorRevision())) {
 			fromNameUpdated(g.width());
 		}
 		const auto simple = Ui::SimpleBubble{
@@ -3929,6 +3935,9 @@ bool Message::hasFromPhoto() const {
 	if (isHidden()) {
 		return false;
 	}
+	if (Delta::OwnsSession(&data()->history()->session())) {
+		return Delta::MessageShowsCoreAuthor(data());
+	}
 	switch (context()) {
 	case Context::AdminLog:
 		return true;
@@ -5543,7 +5552,9 @@ void Message::drawInfo(
 		const auto dateH = size.height() + 2 * st::msgDateImgPadding.y();
 		Ui::FillRoundRect(p, dateX - st::msgDateImgPadding.x(), dateY - st::msgDateImgPadding.y(), dateW, dateH, sti->msgServiceBg, sti->msgServiceBgCornersSmall);
 	}
-	const auto delivery = Delta::Active()
+	const auto session = &data()->history()->session();
+	const auto delivery = (Delta::UsesCoreBackend(session)
+			&& Delta::OwnsSession(session))
 		? Delta::MessageDelivery(data()->id.bare)
 		: std::nullopt;
 	_bottomInfo.paint(
@@ -5620,12 +5631,21 @@ void Message::validateFromNameText(PeerData *from) const {
 		}
 		return;
 	}
+	const auto item = data();
 	const auto version = from->nameVersion();
-	if (_fromNameVersion < version) {
+	const auto override = Delta::MessageAuthorOverride(item);
+	const auto revision = item->backendAuthorRevision();
+	if (_fromNameVersion < version
+		|| _fromNameOverride != override
+		|| _fromNameAuthorRevision != revision) {
 		_fromNameVersion = version;
+		_fromNameOverride = override;
+		_fromNameAuthorRevision = revision;
 		_fromName.setText(
 			st::msgNameStyle,
-			from->name(),
+			(Delta::OwnsSession(&item->history()->session())
+				? Delta::CoreAuthorDisplayName(from->name(), override)
+				: from->name()),
 			Ui::NameTextOptions());
 	}
 	if (from->isPremium()
@@ -5887,8 +5907,8 @@ bool Message::allowTextSelectionByHandler(
 }
 
 bool Message::hasFromName() const {
-	if (Delta::Active() && Delta::IsGroup(data()->history()->peer->id.value)) {
-		return !data()->out() && !data()->isService();
+	if (Delta::OwnsSession(&data()->history()->session())) {
+		return Delta::MessageShowsCoreAuthor(data());
 	}
 	switch (context()) {
 	case Context::AdminLog:
@@ -5946,7 +5966,7 @@ bool Message::displayFromName() const {
 bool Message::displayForwardedFrom() const {
 	const auto item = data();
 	if (const auto forwarded = item->Get<HistoryMessageForwarded>()) {
-		if (Delta::Active()) {
+		if (Delta::UsesCoreBackend(&item->history()->session())) {
 			return true;
 		}
 		if (forwarded->story) {
@@ -5974,8 +5994,11 @@ bool Message::hasOutLayout() const {
 	}
 	const auto item = data();
 	if (item->history()->peer->isUser()
-		&& Delta::IsChannel(peerToUser(item->history()->peer->id).bare)) return false;
-	if (Delta::Active()) {
+		&& Delta::OwnsSession(&item->history()->session())
+		&& Delta::IsChannel(peerToUser(item->history()->peer->id).bare)) {
+		return false;
+	}
+	if (Delta::UsesCoreBackend(&item->history()->session())) {
 		return item->out();
 	}
 	if (item->history()->peer->isSelf()) {

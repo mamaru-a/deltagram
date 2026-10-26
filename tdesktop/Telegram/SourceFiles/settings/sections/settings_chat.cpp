@@ -7,7 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "settings/sections/settings_chat.h"
 
-#include "delta/delta_bridge.h"
+#include "delta/account_backend.h"
 
 #include "settings/settings_common_session.h"
 
@@ -839,8 +839,8 @@ void BuildThemeSettingsSection(SectionBuilder &builder) {
 	builder.add([controller](const WidgetContext &ctx) {
 		SetupThemeSettings(controller, ctx.container.get(), ctx.highlights);
 		return SectionBuilder::WidgetToAdd{};
-	}, [] {
-		if (Delta::Active()) {
+	}, [session = builder.session()] {
+		if (Delta::UsesCoreBackend(session)) {
 			return SearchEntry{
 				.id = u"chat/theme-settings"_q,
 				.title = tr::lng_settings_theme_settings(tr::now),
@@ -1032,7 +1032,7 @@ void BuildStickersEmojiSection(SectionBuilder &builder) {
 		};
 	});
 
-	if (!Delta::Active()) {
+	if (Delta::UsesTelegramBackend(builder.session())) {
 		builder.add(nullptr, [] {
 			return SearchEntry{
 				.id = u"chat/my-stickers"_q,
@@ -1144,7 +1144,7 @@ void BuildArchiveSection(SectionBuilder &builder) {
 		.keywords = { u"shortcuts"_q, u"keyboard"_q, u"hotkeys"_q },
 	});
 
-	if (!Delta::Active()) {
+	if (Delta::UsesTelegramBackend(session)) {
 		if (controller) {
 			PreloadArchiveSettings(session);
 		}
@@ -1312,14 +1312,14 @@ void BuildSupportSection(SectionBuilder &builder) {
 void BuildChatSectionContent(SectionBuilder &builder) {
 	BuildThemeOptionsSection(builder);
 	BuildThemeSettingsSection(builder);
-	if (!Delta::Active()) {
+	if (Delta::UsesTelegramBackend(builder.session())) {
 		BuildCloudThemesSection(builder);
 	}
 	BuildChatBackgroundSection(builder);
 	BuildChatListQuickActionSection(builder);
 	BuildStickersEmojiSection(builder);
 	BuildMessagesSection(builder);
-	if (!Delta::Active()) {
+	if (Delta::UsesTelegramBackend(builder.session())) {
 		BuildSensitiveContentSection(builder);
 	}
 	BuildArchiveSection(builder);
@@ -1560,7 +1560,7 @@ void SetupStickersEmoji(
 		} });
 	}
 
-	if (!Delta::Active()) {
+	if (Delta::UsesTelegramBackend(&controller->session())) {
 		const auto stickersButton = AddButtonWithIcon(
 			container,
 			tr::lng_stickers_you_have(),
@@ -1854,7 +1854,7 @@ void SetupArchive(
 		showOther(ShortcutsId());
 	});
 
-	if (!Delta::Active()) {
+	if (Delta::UsesTelegramBackend(&controller->session())) {
 		PreloadArchiveSettings(&controller->session());
 		AddButtonWithIcon(
 			container,
@@ -1871,7 +1871,7 @@ void SetupExport(
 		not_null<Window::SessionController*> controller,
 		not_null<Ui::VerticalLayout*> container,
 		Fn<void(Type)> showOther) {
-	if (!Delta::Active()) {
+	if (Delta::UsesTelegramBackend(&controller->session())) {
 		AddButtonWithIcon(
 			container,
 			tr::lng_settings_export_data(),
@@ -2754,7 +2754,9 @@ void SetupThemeSettings(
 		tr::lng_settings_theme_settings());
 	if (highlights) {
 		highlights->push_back({
-			Delta::Active() ? u"chat/theme-settings"_q : u"chat/peer-color"_q,
+			Delta::UsesCoreBackend(&controller->session())
+				? u"chat/theme-settings"_q
+				: u"chat/peer-color"_q,
 			{
 				title.get(),
 				SubsectionTitleHighlight(),
@@ -2762,7 +2764,7 @@ void SetupThemeSettings(
 		});
 	}
 
-	if (!Delta::Active()) {
+	if (Delta::UsesTelegramBackend(&controller->session())) {
 		AddPeerColorButton(
 			container,
 			controller->uiShow(),

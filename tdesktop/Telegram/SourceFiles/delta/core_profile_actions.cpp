@@ -198,7 +198,7 @@ void ShowCoreChatEncryptionInfo(
 	if (!controller) {
 		return;
 	}
-	if (!Active() || !CoreProfileRealId(chat)) {
+	if (!OwnsSession(&controller->session()) || !CoreProfileRealId(chat)) {
 		controller->showToast(kCoreEncryptionUnavailable);
 		return;
 	}
@@ -216,7 +216,9 @@ void ShowCorePeerEncryptionInfo(
 	if (!controller) {
 		return;
 	}
-	if (!Active() || IsSystemUser(userId) || IsGroup(userId)) {
+	if (!OwnsSession(&controller->session())
+		|| IsSystemUser(userId)
+		|| IsGroup(userId)) {
 		controller->showToast(kCoreEncryptionUnavailable);
 		return;
 	}
@@ -267,7 +269,11 @@ void FillCoreContactNameBox(
 	const auto busy = std::make_shared<bool>(false);
 	const auto contactId = std::make_shared<int>(0);
 	WatchAccount(box, scope);
-	if (!Active() || IsSystemUser(userId) || IsGroup(userId) || !current || !current()) {
+	if (!OwnsSession(&controller->session())
+		|| IsSystemUser(userId)
+		|| IsGroup(userId)
+		|| !current
+		|| !current()) {
 		status->setText(kCoreProfileUnavailable);
 		box->addButton(tr::lng_close(), [=] { box->closeBox(); });
 		return;
@@ -333,6 +339,10 @@ void ShowCoreContactNameBox(
 	if (!controller) {
 		return;
 	}
+	if (!OwnsSession(&controller->session())) {
+		controller->showToast(kCoreProfileUnavailable);
+		return;
+	}
 	controller->show(Box([=](not_null<Ui::GenericBox*> box) {
 		FillCoreContactNameBox(box, controller, userId, adding);
 	}));
@@ -344,7 +354,9 @@ void ShowCoreContactDeleteBox(
 	if (!controller) {
 		return;
 	}
-	if (!Active() || IsSystemUser(userId) || IsGroup(userId)) {
+	if (!OwnsSession(&controller->session())
+		|| IsSystemUser(userId)
+		|| IsGroup(userId)) {
 		controller->showToast(kCoreProfileUnavailable);
 		return;
 	}
