@@ -23,7 +23,8 @@ are not copied here. Deltagram evidence comes from [PROGRESS.md](PROGRESS.md),
 
 The source at `450c8de` passes 735 serial focused Qt checks and the offline
 version/release/script regressions. The newer configured-startup correction
-passes 742 focused checks. Native `2908654` compiles and passes 700 checks;
+passes 742 focused checks; the subsequent encryption parser/presentation slice
+passes 751 helper checks and still needs native UI replay. Native `2908654` compiles and passes 700 checks;
 its modal group/member inspection and explicit Message routing pass, while the
 third-column Group Info reproduces a metadata-request loop and the group
 encryption body remains unverified. This does not establish production
@@ -46,7 +47,7 @@ unverified feature areas below remain open independently of those build gates.
 | Capability | Status | Evidence and limits |
 | --- | --- | --- |
 | Core account creation and chat-list loading | ✅ Locally checked | Qt/Core RPC self-test creates a disposable account and loads its list without mail IO. |
-| Contacts and contact deletion | ✅ Locally checked | Search, profile opening, chat creation and confirmed deletion have isolated checks. |
+| Contacts and contact deletion | ✅ Locally checked | Native `2908654` passes private alias set/clear with one write per action, rejected and confirmed contact-only deletion preserving the chat/draft, and rejected/confirmed optional deletion of a new synthetic chat. The checked confirmation removes only that fixture and unselects it; deletion persists across restart with no repeated write. Original profile data is preserved. Broader lost-ack/profile-switch UI cases remain unverified. |
 | Shared contact cards | ✅ Locally checked | Send/import, card photo and profile navigation checked. Core does not import vCard NOTE biographies; available Core contact status is displayed. |
 | Group creation | 🟡 Partial | Name/photo and member selection persist through Core. A disposable two-member group exchanged messages with official Desktop 2.62.0 on `44a91b5`; its persisted first-message info notice remains while Core confirms promotion completed. The wrong sender-profile Message destination reproduced there is corrected and passes native replay on `e669e85`, with the original draft restored. Later permission/request-UI changes still need native replay. |
 | Invitation links | 🟡 Partial | Contact/group/channel previews, confirmation and navigation checked locally. Fresh disposable GUI onboarding and QR-image SecureJoin passed against official Desktop 2.62.0 on `3c2def3`. Physical camera scanning remains unverified. |

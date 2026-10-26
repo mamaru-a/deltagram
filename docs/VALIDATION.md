@@ -1,5 +1,43 @@
 # Publication validation
 
+### Native profile mutation replay and encryption presentation — 2026-10-26
+
+On checksum-verified `2908654`, Edit name resolves the intended Core contact,
+shows Core key-contact/encryption-availability flags and permits an empty private
+alias. A temporary alias updates the profile and chat list; clearing it restores
+the recorded empty baseline. Each explicit action issues one name write. No
+chat creation, acceptance, blocking, deletion or send occurs during that replay.
+
+A new synthetic contact/chat with only a local draft isolates deletion from
+the original conversations. A rejected contact-only delete submits once, shows
+an error and preserves the contact list and draft. After cancel/reopen and a new
+confirmation, one contact delete removes the fixture from all three relevant
+Core lists while preserving its existing chat/draft. Core still permits reading
+the hidden contact, as expected. A rejected checked chat-delete submits once,
+keeps that chat/draft, and does not proceed to contact deletion. After another
+explicit confirmation with the checkbox checked, one chat delete plus one
+contact delete removes only that fixture and unselects its exact active chat.
+Normal quit, verified process shutdown and restart retain the deletion without
+repeating either write. All four original profiles, their baseline drafts,
+history/request state, the original private contact name and device-chat
+visibility are preserved. No fixture message was sent. The initial fixture
+verifier wrongly assumed the default contact list includes address contacts;
+read-only reconciliation found this one in flags 4, without a second create.
+Private evidence is under `/tmp/deltagram-live/native290-profile-actions/`.
+The replayed name/delete UI bodies are unchanged in the newer source.
+
+The encryption correction builds the final selectable, height-limited dialog
+from complete plaintext with the donor box-label style. A separate cancellable
+Loading box retains immediate feedback. Controller/account guards and an
+explicit flag set at `boxClosing` prevent presenting after cancellation, including
+the close-hook interval before widget destruction. Empty/whitespace replies are
+unreadable rather than blank Verified information. Nonempty multiline text is
+preserved. All eleven focused suites pass **751 checks**, zero failures/skips,
+serially; the tested helper header and test source match the checkout. Source audit has
+zero blocking findings. These checks do not compile the changed QtWidgets code
+or prove complete real/synthetic text rendering, scrolling, cancellation or
+profile-switch behavior; the new native replay remains required.
+
 ### Group sidebar signal correction — 2026-10-26
 
 The native sidebar request loop is traced to repeated unchanged write-access

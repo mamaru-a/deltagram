@@ -259,7 +259,11 @@ struct CoreProfileResult {
 	if (!value.isString()) {
 		return std::nullopt;
 	}
-	return value.toString();
+	const auto text = value.toString();
+	if (text.trimmed().isEmpty()) {
+		return std::nullopt;
+	}
+	return text;
 }
 
 [[nodiscard]] inline std::optional<CoreProfileChat> CoreProfileSingleChat(

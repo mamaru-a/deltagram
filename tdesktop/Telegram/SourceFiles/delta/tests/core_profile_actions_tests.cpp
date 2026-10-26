@@ -600,6 +600,84 @@ private slots:
 		expectAllowed(rpc);
 	}
 
+	void encryptionTextFromReplyBoundaries_data() {
+		QTest::addColumn<QString>("text");
+		QTest::addColumn<bool>("ok");
+		QTest::newRow("empty") << u""_s << false;
+		QTest::newRow("spaces") << u"   "_s << false;
+		QTest::newRow("newlines") << u"\n\n"_s << false;
+		QTest::newRow("tabs") << u"\t \n"_s << false;
+		QTest::newRow("plain") << u"fingerprint line"_s << true;
+		QTest::newRow("multiline")
+			<< u"Messages are end-to-end encrypted.\n\nFirst diagnostic line.\nSecond diagnostic line."_s
+			<< true;
+	}
+
+	void encryptionTextFromReplyBoundaries() {
+		QFETCH(QString, text);
+		QFETCH(bool, ok);
+		const auto parsed = Delta::CoreEncryptionTextFromReply({
+			{ u"result"_s, text },
+		});
+		QCOMPARE(parsed.has_value(), ok);
+		if (ok) {
+			QCOMPARE(*parsed, text);
+		}
+	}
+
+	void encryptionEmptyReplyIsUnreadable_data() {
+		QTest::addColumn<QString>("text");
+		QTest::newRow("empty") << u""_s;
+		QTest::newRow("whitespace") << u" \n\t "_s;
+	}
+
+	void encryptionEmptyReplyIsUnreadable() {
+		QFETCH(QString, text);
+		ProfileFixture rpc;
+		auto scope = Delta::AccountScope();
+		auto result = std::optional<Delta::CoreProfileResult>();
+		Delta::ReadCoreEncryptionInfo(
+			rpc.bind(),
+			scope,
+			2,
+			std::nullopt,
+			13,
+			[&](auto value) { result = std::move(value); });
+		QVERIFY(rpc.replyResult(text));
+		QVERIFY(result);
+		QCOMPARE(result->outcome, Delta::CoreProfileOutcome::Denied);
+		QCOMPARE(result->error, Delta::kCoreEncryptionUnreadable);
+		QVERIFY(result->text.isEmpty());
+		expectLocalError(result->error);
+		QCOMPARE(rpc.writes(), 0);
+		expectAllowed(rpc);
+	}
+
+	void encryptionMultilineBodyIsKept() {
+		const auto body = u"Messages are end-to-end encrypted.\n\nFirst diagnostic line.\nSecond diagnostic line."_s;
+		ProfileFixture rpc;
+		auto scope = Delta::AccountScope();
+		auto result = std::optional<Delta::CoreProfileResult>();
+		Delta::ReadCoreEncryptionInfo(
+			rpc.bind(),
+			scope,
+			2,
+			std::nullopt,
+			13,
+			[&](auto value) { result = std::move(value); });
+		QVERIFY(rpc.replyResult(body));
+		QVERIFY(result);
+		QCOMPARE(result->outcome, Delta::CoreProfileOutcome::Verified);
+		QCOMPARE(result->text, body);
+		QVERIFY(result->error.isEmpty());
+		QCOMPARE(
+			*Delta::CoreEncryptionTextFromReply({ { u"result"_s, body } }),
+			body);
+		QVERIFY(!rpc.has(u"get_contact_encryption_info"_s));
+		QCOMPARE(rpc.writes(), 0);
+		expectAllowed(rpc);
+	}
+
 	void encryptionNonStringIsUnreadable_data() {
 		QTest::addColumn<QJsonObject>("reply");
 		QTest::newRow("error") << QJsonObject{ { u"error"_s, kSecretError } };

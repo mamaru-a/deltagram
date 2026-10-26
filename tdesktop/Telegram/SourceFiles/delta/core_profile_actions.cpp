@@ -88,63 +88,106 @@ void WatchAccount(not_null<Ui::RpWidget*> widget, const std::shared_ptr<AccountS
 	return lines.join('\n');
 }
 
+[[nodiscard]] style::margins EncryptionInfoLabelPadding() {
+	const auto padding = st::boxPadding;
+	return QMargins(padding.left(), 0, padding.right(), padding.bottom());
+}
+
+[[nodiscard]] object_ptr<Ui::GenericBox> MakeEncryptionInfoBox(QString text) {
+	return Box([text = std::move(text)](not_null<Ui::GenericBox*> box) {
+		box->setTitle(rpl::single(u"Encryption info"_q));
+		box->setMaxHeight(st::boxMaxListHeight);
+		const auto label = box->addRow(
+			object_ptr<Ui::FlatLabel>(box, text, st::boxLabel),
+			EncryptionInfoLabelPadding());
+		label->setSelectable(true);
+		box->addButton(tr::lng_close(), [=] { box->closeBox(); });
+	});
+}
+
 void ShowEncryptionBox(
 		not_null<Window::SessionController*> controller,
 		const std::shared_ptr<AccountScope> &scope,
 		std::optional<int> contactId,
 		std::optional<int> chatId) {
-	controller->show(Box([=](not_null<Ui::GenericBox*> box) {
+	const auto current = CaptureAccountGuard();
+	const auto consumed = std::make_shared<bool>(false);
+	const auto loading = controller->show(Box([scope, consumed](
+			not_null<Ui::GenericBox*> box) {
+		box->boxClosing() | rpl::on_next([consumed] {
+			*consumed = true;
+		}, box->lifetime());
 		box->setTitle(rpl::single(u"Encryption info"_q));
-		box->setMaxHeight(style::ConvertScale(480));
-		const auto label = box->addRow(
-			object_ptr<Ui::FlatLabel>(box, u"Loading…"_q, st::aboutLabel),
-			st::boxRowPadding);
-		label->setSelectable(true);
+		box->addRow(
+			object_ptr<Ui::FlatLabel>(box, u"Loading…"_q, st::boxLabel),
+			EncryptionInfoLabelPadding());
 		WatchAccount(box, scope);
-		const auto current = CaptureAccountGuard();
-		const auto weak = base::make_weak(box);
-		ReadCoreEncryptionInfo(
-			LiveProfileRpc(current),
-			*scope,
-			kLiveAccount,
-			contactId,
-			chatId,
-			[=](CoreProfileResult result) {
-				if (!weak || (current && !current())) {
-					return;
-				}
-				if (result.outcome != CoreProfileOutcome::Verified) {
-					label->setText(result.error.isEmpty()
-						? kCoreEncryptionUnreadable
-						: result.error);
-					return;
-				}
-				auto text = result.text;
-				if (contactId) {
-					ResolveCoreProfileContact(
-						LiveProfileRpc(current),
-						*scope,
-						kLiveAccount,
-						contactId,
-						std::nullopt,
-						[=](CoreProfileResult contact) {
-							if (!weak || (current && !current())) {
-								return;
-							}
-							if (CoreProfileSucceeded(contact)) {
-								label->setText(text
-									+ u"\n\n"_q
-									+ ContactEncryptionFlags(contact.contact));
-							} else {
-								label->setText(text);
-							}
-						});
-					return;
-				}
-				label->setText(text);
-			});
 		box->addButton(tr::lng_close(), [=] { box->closeBox(); });
 	}));
+	const auto abandoned = [=] {
+		return *consumed || !loading;
+	};
+	const auto present = crl::guard(controller, [=](QString text) {
+		if (abandoned()) {
+			return;
+		}
+		*consumed = true;
+		loading->closeBox();
+		if (current && !current()) {
+			return;
+		}
+		controller->show(MakeEncryptionInfoBox(std::move(text)));
+	});
+	ReadCoreEncryptionInfo(
+		LiveProfileRpc(current),
+		*scope,
+		kLiveAccount,
+		contactId,
+		chatId,
+		crl::guard(controller, [=](CoreProfileResult result) {
+			if (abandoned()) {
+				return;
+			}
+			if (current && !current()) {
+				*consumed = true;
+				loading->closeBox();
+				return;
+			}
+			if (result.outcome != CoreProfileOutcome::Verified) {
+				present(result.error.isEmpty()
+					? kCoreEncryptionUnreadable
+					: result.error);
+				return;
+			}
+			const auto text = result.text;
+			if (!contactId) {
+				present(text);
+				return;
+			}
+			ResolveCoreProfileContact(
+				LiveProfileRpc(current),
+				*scope,
+				kLiveAccount,
+				contactId,
+				std::nullopt,
+				crl::guard(controller, [=](CoreProfileResult contact) {
+					if (abandoned()) {
+						return;
+					}
+					if (current && !current()) {
+						*consumed = true;
+						loading->closeBox();
+						return;
+					}
+					if (CoreProfileSucceeded(contact)) {
+						present(text
+							+ u"\n\n"_q
+							+ ContactEncryptionFlags(contact.contact));
+					} else {
+						present(text);
+					}
+				}));
+		}));
 }
 
 } // namespace
