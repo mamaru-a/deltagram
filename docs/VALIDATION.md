@@ -26,11 +26,15 @@ bytes match the stopped source copy. One explicit GUI probe sends through Core
 and reaches OutDelivered. After stopping the restored client and restarting the
 main disposable client, the recipient group contains that exact probe once.
 The original source profile stays stopped; no concurrent copy of that identity
-runs. The restored saved draft and all four main profiles' baseline drafts,
+runs. In the reverse direction, one new GUI probe from the recipient reaches
+OutDelivered; reopening the restored client receives it exactly once. Its
+history renders the full body with the correct group and sender. The restored
+client is stopped before returning to the main test profiles. The restored
+saved draft and all four main profiles' baseline drafts,
 history, request states and normal device-chat visibility remain intact. Mail
 IO is enabled only for this explicit delivery phase. Private evidence is under
 `/tmp/deltagram-live/backup-gui-122/`. This does not prove protected-backup GUI
-support, in-flight lock/teardown, restored incoming synchronization or avatar
+support, in-flight lock/teardown or avatar
 selection in the native onboarding surface.
 
 ### Native local-language restart round trip — 2026-10-26

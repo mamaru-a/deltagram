@@ -26,7 +26,7 @@ version/release/script regressions. The newer configured-startup correction
 passes 742 focused checks; the subsequent encryption parser/presentation slice
 passes 751 helper checks and still needs native UI replay. Native `122a3ec`
 compiles and passes 735 checks; isolated plain restore, same-ID retry-open,
-restored-photo rendering and one outgoing delivery pass. Native `2908654`
+restored-photo rendering and bidirectional delivery pass. Native `2908654`
 compiles and passes 700 checks; its local-language/English restart round trip,
 profile name/deletion, archived-search metadata failure/retry, modal group/member
 inspection and explicit Message routing pass, while the
@@ -73,7 +73,7 @@ unverified feature areas below remain open independently of those build gates.
 | Voice messages | 🟡 Partial | Native waveform, duration, play/pause and seeking are implemented. Ordinary GUI recording on `49454ee` passed preview, rejected storage, explicit retry, restart, quoted delivery and byte-identical playback in official Desktop 2.62.0 using isolated virtual audio. Both clients displayed the 21-second duration. Quoted voice-plus-forwarding also passes rejected-send/restart/delivery and reference playback on `5182d5e`. Physical audio devices and round-video capture remain unverified. |
 | Multiple profiles | 🟡 Partial | Switching clears reused histories, drafts, pending messages and attachment caches. Core draft storage and asynchronous callbacks are scoped to the account. `3c2def3` passed distinct drafts, red/blue images, two-/four-second voice clips, and playback/search reset across overlapping message IDs. |
 | Profile and group photos | 🟡 Partial | Settings image selection/crop/save and account avatar colors checked locally with Core; group checks recorded. Complete camera workflows and live photo distribution need checking. |
-| Onboarding and relay settings | 🟡 Partial | Fresh GUI creation, repeated-submit protection, fail-closed discovery, QR-image join and live exchange passed on `3c2def3`. Native `122a3ec` passes isolated plain backup restore, preserved draft/photo, same-ID retry after opening failure and one outgoing delivery. In-flight lock/teardown, restored incoming synchronization, protected-backup GUI support and newer cold-start recovery remain unverified. |
+| Onboarding and relay settings | 🟡 Partial | Fresh GUI creation, repeated-submit protection, fail-closed discovery, QR-image join and live exchange passed on `3c2def3`. Native `122a3ec` passes isolated plain backup restore, preserved draft/photo, same-ID retry after opening failure and bidirectional delivery. In-flight lock/teardown, protected-backup GUI support and newer cold-start recovery remain unverified. |
 | Invite QR scanning | 🟡 Partial | Camera capture, QR image files and clipboard screenshots feed Core invites for an explicit Join. Image decoding is checked locally; physical camera capture needs hardware validation. |
 | Second-device setup | 🟡 Partial | Full transfer, restored image bytes and bidirectional synchronization passed on `27656b4` against official Desktop 2.62.0. Early/ready cancellation, duplicate starts and a profile switch during preparation passed. Camera/mobile receive paths remain unverified. |
 | Contact status and biographies | 🟡 Partial | Available Core contact status displayed; imported vCard biographies are unsupported by the current Core snapshot. |
