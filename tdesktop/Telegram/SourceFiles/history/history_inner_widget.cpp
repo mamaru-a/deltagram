@@ -9,6 +9,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "delta/delta_bridge.h"
 #include "delta/delta_boxes.h"
+#include "delta/full_message_box.h"
 
 #include "api/api_polls.h"
 #include "chat_helpers/stickers_emoji_pack.h"
@@ -3850,6 +3851,20 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 		_menu->addAction(u"Info"_q, crl::guard(controller, [=] {
 			Delta::ShowMessageInfo(controller, infoId);
 		}), &st::menuIconInfo);
+	}
+	if (infoItem && isUponSelected <= 0 && Delta::HasFullMessage(infoItem)) {
+		const auto generation = Delta::AccountGeneration();
+		const auto current = Delta::CaptureAccountGuard();
+		const auto itemId = infoItem->fullId();
+		const auto sessionId = infoItem->history()->session().uniqueId();
+		_menu->addAction(tr::lng_full_message_show(tr::now), crl::guard(controller, [=] {
+			if (generation != Delta::AccountGeneration()) return;
+			if (current && !current()) return;
+			if (controller->session().uniqueId() != sessionId) return;
+			const auto item = controller->session().data().message(itemId);
+			if (!item || !Delta::HasFullMessage(item)) return;
+			Delta::ShowFullMessage(controller, item);
+		}), &st::menuIconExpand);
 	}
 	if (_dragStateItem) {
 		const auto view = viewByItem(_dragStateItem);

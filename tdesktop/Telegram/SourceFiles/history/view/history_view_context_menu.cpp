@@ -9,6 +9,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "delta/delta_bridge.h"
 #include "delta/delta_boxes.h"
+#include "delta/full_message_box.h"
 
 #include "api/api_attached_stickers.h"
 #include "api/api_editing.h"
@@ -1437,6 +1438,23 @@ void AddMessageActions(
 		menu->addAction(u"Info"_q, crl::guard(controller, [=] {
 			Delta::ShowMessageInfo(controller, id);
 		}), &st::menuIconInfo);
+	}
+	if (request.item
+		&& request.selectedItems.empty()
+		&& Delta::HasFullMessage(request.item)) {
+		const auto controller = list->controller();
+		const auto generation = Delta::AccountGeneration();
+		const auto current = Delta::CaptureAccountGuard();
+		const auto itemId = request.item->fullId();
+		const auto sessionId = request.item->history()->session().uniqueId();
+		menu->addAction(tr::lng_full_message_show(tr::now), crl::guard(controller, [=] {
+			if (generation != Delta::AccountGeneration()) return;
+			if (current && !current()) return;
+			if (controller->session().uniqueId() != sessionId) return;
+			const auto item = controller->session().data().message(itemId);
+			if (!item || !Delta::HasFullMessage(item)) return;
+			Delta::ShowFullMessage(controller, item);
+		}), &st::menuIconExpand);
 	}
 	AddForwardAction(menu, request, list);
 	AddOfferAction(menu, request, list);

@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "history/view/history_view_message.h"
 #include "delta/delta_bridge.h"
+#include "delta/full_message_box.h"
 
 #include "api/api_suggest_post.h"
 #include "api/api_transcribes.h"
@@ -790,6 +791,7 @@ bool Message::prepareRichPageTextRect(QRect &trect) const {
 	if (_comments) {
 		inner.setHeight(inner.height() - st::historyCommentsButtonHeight);
 	}
+	skipFullMessageFooter(inner);
 	trect = inner.marginsRemoved(st::msgPadding);
 	const auto additionalInfoSkip = (mediaDisplayed
 		&& !media->additionalInfoString().isEmpty())
@@ -1202,6 +1204,7 @@ void Message::animateReaction(Ui::ReactionFlyAnimationArgs &&args) {
 		if (_comments) {
 			inner.setHeight(inner.height() - st::historyCommentsButtonHeight);
 		}
+		skipFullMessageFooter(inner);
 		auto trect = inner.marginsRemoved(st::msgPadding);
 		const auto reactionsTop = (reactionsInBubble && !_viewButton)
 			? st::mediaInBubbleSkip
@@ -1261,6 +1264,7 @@ QRect Message::effectIconGeometry() const {
 		if (_comments) {
 			inner.setHeight(inner.height() - st::historyCommentsButtonHeight);
 		}
+		skipFullMessageFooter(inner);
 		auto trect = inner.marginsRemoved(st::msgPadding);
 		const auto reactionsTop = (reactionsInBubble && !_viewButton)
 			? st::mediaInBubbleSkip
@@ -1801,6 +1805,7 @@ void Message::draw(Painter &p, const PaintContext &context) const {
 		if (data()->repliesAreComments() || data()->externalReply()) {
 			localMediaBottom -= st::historyCommentsButtonHeight;
 		}
+		localMediaBottom -= fullMessageFooterHeight();
 		if (_viewButton) {
 			localMediaBottom -= st::mediaInBubbleSkip + _viewButton->height();
 		}
@@ -1942,6 +1947,7 @@ void Message::draw(Painter &p, const PaintContext &context) const {
 
 		auto inner = g;
 		paintCommentsButton(p, inner, context);
+		paintFullMessageFooter(p, inner, context);
 
 		auto trect = inner.marginsRemoved(st::msgPadding);
 
@@ -2135,6 +2141,24 @@ void Message::draw(Painter &p, const PaintContext &context) const {
 				const auto o = p.opacity();
 				p.setOpacity(0.3);
 				p.fillRect(g.left(), g.top() + g.height() - st::historyCommentsButtonHeight - st::lineWidth, g.width(), st::lineWidth, stm->msgDateFg);
+				p.setOpacity(o);
+			}
+			if (hasFullMessageFooter()) {
+				const auto o = p.opacity();
+				p.setOpacity(0.3);
+				const auto extra = _comments
+					? st::historyCommentsButtonHeight
+					: 0;
+				p.fillRect(
+					g.left(),
+					g.top()
+						+ g.height()
+						- extra
+						- st::historyCommentsButtonHeight
+						- st::lineWidth,
+					g.width(),
+					st::lineWidth,
+					stm->msgDateFg);
 				p.setOpacity(o);
 			}
 		}
@@ -2492,6 +2516,77 @@ void Message::paintCommentsButton(
 			p.drawEllipse(style::rtlrect(left + views->replies.textWidth + st::mediaUnreadSkip, textTop + st::mediaUnreadTop, st::mediaUnreadSize, st::mediaUnreadSize, width));
 		}
 	}
+}
+
+bool Message::hasFullMessageFooter() const {
+	return Delta::HasFullMessage(data());
+}
+
+int Message::fullMessageFooterHeight() const {
+	return hasFullMessageFooter() ? st::historyCommentsButtonHeight : 0;
+}
+
+void Message::skipFullMessageFooter(QRect &g) const {
+	if (const auto extra = fullMessageFooterHeight()) {
+		g.setHeight(g.height() - extra);
+	}
+}
+
+ClickHandlerPtr Message::fullMessageLink() const {
+	const auto generation = Delta::AccountGeneration();
+	if (_fullMessageLink && _fullMessageGeneration == generation) {
+		return _fullMessageLink;
+	}
+	const auto fullId = data()->fullId();
+	const auto sessionId = data()->history()->session().uniqueId();
+	const auto current = Delta::CaptureAccountGuard();
+	_fullMessageGeneration = generation;
+	_fullMessageLink = std::make_shared<LambdaClickHandler>([=](
+			ClickContext context) {
+		const auto controller = ExtractController(context);
+		if (!controller || controller->session().uniqueId() != sessionId) {
+			return;
+		}
+		if (generation != Delta::AccountGeneration()) {
+			return;
+		}
+		if (current && !current()) {
+			return;
+		}
+		const auto item = controller->session().data().message(fullId);
+		if (!item || !Delta::HasFullMessage(item)) {
+			return;
+		}
+		Delta::ShowFullMessage(controller, item);
+	});
+	return _fullMessageLink;
+}
+
+void Message::paintFullMessageFooter(
+		Painter &p,
+		QRect &g,
+		const PaintContext &context) const {
+	if (!hasFullMessageFooter()) {
+		return;
+	}
+	const auto stm = context.messageStyle();
+	g.setHeight(g.height() - st::historyCommentsButtonHeight);
+	const auto top = g.top() + g.height();
+	auto left = g.left() + st::historyCommentsSkipLeft;
+	p.setPen(stm->msgFileThumbLinkFg);
+	p.setFont(st::semiboldFont);
+	const auto textTop = top
+		+ (st::historyCommentsButtonHeight - st::semiboldFont->height) / 2;
+	const auto available = std::max(
+		g.width() - (left - g.left()) - st::historyCommentsSkipLeft,
+		0);
+	p.drawTextLeft(
+		left,
+		textTop,
+		g.width(),
+		st::semiboldFont->elided(
+			tr::lng_full_message_show(tr::now),
+			available));
 }
 
 void Message::paintFromName(
@@ -3259,6 +3354,7 @@ PointState Message::pointState(QPoint point) const {
 			if (item->repliesAreComments() || item->externalReply()) {
 				g.setHeight(g.height() - st::historyCommentsButtonHeight);
 			}
+			skipFullMessageFooter(g);
 
 			auto trect = g.marginsRemoved(st::msgPadding);
 			if (reactionsInBubble) {
@@ -3965,6 +4061,10 @@ TextState Message::textState(
 			AddTextStateOffset(&result, visibleMediaTextLen + visibleTextLen);
 			return result;
 		}
+		if (getStateFullMessageFooter(point, inner, &result)) {
+			AddTextStateOffset(&result, visibleMediaTextLen + visibleTextLen);
+			return result;
+		}
 		auto trect = inner.marginsRemoved(st::msgPadding);
 		const auto additionalInfoSkip = (mediaDisplayed
 			&& !media->additionalInfoString().isEmpty())
@@ -4184,6 +4284,26 @@ bool Message::getStateCommentsButton(
 	}
 	outResult->link = _comments->link;
 	_comments->lastPoint = point - QPoint(g.left(), g.top() + g.height());
+	return true;
+}
+
+bool Message::getStateFullMessageFooter(
+		QPoint point,
+		QRect &g,
+		not_null<TextState*> outResult) const {
+	if (!hasFullMessageFooter()) {
+		return false;
+	}
+	g.setHeight(g.height() - st::historyCommentsButtonHeight);
+	if (data()->isSending()
+		|| !QRect(
+			g.left(),
+			g.top() + g.height(),
+			g.width(),
+			st::historyCommentsButtonHeight).contains(point)) {
+		return false;
+	}
+	outResult->link = fullMessageLink();
 	return true;
 }
 
@@ -5299,7 +5419,9 @@ Reactions::ButtonParameters Message::reactionButtonParameters(
 		const TextState &reactionState) const {
 	using namespace Reactions;
 	auto result = ButtonParameters{ .context = data()->fullId() };
-	const auto outsideBubble = (!_comments && !embedReactionsInBubble());
+	const auto outsideBubble = (!_comments
+		&& !hasFullMessageFooter()
+		&& !embedReactionsInBubble());
 	const auto geometry = countGeometry();
 	result.pointer = position;
 	const auto onTheLeft = hasRightLayout();
@@ -5562,6 +5684,8 @@ void Message::refreshDataIdHook() {
 	if (_comments) {
 		_comments->link = nullptr;
 	}
+	_fullMessageLink = nullptr;
+	_fullMessageGeneration = 0;
 }
 
 int Message::monospaceMaxWidth() const {
@@ -5729,6 +5853,8 @@ WebPage *Message::factcheckBlock() const {
 bool Message::toggleSelectionByHandlerClick(
 		const ClickHandlerPtr &handler) const {
 	if (_comments && _comments->link == handler) {
+		return true;
+	} else if (_fullMessageLink && _fullMessageLink == handler) {
 		return true;
 	} else if (_viewButton && _viewButton->link() == handler) {
 		return true;
@@ -6829,6 +6955,7 @@ int Message::resizeContentGetHeight(int newWidth) {
 			_comments = nullptr;
 			checkHeavyPart();
 		}
+		newHeight += fullMessageFooterHeight();
 		newHeight += viewButtonHeight();
 	} else if (mediaDisplayed) {
 		newHeight = media->height();

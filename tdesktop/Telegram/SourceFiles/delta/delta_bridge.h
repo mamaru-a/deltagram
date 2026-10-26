@@ -10,6 +10,7 @@ This file is part of Delta Tel, a Telegram Desktop based Delta Chat client.
 #include "delta/compose_batch.h"
 #include "delta/history_mutations.h"
 #include "delta/contact_blocking.h"
+#include "delta/full_message.h"
 #include "mtproto/core_types.h"
 #include "rpl/producer.h"
 
@@ -28,6 +29,7 @@ class HistoryItem;
 
 namespace Main {
 class Account;
+class Session;
 } // namespace Main
 
 namespace MTP {
@@ -100,6 +102,13 @@ enum class DeliveryState { Pending, Failed, Sent, Read };
 void ApplyMessageData(not_null<HistoryItem*> item);
 [[nodiscard]] bool CanDownloadMessage(int messageId);
 void DownloadMessage(int messageId);
+[[nodiscard]] bool OwnsSession(not_null<Main::Session*> session);
+[[nodiscard]] bool HasFullMessage(not_null<HistoryItem*> item);
+void LoadFullMessage(
+	not_null<Main::Session*> session,
+	int messageId,
+	const AccountScope &scope,
+	Fn<void(FullMessageResult)> done);
 [[nodiscard]] std::optional<int> ChannelViewCount(int messageId);
 void MessageInfo(int messageId, Fn<void(QString text, QString error)> done);
 void DeleteContact(int contactId, bool deleteChat, Fn<void(QString error)> done);

@@ -35,6 +35,16 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_delta_delete" = "Delete";
 "lng_delta_delete_group_request" = "This deletes the group conversation \"{name}\". Group members are not blocked.";
 "lng_delta_delete_chat_request" = "This removes the conversation \"{name}\". The conversation is blocked and hidden.";
+"lng_full_message_show" = "Show full message";
+"lng_full_message_title" = "Full message";
+"lng_full_message_loading" = "Loading...";
+"lng_full_message_unavailable" = "This message cannot be shown in full.";
+"lng_full_message_unreadable" = "The full message could not be read.";
+"lng_full_message_empty" = "The full message is empty.";
+"lng_full_message_malformed" = "The full message could not be displayed.";
+"lng_full_message_limited" = "Images and formatting may look different from the original message.";
+"lng_full_message_plain" = "The original images and formatting could not be shown. The message text is below.";
+"lng_full_message_link_denied" = "This link cannot be opened.";
 "lng_minimize_to_tray" = "Minimize to Tray";
 "lng_quit_from_tray" = "Quit Telegram";
 "lng_deltagram_quit_from_tray" = "Quit Deltagram";

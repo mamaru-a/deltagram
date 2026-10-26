@@ -11,6 +11,7 @@ This file is part of Delta Tel, a Telegram Desktop based Delta Chat client.
 #include "delta/open_contact_chat.h"
 #include "delta/group_info.h"
 #include "delta/search_chat_metadata.h"
+#include "delta/full_message.h"
 
 #include "apiwrap.h"
 #include "delta/account_scope.h"
@@ -4657,6 +4658,88 @@ bool CanEditMessage(int messageId) {
 bool CanDownloadMessage(int messageId) {
 	return Active() && CanDownloadMessageState(CoreMessages.value(messageId)
 		.value(u"downloadState"_q).toString());
+}
+
+bool OwnsSession(not_null<Main::Session*> session) {
+	return GlobalBridge && GlobalBridge->_session.get() == session.get();
+}
+
+bool HasFullMessage(not_null<HistoryItem*> item) {
+	if (!OwnsSession(&item->history()->session())) {
+		return false;
+	}
+	const auto id = item->id.bare;
+	if (id <= 9 || id > std::numeric_limits<int>::max()) {
+		return false;
+	}
+	return FullMessageFlag(CoreMessages.value(int(id)), int(id));
+}
+
+void LoadFullMessage(
+		not_null<Main::Session*> session,
+		int messageId,
+		const AccountScope &scope,
+		Fn<void(FullMessageResult)> done) {
+	if (!OwnsSession(session)) {
+		done({
+			FullMessageOutcome::Unavailable,
+			{},
+			{},
+			kFullMessageUnavailable,
+		});
+		return;
+	}
+	if (!FullMessageFlag(CoreMessages.value(messageId), messageId)) {
+		done({
+			FullMessageOutcome::Unavailable,
+			{},
+			{},
+			kFullMessageUnavailable,
+		});
+		return;
+	}
+	const auto bridge = GlobalBridge;
+	const auto account = bridge->_accountId;
+	const auto epoch = bridge->_dialogsEpoch;
+	const auto alive = bridge->_alive;
+	const auto current = bridge->_accountScope.guard();
+	const auto expectedChat = FullMessageChatFromMetadata(
+		CoreMessages.value(messageId)).value_or(0);
+	auto request = [=](
+			QString method,
+			QJsonArray args,
+			DeltaRpc::Callback cb) {
+		if (!GlobalBridge || alive.expired() || !OwnsSession(session)) {
+			return;
+		}
+		if (epoch != GlobalBridge->_dialogsEpoch
+			|| GlobalBridge->_accountId != account
+			|| (current && !current())) {
+			return;
+		}
+		const auto rpc = GlobalBridge->_rpc;
+		if (!rpc) {
+			return;
+		}
+		rpc->call(method, args, [=](QJsonObject reply) {
+			if (!GlobalBridge || alive.expired() || !OwnsSession(session)) {
+				return;
+			}
+			if (epoch != GlobalBridge->_dialogsEpoch
+				|| GlobalBridge->_accountId != account
+				|| (current && !current())) {
+				return;
+			}
+			cb(std::move(reply));
+		});
+	};
+	ReadFullMessage(
+		std::move(request),
+		scope,
+		account,
+		messageId,
+		expectedChat,
+		std::move(done));
 }
 
 void DownloadMessage(int messageId) {

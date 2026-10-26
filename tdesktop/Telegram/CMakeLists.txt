@@ -1447,6 +1447,10 @@ PRIVATE
     delta/search_failure.h
     delta/core_profile_actions.cpp
     delta/core_profile_actions.h
+    delta/full_message.h
+    delta/full_message_box.cpp
+    delta/full_message_box.h
+    delta/full_message_view.h
     delta/profile_setup_actions.h
     delta/profile_setup_avatar.h
     delta/startup_state.h
