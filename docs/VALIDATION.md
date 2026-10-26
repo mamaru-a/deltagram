@@ -335,6 +335,24 @@ changed. Captures are `/tmp/14878-settings-*.png` and
 fixture directory. This does not validate every settings/search route, physical
 devices, custom-language import or wallpaper/theme persistence.
 
+### Local-storage cache wording — 2026-10-26
+
+Native settings replay exposed a false claim that all media remains in the
+Telegram cloud and can be downloaded again. Source tracing confirms this
+screen clears `session.data().cache()`, `cacheBigFile()` and unused emoji cache
+files. The first two are donor `tdata/user_*/cache` and `media_cache`; their
+cleaner removes old versions under those cache bases. It does not call Core
+JSON-RPC or traverse Core's account blob directory. Size/age limits likewise
+apply to these donor caches, not total Core account storage.
+
+The Core-specific copy now says this cache uses the displayed space and that
+clearing it does not delete original message files. Tooltip and limit text also
+refer to cache files; donor copy is retained outside Core mode. No cloud
+retention or re-download guarantee is made. The source audit checks 13,230 files
+with no blocking findings and the diff is whitespace-clean. New language keys
+and rendered copy await native compilation/replay. Clear all and limit sliders
+were not exercised; cache isolation here is source evidence.
+
 ### Core send-permission boundary — 2026-10-26
 
 `22bfd8f` adds an account/chat-scoped FullChat permission observer and gates the
@@ -578,6 +596,18 @@ blocked chat whose contact is unblocked cannot be distinguished by this API.
 Creation also is not atomic with lookup: an incoming request can arrive between
 the reads and the write. The helper never retries a creation, but these Core API
 limits remain unresolved; this change does not establish atomic request safety.
+
+Fresh follow-up requests are prepared in **Deltagram integrity alternate**:
+Single chat `13` and Group chat `14`, both `isContactRequest:true` and
+`canSend:false`, from **Deltagram integrity request sender**. They are reserved
+for contact-open and lost-ack Group Delete replay. A separate follow-up Group
+arrived in the primary profile as chat `18`; Core reports it already non-request
+and sendable, so it is not used as a request fixture. No client Accept was
+issued. Original drafts/message IDs in both profiles remain unchanged, and the
+separate sender Core exited. Private `request-followup-fixture/reconciled.json`
+and `preservation.json` record the observed states. The creation script stopped
+at its request-only assertion for that primary Group; its intent/ack journals
+must not be replayed or retried.
 
 ### Sender and chat identity lookups — 2026-10-26
 

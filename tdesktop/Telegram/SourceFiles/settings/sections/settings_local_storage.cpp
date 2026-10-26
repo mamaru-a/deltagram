@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "settings/sections/settings_local_storage.h"
 
+#include "delta/delta_bridge.h"
 #include "settings.h"
 #include "settings/settings_common.h"
 #include "data/data_session.h"
@@ -1071,10 +1072,15 @@ void LocalStorage::DeviceBar::refresh() {
 void LocalStorage::DeviceBar::apply() {
 	const auto used = std::max(_total - _free, int64());
 	_cache = std::min(_reported, used);
-	_subtitle->setText(tr::lng_local_storage_device_usage(
-		tr::now,
-		lt_percent,
-		FormatStoragePercent(_cache, _total)));
+	_subtitle->setText(Delta::Active()
+		? tr::lng_delta_local_storage_device_usage(
+			tr::now,
+			lt_percent,
+			FormatStoragePercent(_cache, _total))
+		: tr::lng_local_storage_device_usage(
+			tr::now,
+			lt_percent,
+			FormatStoragePercent(_cache, _total)));
 	resizeToWidth(width());
 	update();
 }
@@ -1163,7 +1169,9 @@ TextWithEntities LocalStorage::DeviceBar::tooltipText() const {
 		result.append(label).append(u": "_q).append(
 			Ui::Text::Bold(FormatStorageSize(size)));
 	};
-	line(tr::lng_local_storage_device_telegram(tr::now), _cache);
+	line(Delta::Active()
+		? tr::lng_delta_local_storage_device_cache(tr::now)
+		: tr::lng_local_storage_device_telegram(tr::now), _cache);
 	line(tr::lng_local_storage_device_other(tr::now), other);
 	line(tr::lng_local_storage_device_free(tr::now), _free);
 	line(tr::lng_local_storage_device_total(tr::now), _total);
@@ -1931,13 +1939,17 @@ void LocalStorage::setupControls(not_null<Ui::VerticalLayout*> container) {
 		label->setAttribute(Qt::WA_TransparentForMouseEvents);
 	};
 
-	addAbout(tr::lng_local_storage_about());
+	addAbout(Delta::Active()
+		? tr::lng_delta_local_storage_about()
+		: tr::lng_local_storage_about());
 
 	const auto settingsIsland = AddIsland(container);
 	setupLimits(settingsIsland);
 	Ui::AddSkip(settingsIsland, st::localStorageIslandPadding);
 
-	addAbout(tr::lng_local_storage_max_size_about());
+	addAbout(Delta::Active()
+		? tr::lng_delta_local_storage_max_size_about()
+		: tr::lng_local_storage_max_size_about());
 
 	updateRowCorners();
 	updateChart();
