@@ -1,5 +1,18 @@
 # Publication validation
 
+### Group sidebar signal correction — 2026-10-26
+
+The native sidebar request loop is traced to repeated unchanged write-access
+values. FullChat reads bump `ChannelRevision`; the write-access producer emits
+the same boolean again; the third-column subscriber recreates Group Info and
+starts another read. The source now filters identical booleans within that
+producer and identical `(chat key, canWrite)` values after switching producers.
+Chat changes and real permission changes still reach the existing handler.
+Core permission observation and the unresolved-group restore tick are unchanged.
+Whitespace checks pass. The prior 742 focused checks do not cover this widget
+subscription; native compilation and sidebar open/reopen/restore replay remain
+required before calling the loop fixed at runtime.
+
 ### Integrated native group replay and startup correction — 2026-10-26
 
 [Native `2908654`](https://github.com/omidz4t/deltagram/actions/runs/40338239128)
@@ -19,9 +32,12 @@ draft and makes no create/accept/block/send call. Baseline history, drafts,
 request state and device-chat visibility remain preserved.
 
 Two native gates remain failed/unverified. The group Encryption info action
-requests the correct Core method, whose nonempty result was confirmed separately,
-but settled captures contain only the dialog title; body presentation is under
-review. Toggling the third-column Group Info leaves Loading visible and produces
+requests the correct Core method, whose nonempty result was confirmed separately.
+OCR detected only the title, but a later synthetic rendering fixture proved that
+OCR misses visible body text, so this does not prove a blank real dialog. Visual
+inspection of that explicitly synthetic three-line fixture confirms that its
+final line is clipped. The override is cleared; complete body presentation is
+under correction/review. Toggling the third-column Group Info leaves Loading visible and produces
 3,813 FullChat reads in a ten-second audit window. Closing the sidebar stops
 that replay; the reactive feedback path is under correction. No account mutation
 was used for either probe. Private evidence is under

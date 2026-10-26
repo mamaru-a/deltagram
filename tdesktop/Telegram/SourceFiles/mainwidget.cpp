@@ -408,12 +408,17 @@ MainWidget::MainWidget(
 
 				peer, Data::TabbedPanelSendRestrictions())
 			: rpl::single(false);
+		// ChannelWriteAccess re-emits on every ChannelRevision even when
+		// the boolean is unchanged. GroupInfo get_full bumps that revision;
+		// recreating the third column would request again and loop.
 		return std::move(
 			canWrite
+		) | rpl::distinct_until_changed(
 		) | rpl::map([=](bool can) {
 			return std::make_tuple(key, can);
 		});
 	}) | rpl::flatten_latest(
+	) | rpl::distinct_until_changed(
 	) | rpl::on_next([this](Dialogs::Key key, bool canWrite) {
 		updateThirdColumnToCurrentChat(key, canWrite);
 	}, lifetime());
