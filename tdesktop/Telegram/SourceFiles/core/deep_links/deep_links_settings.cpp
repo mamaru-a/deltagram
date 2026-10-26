@@ -133,7 +133,7 @@ Result ShowSavedMessages(const Context &ctx) {
 	return Result::Handled;
 }
 
-Result RedirectToSettings(const Context &ctx, Settings::Type type) {
+Result RedirectToSettings(const Context &ctx, ::Settings::Type type) {
 	if (!ctx.controller) {
 		return Result::NeedsAuth;
 	}

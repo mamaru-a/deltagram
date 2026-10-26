@@ -223,8 +223,31 @@ Manual unpublished runs retain their symbol map. The upload remains limited to
 successful unpublished builds, with three-day retention. Publication permissions,
 action pins, cache policy and the serial PR concurrency lock are unchanged.
 Offline staging checks cover file sets, checksums, provenance, stale symbol
-cleanup and missing inputs. A real artifact from this workflow revision still
-needs verification.
+cleanup and missing inputs. Real PR artifact verification now passes for
+[run `40251516509`](https://github.com/omidz4t/deltagram/actions/runs/40251516509):
+head `e669e85`, merge checkout `b3626bb`, base `b713bff`. All five payload
+checksums pass; the manifest contains GUI, Core, version, test log and provenance,
+with no symbol map. Provenance matches the run/repository and GitHub's merge
+parents. The workflow and staging-helper blobs are identical to the current
+ones. Its native log passes 262 checks. This older GUI reports 0.2.1 and predates
+the settings/permission/request-UI changes; it cannot validate the latest head.
+
+### Native settings compile correction — 2026-10-26
+
+[Native run `40288544930`](https://github.com/omidz4t/deltagram/actions/runs/40288544930)
+at `7e6bf1e` fails in `deep_links_settings.cpp` before the smoke-test step.
+Inside `Core::DeepLinks`, unqualified `Settings::Type` resolves to
+`Core::Settings`, producing the first missing-type error and the subsequent
+conversion-to-int diagnostics. The redirect signature now uses global
+`::Settings::Type`. The two public deep-link section fields use the same
+qualification, removing their dependency on include order.
+
+A syntax-only compile of the actual header after a `Core::Settings` forward
+declaration reproduces both field errors before the correction and passes after
+it. The source audit checks 13,228 files with zero blocking findings. This does
+not compile the complete settings translation unit or later UI objects; a new
+native run must prove those. No release cache or Ninja record was removed, and
+no additional heavy local build was started.
 
 ### Additional settings audit and baseline — 2026-10-26
 
