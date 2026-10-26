@@ -426,7 +426,7 @@ void MainWindow::applyBackendChoice(Main::AccountBackend backend) {
 		_backendChoiceBusy = false;
 		account.domain().activate(existingCore);
 		if (existingCore->sessionExists()) {
-			if (const auto window = Core::App().windowFor(existingCore)) {
+			if (const auto window = Core::App().windowFor(not_null(existingCore))) {
 				window->widget()->showDeltaAddProfile();
 			}
 		}

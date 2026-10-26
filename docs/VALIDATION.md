@@ -11,6 +11,14 @@ container/passcode and Telegram app-config guards. All three compiler exits
 are zero with empty diagnostic logs. This is syntax/type validation, not
 object generation, linking, encrypted-storage replay or GUI proof.
 
+The same native checks also pass `main_account.cpp`, `storage_account.cpp`,
+`mainwindow.cpp`, `backend_choice.cpp`, `mtp_instance.cpp` and MTProto
+`session.cpp`. The first main-window attempt found a raw `Main::Account*`
+passed to `windowFor(SeparateId)`. The existing-Core chooser route now supplies
+the donor `not_null` account wrapper; the corrected file and the remaining
+authentication/transport files pass. No login or real connection is exercised
+by these compiler invocations.
+
 ### Passcode retention before Core session startup — 2026-10-27
 
 Automatic empty-account passcode cleanup now requires a single, logged-out
