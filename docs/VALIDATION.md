@@ -179,8 +179,23 @@ the chat-level mute control. History metadata also refreshes device-chat
 classification for chats absent from the normal list. Matching positive numeric
 chat IDs are required before metadata changes classification or cached full-chat
 information; unknown types preserve prior Direct/Group membership. History still
-loads when metadata fails. Native compilation and replay on the corrected GUI
-remain pending.
+loads when metadata fails.
+
+Native PR validation at `e669e85` passes 262 checks. Its checksum- and
+provenance-verified GUI now passes the previously failing route: incoming sender
+name opens the profile without an accept, block, send or create-chat call. The
+profile omits the chat-level mute control. Message performs one Core contact
+resolution and loads direct chat `12`, with no history/draft dispatch to chat
+`10`. The original composer is visibly restored; no message is sent. Core
+readback confirms prior history, both drafts and all four prepared request
+fixtures remain unchanged. Evidence is
+`/tmp/deltagram-live/request-fixture/e669-sender-message-verified.json` and
+`e669-after-message-preservation.json`; rendered captures are
+`/tmp/e669-sender-profile.png` and `/tmp/e669-sender-message.png` in the container.
+A stopped-state checkpoint was taken before replacing the disposable GUI, and
+one GUI/proxy/Core ownership chain is verified afterward. This revision predates
+the later settings, permission and request-UI changes; those still need their
+own native compilation and replay.
 
 An archived device chat can still briefly offer a composer before metadata
 arrives, and the bridge send paths do not independently check device membership.
