@@ -1,5 +1,17 @@
 # Publication validation
 
+### Telegram app-configuration ownership — 2026-10-27
+
+`Session::appConfigRefreshed` now clears Telegram freeze/appeal, premium-purchase
+and edited-date state for Core and unresolved accounts before reading Telegram
+app configuration. Telegram keeps its donor configuration path. An exact-method
+recorder reproduced eight failing assertions before the guard; afterward all
+15 assertions pass in both ordinary and `OS_MAC_STORE` policy builds under
+AddressSanitizer and UndefinedBehaviorSanitizer. The recorder uses configuration
+and session doubles, not a native `Main::Session` or a macOS application.
+Native cached-configuration migration and frozen-composer UI replay remain
+pending.
+
 ### Core container cleanup policy — 2026-10-27
 
 Donor redundant-account cleanup now retains a Core-tagged container when its

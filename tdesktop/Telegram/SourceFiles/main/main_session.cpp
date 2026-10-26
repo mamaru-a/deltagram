@@ -277,6 +277,12 @@ Session::Session(
 }
 
 void Session::appConfigRefreshed() {
+	if (account().backend() != AccountBackend::Telegram) {
+		_frozen = FreezeInfo();
+		_premiumPossible = false;
+		_messagePrimaryEditedDate = false;
+		return;
+	}
 	const auto &config = appConfig();
 
 	_frozen = FreezeInfo{
