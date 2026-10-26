@@ -301,8 +301,39 @@ translation controls. It does not reproduce a missing-picker failure. Source
 inspection confirms `requestLanguageList()` inserts the default language before
 attempting the unsupported catalog request. Local custom-language import and
 the built-in/custom wallpaper gallery also have local implementations; the
-cleanup must preserve them. Changes from this audit await implementation and
-native replay.
+cleanup must preserve them. Those changes were still pending at this baseline.
+
+### Native settings replay — 2026-10-26
+
+On the verified `14878ed` GUI, single-instance URL dispatch reaches the following
+rendered destinations without starting another GUI/Core:
+
+- `privacy/2sv` and `login_email`: Privacy and Security, containing Local
+  passcode and Blocked users, without the Telegram cloud-password/email flow.
+- `calls/all` and `calls/start-call`: local Speakers and Camera preferences.
+- `data/proxy`: Advanced, with Relays and local storage/download preferences.
+- `folders`, `premium` and `faq`: Main Settings. The Main list omits Folders;
+  settings Search opens and the FAQ query has no results.
+- `experimental`: Experimental settings remains available; searching IPv6 has
+  no matching control.
+- `language`: the picker opens immediately with English and local `.strings`
+  import, without translation controls in this environment.
+- `data/storage`: Local storage opens. Its Telegram-cloud retention promise is
+  incorrect for Core and is under separate review; Clear all was not pressed.
+
+Local passcode Create, Check and Change work through the Core settings allowlist.
+The disposable passcode was changed; the old code was visibly rejected and the
+new one opened management. Disable restored Off. A normal restart retains Off,
+the request-action states, prior history and both profile drafts. Temporary
+codes stayed in private files, were never printed, and were deleted after
+disabling the passcode. No cache limit, relay, language or media preference was
+changed. Captures are `/tmp/14878-settings-*.png` and
+`/tmp/14878-local-passcode-*.png` in the test container, with URL/PID records in
+`/tmp/deltagram-live/settings-fixture/`. Preservation checks are
+`native-request-actions-native-settings-before-restart.json` and
+`native-request-actions-native-settings-after-restart.json` in the request
+fixture directory. This does not validate every settings/search route, physical
+devices, custom-language import or wallpaper/theme persistence.
 
 ### Core send-permission boundary — 2026-10-26
 
