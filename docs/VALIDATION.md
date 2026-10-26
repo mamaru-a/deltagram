@@ -19,6 +19,17 @@ the donor `not_null` account wrapper; the corrected file and the remaining
 authentication/transport files pass. No login or real connection is exercised
 by these compiler invocations.
 
+The restored conference implementation, call-entry gates, language/provider
+routing, language box, settings builder/main page, main/filter menus, app badge,
+main widget and session navigation also pass, bringing the focused native
+syntax/type set to 22 distinct source files. Initial menu/navigation checks
+found a second raw-account window lookup, an unsupported FlatLabel click API,
+a missing complete Domain include, a shadowed session accessor and private
+base-field access. The fixes use typed window IDs, the pinned donor label
+handler, the Domain header and public session accessors. No menu interactions,
+conference calls, native language switching or badge behavior are established
+by compilation alone.
+
 ### Passcode retention before Core session startup — 2026-10-27
 
 Automatic empty-account passcode cleanup now requires a single, logged-out

@@ -20,6 +20,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "window/window_peer_menu.h"
 #include "window/window_filters_favorite.h"
 #include "main/main_session.h"
+#include "main/main_domain.h"
 #include "base/event_filter.h"
 #include "base/options.h"
 #include "core/application.h"

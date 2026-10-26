@@ -1688,7 +1688,7 @@ SessionController::SessionController(
 	}, lifetime());
 
 	const auto processFiltersMenu = [this] {
-		if (ProfilesSidebarEnabled(&session())) {
+		if (ProfilesSidebarEnabled(&SessionNavigation::session())) {
 			content()->toggleFiltersMenu(false);
 			toggleFiltersMenu(true);
 		} else if (SessionNavigation::session().data().chatsFilters().has()) {
@@ -3185,8 +3185,8 @@ void SessionController::showPeerHistory(
 		PeerId peerId,
 		const SectionShow &params,
 		MsgId msgId) {
-	if (Delta::UsesCoreBackend(_session)
-		&& Delta::OwnsSession(_session)
+	if (Delta::UsesCoreBackend(&session())
+		&& Delta::OwnsSession(&session())
 		&& peerId
 		&& peerIsUser(peerId)) {
 		const auto userId = peerToUser(peerId).bare;
@@ -3399,8 +3399,8 @@ void SessionController::setActiveChatsFilter(
 }
 
 void SessionController::showAddContact() {
-	if (Delta::UsesCoreBackend(_session)) {
-		if (Delta::OwnsSession(_session)) {
+	if (Delta::UsesCoreBackend(&session())) {
+		if (Delta::OwnsSession(&session())) {
 			Delta::ShowInviteQr(this);
 		}
 		return;
@@ -4148,7 +4148,7 @@ void SessionController::showStarGiftAuction(uint64 giftId) {
 }
 
 void SessionController::showCloudPassword(const QString &highlight) {
-	if (Delta::UsesCoreBackend(_session)) {
+	if (Delta::UsesCoreBackend(&session())) {
 		showSettings(Settings::PrivacySecurityId());
 		return;
 	}

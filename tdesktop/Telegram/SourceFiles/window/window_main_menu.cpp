@@ -874,7 +874,8 @@ void MainMenu::fillProfiles() {
 			))->setClickedCallback([=] {
 				const auto controller = _controller;
 				closeLayer();
-				if (const auto window = Core::App().separateWindowFor(raw)) {
+				if (const auto window = Core::App().separateWindowFor(
+						not_null(raw))) {
 					window->activate();
 				} else {
 					Core::App().domain().maybeActivate(raw);
@@ -941,7 +942,7 @@ void MainMenu::setupSetEmojiStatus() {
 		_setEmojiStatus->hide();
 		return;
 	}
-	_setEmojiStatus->setClickedCallback([=] {
+	_setEmojiStatus->overrideLinkClickHandler([=] {
 		chooseEmojiStatus();
 	});
 }
