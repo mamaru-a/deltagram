@@ -335,6 +335,27 @@ changed. Captures are `/tmp/14878-settings-*.png` and
 fixture directory. This does not validate every settings/search route, physical
 devices, custom-language import or wallpaper/theme persistence.
 
+The same `14878ed` GUI opens Chat Settings → Create new theme → the local color
+editor. Its primary action is Export theme and opens a local save dialog.
+Export produces a valid 344,626-byte ZIP containing `colors.tdesktop-theme` and
+`background.jpg`; CRC checks pass and the palette contains `windowBg`. The
+archive SHA256 is
+`b69aa76d621c066e7712aae53cf82ad9a5e170460d491892ca2d746abed397d5`.
+No palette color or wallpaper was edited. The editor disables auto-night mode;
+the original System setting was restored after closing it. Core readback
+confirms prior drafts/history and recorded request-action states are preserved.
+The private archive and member hashes are in
+`/tmp/deltagram-live/settings-fixture/native-local-theme.tdesktop-theme` and
+`native-local-theme.evidence.json`. Captures `/tmp/14878-theme-*.png` show the
+menu, editor, save dialog and restored setting. Theme import remains untested.
+
+During follow-up fixture arrival, a native popup displayed an Unknown title
+with the encryption-info notice. Sanitized Core metadata identifies ChatE2ee
+info messages separately from ordinary text; the current fresh-message list
+does not include those info rows. This is a separate notification/service-event
+finding under source review, not a passing presentation check. Private captures
+and `notification-fixture/info-popup-{fresh,candidates}.json` retain the evidence.
+
 ### Local-storage cache wording — 2026-10-26
 
 Native settings replay exposed a false claim that all media remains in the
