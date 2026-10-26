@@ -20,6 +20,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "lang/lang_cloud_manager.h"
 #include "lang/lang_instance.h"
 #include "core/application.h"
+#include "delta/delta_bridge.h"
 #include "mtproto/web_proxy/web_proxy_transport.h"
 #include "mtproto/mtp_instance.h"
 #include "mtproto/mtproto_dc_options.h"
@@ -108,6 +109,9 @@ auto GenerateCodes() {
 		} }));
 	});
 	codes.emplace(u"getdifference"_q, [](SessionController *window) {
+		if (Delta::Active()) {
+			return;
+		}
 		if (window) {
 			window->session().updates().getDifference();
 		}
@@ -120,6 +124,9 @@ auto GenerateCodes() {
 		});
 	});
 	codes.emplace(u"endpoints"_q, [](SessionController *window) {
+		if (Delta::Active()) {
+			return;
+		}
 		if (!Core::App().domain().started()) {
 			return;
 		}
@@ -145,6 +152,9 @@ auto GenerateCodes() {
 		});
 	});
 	codes.emplace(u"testmode"_q, [](SessionController *window) {
+		if (Delta::Active()) {
+			return;
+		}
 		auto &domain = Core::App().domain();
 		if (domain.started()
 			&& (domain.accounts().size() == 1)

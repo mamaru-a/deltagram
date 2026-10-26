@@ -232,15 +232,23 @@ Cover::Cover(
 	_qrButton.create(this, st::infoProfileLabeledButtonQr);
 	_qrButton->setAccessibleName(tr::lng_group_invite_context_qr(tr::now));
 	_qrButton->setClickedCallback([=, show = controller->uiShow()] {
+		if (Delta::Active()) {
+			Delta::ShowInviteQr();
+			return;
+		}
 		Ui::DefaultShowFillPeerQrBoxCallback(show, _user);
 	});
-	Info::Profile::UsernamesValue(
-		_user
-	) | rpl::on_next([=](const auto &usernames) {
-		_qrButton->setVisible(!usernames.empty());
-		refreshNameGeometry(width());
-		refreshQrButtonGeometry(width());
-	}, _qrButton->lifetime());
+	if (Delta::Active()) {
+		_qrButton->show();
+	} else {
+		Info::Profile::UsernamesValue(
+			_user
+		) | rpl::on_next([=](const auto &usernames) {
+			_qrButton->setVisible(!usernames.empty());
+			refreshNameGeometry(width());
+			refreshQrButtonGeometry(width());
+		}, _qrButton->lifetime());
+	}
 }
 
 Cover::~Cover() = default;
@@ -816,13 +824,15 @@ void Main::setupContent() {
 
 	Ui::ResizeFitChild(this, content);
 
-	session->api().cloudPassword().reload();
-	session->api().reloadContactSignupSilent();
-	session->api().sensitiveContent().reload();
-	session->api().globalPrivacy().reload();
-	session->api().premium().reload();
-	session->data().cloudThemes().refresh();
-	session->faqSuggestions().request();
+	if (!Delta::Active()) {
+		session->api().cloudPassword().reload();
+		session->api().reloadContactSignupSilent();
+		session->api().sensitiveContent().reload();
+		session->api().globalPrivacy().reload();
+		session->api().premium().reload();
+		session->data().cloudThemes().refresh();
+		session->faqSuggestions().request();
+	}
 }
 
 void Main::showFinished() {
@@ -1253,6 +1263,12 @@ Type MainId() {
 }
 
 void OpenFaq(base::weak_ptr<Window::SessionController> weak) {
+	if (Delta::Active()) {
+		if (const auto controller = weak.get()) {
+			controller->showSettings(MainId());
+		}
+		return;
+	}
 	UrlClickHandler::Open(
 		tr::lng_settings_faq_link(tr::now),
 		QVariant::fromValue(ClickHandlerContext{
@@ -1261,6 +1277,10 @@ void OpenFaq(base::weak_ptr<Window::SessionController> weak) {
 }
 
 void OpenAskQuestionConfirm(not_null<Window::SessionController*> window) {
+	if (Delta::Active()) {
+		window->showSettings(MainId());
+		return;
+	}
 	const auto requestId = std::make_shared<mtpRequestId>();
 	const auto sure = [=](Fn<void()> close) {
 		if (*requestId) {

@@ -13,6 +13,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "mtproto/mtp_instance.h"
 #include "storage/localstorage.h"
 #include "core/application.h"
+#include "delta/delta_bridge.h"
 #include "main/main_account.h"
 #include "main/main_domain.h"
 #include "ui/boxes/confirm_box.h"
@@ -213,7 +214,7 @@ mtpRequestId CloudManager::packRequestId(Pack pack) const {
 }
 
 void CloudManager::requestLangPackDifference(Pack pack) {
-	if (!_api) {
+	if (Delta::Active() || !_api) {
 		return;
 	}
 	_api->request(base::take(packRequestId(pack))).cancel();
@@ -308,6 +309,9 @@ void CloudManager::requestLanguageList() {
 	if (_languages.empty()) {
 		_languages.push_back(DefaultLanguage());
 		_languageListChanged.fire({});
+	}
+	if (Delta::Active()) {
+		return;
 	}
 	if (!_api) {
 		_languagesRequestId = -1;
@@ -434,6 +438,15 @@ void CloudManager::requestLanguageAndSwitch(
 		performSwitchToCustom();
 		return;
 	}
+	if (Delta::Active()) {
+		if (LanguageIdOrDefault(id) == DefaultLanguageId()) {
+			switchToLanguage(DefaultLanguage());
+			return;
+		}
+		Ui::show(Ui::MakeInformBox(
+			u"Cloud language packs are unavailable. Keep the current language, switch to English, or import a custom .strings file."_q));
+		return;
+	}
 
 	_switchingToLanguageId = id;
 	_switchingToLanguageWarning = warning;
@@ -441,6 +454,10 @@ void CloudManager::requestLanguageAndSwitch(
 }
 
 void CloudManager::sendSwitchingToLanguageRequest() {
+	if (Delta::Active()) {
+		_switchingToLanguageRequest = 0;
+		return;
+	}
 	if (!_api) {
 		_switchingToLanguageRequest = -1;
 		return;
@@ -481,7 +498,25 @@ void CloudManager::sendSwitchingToLanguageRequest() {
 void CloudManager::switchToLanguage(const Language &data) {
 	if (_langpack.id() == data.id && data.id != u"#custom"_q) {
 		return;
-	} else if (!_api) {
+	}
+	if (Delta::Active()) {
+		if (data.id == u"#custom"_q) {
+			performSwitchToCustom();
+			return;
+		}
+		if (LanguageIdOrDefault(data.id) == DefaultLanguageId()) {
+			performSwitchAndAddToRecent(DefaultLanguage());
+			Local::writeLangPack();
+			if (!canApplyWithoutRestart(DefaultLanguage().id)) {
+				Core::Restart();
+			}
+			return;
+		}
+		Ui::show(Ui::MakeInformBox(
+			u"Cloud language packs are unavailable. Keep the current language, switch to English, or import a custom .strings file."_q));
+		return;
+	}
+	if (!_api) {
 		return;
 	}
 
@@ -632,6 +667,10 @@ void CloudManager::getValueForLang(
 		const QString &key,
 		const QString &langId,
 		Fn<void(const QString &)> callback) {
+	if (Delta::Active()) {
+		callback(QString());
+		return;
+	}
 	const auto requestKey = langId + ':' + key;
 	auto &request = _getValueForLangRequests[requestKey];
 	request.callback = std::move(callback);

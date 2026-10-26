@@ -9,6 +9,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "base/event_filter.h"
 #include "core/application.h"
+#include "delta/delta_bridge.h"
 #include "core/click_handler_types.h"
 #include "core/deep_links/deep_links_settings.h"
 #include "lang/lang_keys.h"
@@ -199,24 +200,26 @@ void Search::setupContent() {
 	buildIndex();
 	rebuildResults(QString());
 
-	controller()->session().faqSuggestions().loadedValue(
-	) | rpl::filter([](bool loaded) {
-		return loaded;
-	}) | rpl::take(1) | rpl::on_next([=] {
-		for (auto i = _faqStartIndex; i < int(_entries.size()); ++i) {
-			const auto it = _buttonCache.find(i);
-			if (it != _buttonCache.end()) {
-				_trackedButtons.remove(it->second);
-				delete it->second;
-				_buttonCache.erase(it);
+	if (!Delta::Active()) {
+		controller()->session().faqSuggestions().loadedValue(
+		) | rpl::filter([](bool loaded) {
+			return loaded;
+		}) | rpl::take(1) | rpl::on_next([=] {
+			for (auto i = _faqStartIndex; i < int(_entries.size()); ++i) {
+				const auto it = _buttonCache.find(i);
+				if (it != _buttonCache.end()) {
+					_trackedButtons.remove(it->second);
+					delete it->second;
+					_buttonCache.erase(it);
+				}
 			}
-		}
-		buildIndex();
-		const auto query = _searchController
-			? _searchController->query()
-			: QString();
-		rebuildResults(query);
-	}, lifetime());
+			buildIndex();
+			const auto query = _searchController
+				? _searchController->query()
+				: QString();
+			rebuildResults(query);
+		}, lifetime());
+	}
 
 	Ui::ResizeFitChild(this, content);
 }
@@ -266,6 +269,9 @@ void Search::buildIndex() {
 	}
 
 	_faqStartIndex = int(_entries.size());
+	if (Delta::Active()) {
+		return;
+	}
 
 	const auto &faq = controller()->session().faqSuggestions();
 	for (const auto &faqEntry : faq.entries()) {
@@ -664,7 +670,7 @@ void Search::rebuildRecentResults() {
 }
 
 void Search::rebuildFaqResults() {
-	if (_faqStartIndex >= int(_entries.size())) {
+	if (Delta::Active() || _faqStartIndex >= int(_entries.size())) {
 		return;
 	}
 

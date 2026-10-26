@@ -13,6 +13,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_msg_id.h"
 #include "data/data_peer.h"
 #include "data/data_session.h"
+#include "delta/delta_bridge.h"
 #include "history/history_item.h"
 #include "lang/translate_mtproto_provider.h"
 #include "lang/translate_url_provider.h"
@@ -27,20 +28,67 @@ base::options::option<QString> OptionTranslateUrlTemplate({
 		" Supports %q text, %f source language and %t target language.",
 });
 
+[[nodiscard]] QString TranslateUrlTemplate() {
+	return OptionTranslateUrlTemplate.value();
+}
+
+[[nodiscard]] bool TranslateUrlTemplateValid(const QString &urlTemplate) {
+	return !urlTemplate.isEmpty() && urlTemplate.contains(u"%q"_q);
+}
+
+[[nodiscard]] bool CachedPlatformTranslateAvailable() {
+	static const auto available = Platform::IsTranslateProviderAvailable();
+	return available;
+}
+
+class UnavailableTranslateProvider final : public Ui::TranslateProvider {
+public:
+	[[nodiscard]] bool supportsMessageId() const override {
+		return false;
+	}
+
+	void request(
+			Ui::TranslateProviderRequest,
+			LanguageId,
+			Fn<void(Ui::TranslateProviderResult)> done) override {
+		done(Ui::TranslateProviderResult{
+			.error = Ui::TranslateProviderError::Unknown,
+		});
+	}
+
+};
+
 } // namespace
 
 namespace Ui {
 
+bool IsTranslateBackendAvailable() {
+	if (!Delta::Active()) {
+		return true;
+	}
+	return TranslateUrlTemplateValid(TranslateUrlTemplate())
+		|| CachedPlatformTranslateAvailable();
+}
+
 std::unique_ptr<TranslateProvider> CreateTranslateProvider(
 		not_null<Main::Session*> session) {
-	const auto urlTemplate = OptionTranslateUrlTemplate.value();
-	if (!urlTemplate.isEmpty()
-		&& urlTemplate.contains(u"%q"_q)) {
+	const auto urlTemplate = TranslateUrlTemplate();
+	if (TranslateUrlTemplateValid(urlTemplate)) {
 		return CreateUrlTranslateProvider(urlTemplate);
 	}
-	if (Core::App().settings().usePlatformTranslation()
-		&& Platform::IsTranslateProviderAvailable()) {
-		return Platform::CreateTranslateProvider();
+	const auto core = Delta::Active();
+	const auto usePlatform = Core::App().settings().usePlatformTranslation()
+		|| core;
+	const auto platformAvailable = core
+		? CachedPlatformTranslateAvailable()
+		: Platform::IsTranslateProviderAvailable();
+	if (usePlatform && platformAvailable) {
+		if (auto provider = Platform::CreateTranslateProvider()) {
+			return provider;
+		}
+	}
+	if (core) {
+		return std::make_unique<UnavailableTranslateProvider>();
 	}
 	return CreateMTProtoTranslateProvider(session);
 }

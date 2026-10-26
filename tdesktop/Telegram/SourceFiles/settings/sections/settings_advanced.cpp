@@ -118,19 +118,6 @@ void BuildDataStorageSection(SectionBuilder &builder) {
 		.keywords = { u"storage"_q, u"data"_q, u"download"_q, u"connection"_q },
 	});
 
-	const auto connectionType = [=] {
-		const auto transport = account->mtp().dctransport();
-		if (!Core::App().settings().proxy().isEnabled()) {
-			return transport.isEmpty()
-				? tr::lng_connection_auto_connecting(tr::now)
-				: tr::lng_connection_auto(tr::now, lt_transport, transport);
-		} else {
-			return transport.isEmpty()
-				? tr::lng_connection_proxy_connecting(tr::now)
-				: tr::lng_connection_proxy(tr::now, lt_transport, transport);
-		}
-	};
-
 	builder.addButton({
 		.id = u"advanced/app-picker-url"_q,
 		.title = rpl::single(u"App picker URL"_q),
@@ -147,20 +134,34 @@ void BuildDataStorageSection(SectionBuilder &builder) {
 		.keywords = { u"relays"_q, u"transports"_q, u"server"_q, u"chatmail"_q },
 	});
 
-	builder.addButton({
-		.id = u"advanced/connection_type"_q,
-		.title = tr::lng_settings_connection_type(),
-		.icon = { &st::menuIconNetwork },
-		.label = rpl::merge(
-			Core::App().settings().proxy().connectionTypeChanges(),
-			tr::lng_connection_auto_connecting() | rpl::to_empty
-		) | rpl::map(connectionType),
-		.onClick = [=] {
-			controller->window().show(
-				ProxiesBoxController::CreateOwningBox(account));
-		},
-		.keywords = { u"connection"_q, u"proxy"_q, u"network"_q, u"vpn"_q },
-	});
+	if (!Delta::Active()) {
+		const auto connectionType = [=] {
+			const auto transport = account->mtp().dctransport();
+			if (!Core::App().settings().proxy().isEnabled()) {
+				return transport.isEmpty()
+					? tr::lng_connection_auto_connecting(tr::now)
+					: tr::lng_connection_auto(tr::now, lt_transport, transport);
+			} else {
+				return transport.isEmpty()
+					? tr::lng_connection_proxy_connecting(tr::now)
+					: tr::lng_connection_proxy(tr::now, lt_transport, transport);
+			}
+		};
+		builder.addButton({
+			.id = u"advanced/connection_type"_q,
+			.title = tr::lng_settings_connection_type(),
+			.icon = { &st::menuIconNetwork },
+			.label = rpl::merge(
+				Core::App().settings().proxy().connectionTypeChanges(),
+				tr::lng_connection_auto_connecting() | rpl::to_empty
+			) | rpl::map(connectionType),
+			.onClick = [=] {
+				controller->window().show(
+					ProxiesBoxController::CreateOwningBox(account));
+			},
+			.keywords = { u"connection"_q, u"proxy"_q, u"network"_q, u"vpn"_q },
+		});
+	}
 
 	const auto showDownloadPath = container
 		? container->lifetime().make_state<rpl::variable<bool>>(
@@ -1426,6 +1427,9 @@ void SetupConnectionType(
 		not_null<Window::Controller*> controller,
 		not_null<::Main::Account*> account,
 		not_null<Ui::VerticalLayout*> container) {
+	if (Delta::Active()) {
+		return;
+	}
 	const auto connectionType = [=] {
 		const auto transport = account->mtp().dctransport();
 		if (!Core::App().settings().proxy().isEnabled()) {

@@ -35,6 +35,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "info/settings/info_settings_widget.h"
 #include "info/stories/info_stories_widget.h"
 #include "lang/lang_keys.h"
+#include "lang/translate_provider.h"
 #include "ui/boxes/peer_qr_box.h"
 #include "ui/layers/generic_box.h"
 #include "main/main_domain.h"
@@ -62,6 +63,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "settings/cloud_password/settings_cloud_password_login_email.h"
 #include "api/api_cloud_password.h"
 #include "core/core_cloud_password.h"
+#include "delta/delta_boxes.h"
 #include "delta/delta_bridge.h"
 #include "settings/sections/settings_notifications.h"
 #include "settings/sections/settings_notifications_type.h"
@@ -83,10 +85,19 @@ namespace {
 
 Result ShowLanguageBox(const Context &ctx, const QString &highlightId = QString()) {
 	static auto Guard = base::binary_guard();
-	if (!highlightId.isEmpty() && ctx.controller) {
-		ctx.controller->setHighlightControlId(highlightId);
+	auto id = highlightId;
+	if (Delta::Active()) {
+		if (id == u"language/translate-chats"_q
+			|| ((id == u"language/show-button"_q
+					|| id == u"language/do-not-translate"_q)
+				&& !Ui::IsTranslateBackendAvailable())) {
+			id = QString();
+		}
 	}
-	Guard = LanguageBox::Show(ctx.controller, highlightId);
+	if (!id.isEmpty() && ctx.controller) {
+		ctx.controller->setHighlightControlId(id);
+	}
+	Guard = LanguageBox::Show(ctx.controller, id);
 	return Result::Handled;
 }
 
@@ -122,7 +133,18 @@ Result ShowSavedMessages(const Context &ctx) {
 	return Result::Handled;
 }
 
+Result RedirectToSettings(const Context &ctx, Settings::Type type) {
+	if (!ctx.controller) {
+		return Result::NeedsAuth;
+	}
+	ctx.controller->showSettings(type);
+	return Result::Handled;
+}
+
 Result ShowFaq(const Context &ctx) {
+	if (Delta::Active()) {
+		return RedirectToSettings(ctx, ::Settings::MainId());
+	}
 	::Settings::OpenFaq(
 		ctx.controller ? base::make_weak(ctx.controller) : nullptr);
 	return Result::Handled;
@@ -165,6 +187,10 @@ Result HandleQrCode(const Context &ctx, bool highlightCopy) {
 	if (!ctx.controller) {
 		return Result::NeedsAuth;
 	}
+	if (Delta::Active()) {
+		Delta::ShowInviteQr();
+		return Result::Handled;
+	}
 
 	if (highlightCopy) {
 		ctx.controller->setHighlightControlId(u"self-qr-code/copy"_q);
@@ -201,6 +227,9 @@ Result ShowEditName(
 Result ShowEditUsername(const Context &ctx) {
 	if (!ctx.controller) {
 		return Result::NeedsAuth;
+	}
+	if (Delta::Active()) {
+		return RedirectToSettings(ctx, ::Settings::InformationId());
 	}
 	if (ctx.controller->showFrozenError()) {
 		return Result::Handled;
@@ -442,6 +471,9 @@ void RegisterSettingsHandlers(Router &router) {
 	router.add(u"settings"_q, {
 		.path = u"my-profile/gifts"_q,
 		.action = CodeBlock{ [](const Context &ctx) {
+			if (Delta::Active()) {
+				return RedirectToSettings(ctx, ::Settings::InformationId());
+			}
 			if (!ctx.controller) {
 				return Result::NeedsAuth;
 			}
@@ -454,6 +486,9 @@ void RegisterSettingsHandlers(Router &router) {
 	router.add(u"settings"_q, {
 		.path = u"my-profile/archived-posts"_q,
 		.action = CodeBlock{ [](const Context &ctx) {
+			if (Delta::Active()) {
+				return RedirectToSettings(ctx, ::Settings::InformationId());
+			}
 			if (!ctx.controller) {
 				return Result::NeedsAuth;
 			}
@@ -979,6 +1014,9 @@ void RegisterSettingsHandlers(Router &router) {
 	router.add(u"settings"_q, {
 		.path = u"privacy/birthday/add"_q,
 		.action = CodeBlock{ [](const Context &ctx) {
+			if (Delta::Active()) {
+				return RedirectToSettings(ctx, ::Settings::InformationId());
+			}
 			return OpenInternalUrl(ctx, u"internal:edit_birthday"_q);
 		}},
 	});
@@ -1186,6 +1224,9 @@ void RegisterSettingsHandlers(Router &router) {
 	router.add(u"settings"_q, {
 		.path = u"privacy/messages"_q,
 		.action = CodeBlock{ [](const Context &ctx) {
+			if (Delta::Active()) {
+				return RedirectToSettings(ctx, ::Settings::PrivacySecurityId());
+			}
 			if (!ctx.controller) {
 				return Result::NeedsAuth;
 			}
@@ -1197,6 +1238,9 @@ void RegisterSettingsHandlers(Router &router) {
 	router.add(u"settings"_q, {
 		.path = u"privacy/messages/set-price"_q,
 		.action = CodeBlock{ [](const Context &ctx) {
+			if (Delta::Active()) {
+				return RedirectToSettings(ctx, ::Settings::PrivacySecurityId());
+			}
 			if (!ctx.controller) {
 				return Result::NeedsAuth;
 			}
@@ -1211,6 +1255,9 @@ void RegisterSettingsHandlers(Router &router) {
 	router.add(u"settings"_q, {
 		.path = u"privacy/messages/remove-fee"_q,
 		.action = CodeBlock{ [](const Context &ctx) {
+			if (Delta::Active()) {
+				return RedirectToSettings(ctx, ::Settings::PrivacySecurityId());
+			}
 			if (!ctx.controller) {
 				return Result::NeedsAuth;
 			}
@@ -1316,6 +1363,9 @@ void RegisterSettingsHandlers(Router &router) {
 	router.add(u"settings"_q, {
 		.path = u"data/proxy"_q,
 		.action = CodeBlock{ [](const Context &ctx) {
+			if (Delta::Active()) {
+				return RedirectToSettings(ctx, ::Settings::AdvancedId());
+			}
 			if (!ctx.controller) {
 				return Result::NeedsAuth;
 			}
@@ -1326,6 +1376,9 @@ void RegisterSettingsHandlers(Router &router) {
 	router.add(u"settings"_q, {
 		.path = u"data/proxy/add-proxy"_q,
 		.action = CodeBlock{ [](const Context &ctx) {
+			if (Delta::Active()) {
+				return RedirectToSettings(ctx, ::Settings::AdvancedId());
+			}
 			if (!ctx.controller) {
 				return Result::NeedsAuth;
 			}
@@ -1336,6 +1389,9 @@ void RegisterSettingsHandlers(Router &router) {
 	router.add(u"settings"_q, {
 		.path = u"data/proxy/share-list"_q,
 		.action = CodeBlock{ [](const Context &ctx) {
+			if (Delta::Active()) {
+				return RedirectToSettings(ctx, ::Settings::AdvancedId());
+			}
 			if (!ctx.controller) {
 				return Result::NeedsAuth;
 			}
@@ -1504,6 +1560,9 @@ void RegisterSettingsHandlers(Router &router) {
 	router.add(u"settings"_q, {
 		.path = u"appearance/stickers-and-emoji/edit"_q,
 		.action = CodeBlock{ [](const Context &ctx) {
+			if (Delta::Active()) {
+				return RedirectToSettings(ctx, ::Settings::ChatId());
+			}
 			if (!ctx.controller) {
 				return Result::NeedsAuth;
 			}
@@ -1517,6 +1576,9 @@ void RegisterSettingsHandlers(Router &router) {
 	router.add(u"settings"_q, {
 		.path = u"appearance/stickers-and-emoji/trending"_q,
 		.action = CodeBlock{ [](const Context &ctx) {
+			if (Delta::Active()) {
+				return RedirectToSettings(ctx, ::Settings::ChatId());
+			}
 			if (!ctx.controller) {
 				return Result::NeedsAuth;
 			}
@@ -1530,6 +1592,9 @@ void RegisterSettingsHandlers(Router &router) {
 	router.add(u"settings"_q, {
 		.path = u"appearance/stickers-and-emoji/archived"_q,
 		.action = CodeBlock{ [](const Context &ctx) {
+			if (Delta::Active()) {
+				return RedirectToSettings(ctx, ::Settings::ChatId());
+			}
 			if (!ctx.controller) {
 				return Result::NeedsAuth;
 			}
@@ -1543,6 +1608,9 @@ void RegisterSettingsHandlers(Router &router) {
 	router.add(u"settings"_q, {
 		.path = u"appearance/stickers-and-emoji/emoji"_q,
 		.action = CodeBlock{ [](const Context &ctx) {
+			if (Delta::Active()) {
+				return RedirectToSettings(ctx, ::Settings::ChatId());
+			}
 			if (!ctx.controller) {
 				return Result::NeedsAuth;
 			}
@@ -1637,6 +1705,9 @@ void RegisterSettingsHandlers(Router &router) {
 	router.add(u"settings"_q, {
 		.path = u"stars/top-up"_q,
 		.action = CodeBlock{ [](const Context &ctx) {
+			if (Delta::Active()) {
+				return RedirectToSettings(ctx, ::Settings::MainId());
+			}
 			if (!ctx.controller) {
 				return Result::NeedsAuth;
 			}
@@ -1649,6 +1720,9 @@ void RegisterSettingsHandlers(Router &router) {
 	router.add(u"settings"_q, {
 		.path = u"stars/stats"_q,
 		.action = CodeBlock{ [](const Context &ctx) {
+			if (Delta::Active()) {
+				return RedirectToSettings(ctx, ::Settings::MainId());
+			}
 			if (!ctx.controller) {
 				return Result::NeedsAuth;
 			}
@@ -1661,6 +1735,9 @@ void RegisterSettingsHandlers(Router &router) {
 	router.add(u"settings"_q, {
 		.path = u"stars/gift"_q,
 		.action = CodeBlock{ [](const Context &ctx) {
+			if (Delta::Active()) {
+				return RedirectToSettings(ctx, ::Settings::MainId());
+			}
 			if (!ctx.controller) {
 				return Result::NeedsAuth;
 			}
@@ -1672,6 +1749,9 @@ void RegisterSettingsHandlers(Router &router) {
 	router.add(u"settings"_q, {
 		.path = u"stars/earn"_q,
 		.action = CodeBlock{ [](const Context &ctx) {
+			if (Delta::Active()) {
+				return RedirectToSettings(ctx, ::Settings::MainId());
+			}
 			if (!ctx.controller) {
 				return Result::NeedsAuth;
 			}
@@ -1765,6 +1845,9 @@ void RegisterSettingsHandlers(Router &router) {
 	router.add(u"settings"_q, {
 		.path = u"ask-question"_q,
 		.action = CodeBlock{ [](const Context &ctx) {
+			if (Delta::Active()) {
+				return RedirectToSettings(ctx, ::Settings::MainId());
+			}
 			if (!ctx.controller) {
 				return Result::NeedsAuth;
 			}
@@ -1776,6 +1859,9 @@ void RegisterSettingsHandlers(Router &router) {
 	router.add(u"settings"_q, {
 		.path = u"features"_q,
 		.action = CodeBlock{ [](const Context &ctx) {
+			if (Delta::Active()) {
+				return RedirectToSettings(ctx, ::Settings::MainId());
+			}
 			UrlClickHandler::Open(tr::lng_telegram_features_url(tr::now));
 			return Result::Handled;
 		}},
@@ -1846,12 +1932,18 @@ void RegisterSettingsHandlers(Router &router) {
 	router.add(u"settings"_q, {
 		.path = u"edit/birthday"_q,
 		.action = CodeBlock{ [](const Context &ctx) {
+			if (Delta::Active()) {
+				return RedirectToSettings(ctx, ::Settings::InformationId());
+			}
 			return OpenInternalUrl(ctx, u"internal:edit_birthday"_q);
 		}},
 	});
 	router.add(u"settings"_q, {
 		.path = u"edit/change-number"_q,
 		.action = CodeBlock{ [](const Context &ctx) {
+			if (Delta::Active()) {
+				return RedirectToSettings(ctx, ::Settings::InformationId());
+			}
 			if (!ctx.controller) {
 				return Result::NeedsAuth;
 			}
@@ -1895,6 +1987,10 @@ void RegisterSettingsHandlers(Router &router) {
 		.action = CodeBlock{ [](const Context &ctx) {
 			if (!ctx.controller) {
 				return Result::NeedsAuth;
+			}
+			if (Delta::Active()) {
+				ctx.controller->showSettings(::Settings::CallsId());
+				return Result::Handled;
 			}
 			Calls::ShowCallsBox(ctx.controller, true);
 			return Result::Handled;

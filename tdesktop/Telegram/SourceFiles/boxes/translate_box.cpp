@@ -496,6 +496,9 @@ bool SkipTranslate(TextWithEntities textWithEntities) {
 	if (!Core::App().settings().translateButtonEnabled()) {
 		return true;
 	}
+	if (!IsTranslateBackendAvailable()) {
+		return true;
+	}
 	constexpr auto kFirstChunk = size_t(100);
 	auto hasLetters = (text.size() >= kFirstChunk);
 	for (auto i = 0; i < kFirstChunk; i++) {

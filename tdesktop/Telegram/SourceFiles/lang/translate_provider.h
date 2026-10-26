@@ -18,6 +18,8 @@ class Session;
 
 namespace Ui {
 
+[[nodiscard]] bool IsTranslateBackendAvailable();
+
 [[nodiscard]] std::unique_ptr<TranslateProvider> CreateTranslateProvider(
 	not_null<Main::Session*> session);
 

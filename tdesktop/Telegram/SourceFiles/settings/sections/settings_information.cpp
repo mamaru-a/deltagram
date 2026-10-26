@@ -1143,54 +1143,56 @@ void BuildInformationSection(SectionBuilder &builder) {
 			.keywords = { u"name"_q, u"first"_q, u"last"_q },
 		};
 	});
-	builder.add(nullptr, [] {
-		return SearchEntry{
-			.id = u"edit/phone"_q,
-			.title = tr::lng_settings_phone_label(tr::now),
-			.keywords = { u"phone"_q, u"number"_q, u"mobile"_q },
-		};
-	});
-	builder.add(nullptr, [] {
-		return SearchEntry{
-			.id = u"edit/username"_q,
-			.title = tr::lng_settings_username_label(tr::now),
-			.keywords = { u"username"_q, u"link"_q, u"t.me"_q },
-		};
-	});
-	builder.add(nullptr, [] {
-		return SearchEntry{
-			.id = u"edit/your-color"_q,
-			.title = tr::lng_settings_theme_name_color(tr::now),
-			.keywords = { u"color"_q, u"theme"_q, u"name"_q },
-		};
-	});
-	builder.add(nullptr, [] {
-		return SearchEntry{
-			.id = u"edit/channel"_q,
-			.title = tr::lng_settings_channel_label(tr::now),
-			.keywords = { u"channel"_q, u"personal"_q },
-		};
-	});
-	builder.add(nullptr, [] {
-		return SearchEntry{
-			.id = u"edit/birthday"_q,
-			.title = tr::lng_settings_birthday_label(tr::now),
-			.keywords = { u"birthday"_q, u"date"_q, u"birth"_q },
-		};
-	});
-	builder.add(nullptr, [] {
-		return SearchEntry{
-			.id = u"edit/chat-automation"_q,
-			.title = tr::lng_settings_chat_automation_label(tr::now),
-			.keywords = {
-				u"chat"_q,
-				u"automation"_q,
-				u"bot"_q,
-				u"chatbot"_q,
-				u"chatbots"_q,
-			},
-		};
-	});
+	if (!Delta::Active()) {
+		builder.add(nullptr, [] {
+			return SearchEntry{
+				.id = u"edit/phone"_q,
+				.title = tr::lng_settings_phone_label(tr::now),
+				.keywords = { u"phone"_q, u"number"_q, u"mobile"_q },
+			};
+		});
+		builder.add(nullptr, [] {
+			return SearchEntry{
+				.id = u"edit/username"_q,
+				.title = tr::lng_settings_username_label(tr::now),
+				.keywords = { u"username"_q, u"link"_q, u"t.me"_q },
+			};
+		});
+		builder.add(nullptr, [] {
+			return SearchEntry{
+				.id = u"edit/your-color"_q,
+				.title = tr::lng_settings_theme_name_color(tr::now),
+				.keywords = { u"color"_q, u"theme"_q, u"name"_q },
+			};
+		});
+		builder.add(nullptr, [] {
+			return SearchEntry{
+				.id = u"edit/channel"_q,
+				.title = tr::lng_settings_channel_label(tr::now),
+				.keywords = { u"channel"_q, u"personal"_q },
+			};
+		});
+		builder.add(nullptr, [] {
+			return SearchEntry{
+				.id = u"edit/birthday"_q,
+				.title = tr::lng_settings_birthday_label(tr::now),
+				.keywords = { u"birthday"_q, u"date"_q, u"birth"_q },
+			};
+		});
+		builder.add(nullptr, [] {
+			return SearchEntry{
+				.id = u"edit/chat-automation"_q,
+				.title = tr::lng_settings_chat_automation_label(tr::now),
+				.keywords = {
+					u"chat"_q,
+					u"automation"_q,
+					u"bot"_q,
+					u"chatbot"_q,
+					u"chatbots"_q,
+				},
+			};
+		});
+	}
 }
 
 class Information : public Section<Information> {

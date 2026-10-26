@@ -840,6 +840,14 @@ void BuildThemeSettingsSection(SectionBuilder &builder) {
 		SetupThemeSettings(controller, ctx.container.get(), ctx.highlights);
 		return SectionBuilder::WidgetToAdd{};
 	}, [] {
+		if (Delta::Active()) {
+			return SearchEntry{
+				.id = u"chat/theme-settings"_q,
+				.title = tr::lng_settings_theme_settings(tr::now),
+				.keywords = { u"theme"_q, u"appearance"_q },
+				.icon = { &st::menuIconChangeColors },
+			};
+		}
 		return SearchEntry{
 			.id = u"chat/peer-color"_q,
 			.title = tr::lng_settings_theme_settings(tr::now),
@@ -1024,23 +1032,25 @@ void BuildStickersEmojiSection(SectionBuilder &builder) {
 		};
 	});
 
-	builder.add(nullptr, [] {
-		return SearchEntry{
-			.id = u"chat/my-stickers"_q,
-			.title = tr::lng_stickers_you_have(tr::now),
-			.keywords = { u"stickers"_q, u"manage"_q, u"installed"_q },
-			.icon = { &st::menuIconStickers },
-		};
-	});
+	if (!Delta::Active()) {
+		builder.add(nullptr, [] {
+			return SearchEntry{
+				.id = u"chat/my-stickers"_q,
+				.title = tr::lng_stickers_you_have(tr::now),
+				.keywords = { u"stickers"_q, u"manage"_q, u"installed"_q },
+				.icon = { &st::menuIconStickers },
+			};
+		});
 
-	builder.add(nullptr, [] {
-		return SearchEntry{
-			.id = u"chat/emoji-sets"_q,
-			.title = tr::lng_emoji_manage_sets(tr::now),
-			.keywords = { u"emoji"_q, u"sets"_q, u"manage"_q },
-			.icon = { &st::menuIconEmoji },
-		};
-	});
+		builder.add(nullptr, [] {
+			return SearchEntry{
+				.id = u"chat/emoji-sets"_q,
+				.title = tr::lng_emoji_manage_sets(tr::now),
+				.keywords = { u"emoji"_q, u"sets"_q, u"manage"_q },
+				.icon = { &st::menuIconEmoji },
+			};
+		});
+	}
 }
 
 void BuildMessagesSection(SectionBuilder &builder) {
@@ -1134,22 +1144,24 @@ void BuildArchiveSection(SectionBuilder &builder) {
 		.keywords = { u"shortcuts"_q, u"keyboard"_q, u"hotkeys"_q },
 	});
 
-	if (controller) {
-		PreloadArchiveSettings(session);
-	}
+	if (!Delta::Active()) {
+		if (controller) {
+			PreloadArchiveSettings(session);
+		}
 
-	builder.addButton({
-		.id = u"chat/archive-settings"_q,
-		.title = tr::lng_context_archive_settings(),
-		.icon = { &st::menuIconArchive },
-		.onClick = [=] {
-			if (controller) {
-				controller->show(
-					Box<Ui::GenericBox>(ArchiveSettingsBox, controller));
-			}
-		},
-		.keywords = { u"archive"_q, u"settings"_q, u"folder"_q },
-	});
+		builder.addButton({
+			.id = u"chat/archive-settings"_q,
+			.title = tr::lng_context_archive_settings(),
+			.icon = { &st::menuIconArchive },
+			.onClick = [=] {
+				if (controller) {
+					controller->show(
+						Box<Ui::GenericBox>(ArchiveSettingsBox, controller));
+				}
+			},
+			.keywords = { u"archive"_q, u"settings"_q, u"folder"_q },
+		});
+	}
 }
 
 void BuildSupportSection(SectionBuilder &builder) {
@@ -1300,12 +1312,16 @@ void BuildSupportSection(SectionBuilder &builder) {
 void BuildChatSectionContent(SectionBuilder &builder) {
 	BuildThemeOptionsSection(builder);
 	BuildThemeSettingsSection(builder);
-	BuildCloudThemesSection(builder);
+	if (!Delta::Active()) {
+		BuildCloudThemesSection(builder);
+	}
 	BuildChatBackgroundSection(builder);
 	BuildChatListQuickActionSection(builder);
 	BuildStickersEmojiSection(builder);
 	BuildMessagesSection(builder);
-	BuildSensitiveContentSection(builder);
+	if (!Delta::Active()) {
+		BuildSensitiveContentSection(builder);
+	}
 	BuildArchiveSection(builder);
 	BuildSupportSection(builder);
 }
@@ -1544,36 +1560,38 @@ void SetupStickersEmoji(
 		} });
 	}
 
-	const auto stickersButton = AddButtonWithIcon(
-		container,
-		tr::lng_stickers_you_have(),
-		st::settingsButton,
-		{ &st::menuIconStickers });
-	stickersButton->addClickHandler([=] {
-		controller->show(Box<StickersBox>(
-			controller->uiShow(),
-			StickersBox::Section::Installed));
-	});
-	if (highlights) {
-		highlights->push_back({ u"chat/my-stickers"_q, {
-			stickersButton.get(),
-			{ .rippleShape = true },
-		} });
-	}
+	if (!Delta::Active()) {
+		const auto stickersButton = AddButtonWithIcon(
+			container,
+			tr::lng_stickers_you_have(),
+			st::settingsButton,
+			{ &st::menuIconStickers });
+		stickersButton->addClickHandler([=] {
+			controller->show(Box<StickersBox>(
+				controller->uiShow(),
+				StickersBox::Section::Installed));
+		});
+		if (highlights) {
+			highlights->push_back({ u"chat/my-stickers"_q, {
+				stickersButton.get(),
+				{ .rippleShape = true },
+			} });
+		}
 
-	const auto emojiSetsButton = AddButtonWithIcon(
-		container,
-		tr::lng_emoji_manage_sets(),
-		st::settingsButton,
-		{ &st::menuIconEmoji });
-	emojiSetsButton->addClickHandler([=] {
-		controller->show(Box<Ui::Emoji::ManageSetsBox>(session));
-	});
-	if (highlights) {
-		highlights->push_back({ u"chat/emoji-sets"_q, {
-			emojiSetsButton.get(),
-			{ .rippleShape = true },
-		} });
+		const auto emojiSetsButton = AddButtonWithIcon(
+			container,
+			tr::lng_emoji_manage_sets(),
+			st::settingsButton,
+			{ &st::menuIconEmoji });
+		emojiSetsButton->addClickHandler([=] {
+			controller->show(Box<Ui::Emoji::ManageSetsBox>(session));
+		});
+		if (highlights) {
+			highlights->push_back({ u"chat/emoji-sets"_q, {
+				emojiSetsButton.get(),
+				{ .rippleShape = true },
+			} });
+		}
 	}
 
 	Ui::AddSkip(container, st::settingsCheckboxesSkip);
@@ -1836,15 +1854,17 @@ void SetupArchive(
 		showOther(ShortcutsId());
 	});
 
-	PreloadArchiveSettings(&controller->session());
-	AddButtonWithIcon(
-		container,
-		tr::lng_context_archive_settings(),
-		st::settingsButton,
-		{ &st::menuIconArchive }
-	)->addClickHandler([=] {
-		controller->show(Box(Settings::ArchiveSettingsBox, controller));
-	});
+	if (!Delta::Active()) {
+		PreloadArchiveSettings(&controller->session());
+		AddButtonWithIcon(
+			container,
+			tr::lng_context_archive_settings(),
+			st::settingsButton,
+			{ &st::menuIconArchive }
+		)->addClickHandler([=] {
+			controller->show(Box(Settings::ArchiveSettingsBox, controller));
+		});
+	}
 }
 
 void SetupExport(
@@ -2733,17 +2753,22 @@ void SetupThemeSettings(
 		container,
 		tr::lng_settings_theme_settings());
 	if (highlights) {
-		highlights->push_back({ u"chat/peer-color"_q, {
-			title.get(),
-			SubsectionTitleHighlight(),
-		} });
+		highlights->push_back({
+			Delta::Active() ? u"chat/theme-settings"_q : u"chat/peer-color"_q,
+			{
+				title.get(),
+				SubsectionTitleHighlight(),
+			},
+		});
 	}
 
-	AddPeerColorButton(
-		container,
-		controller->uiShow(),
-		controller->session().user(),
-		st::settingsColorButton);
+	if (!Delta::Active()) {
+		AddPeerColorButton(
+			container,
+			controller->uiShow(),
+			controller->session().user(),
+			st::settingsColorButton);
+	}
 
 	const auto settings = &Core::App().settings();
 	if (settings->systemDarkMode().has_value()) {

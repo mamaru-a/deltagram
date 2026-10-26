@@ -22,7 +22,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "settings/cloud_password/settings_cloud_password_manage.h"
 #include "settings/cloud_password/settings_cloud_password_start.h"
 #include "settings/settings_common.h"
+#include "settings/sections/settings_local_passcode.h"
+#include "settings/sections/settings_local_storage.h"
 #include "settings/sections/settings_privacy_security.h"
+#include "settings/settings_experimental.h"
+#include "settings/settings_search.h"
 #include "ui/vertical_list.h"
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/checkbox.h"
@@ -55,6 +59,15 @@ namespace {
 		|| sectionId == ::Settings::CloudPasswordManageId()
 		|| sectionId == ::Settings::CloudLoginEmailId()
 		|| sectionId == ::Settings::CloudLoginEmailConfirmId();
+}
+
+[[nodiscard]] bool CoreUnregisteredAllowlisted(Type sectionId) {
+	return sectionId == ::Settings::LocalPasscodeCreateId()
+		|| sectionId == ::Settings::LocalPasscodeCheckId()
+		|| sectionId == ::Settings::LocalPasscodeChangeId()
+		|| sectionId == ::Settings::Search::Id()
+		|| sectionId == ::Settings::LocalStorageId()
+		|| sectionId == ::Settings::Experimental::Id();
 }
 
 } // namespace
@@ -151,9 +164,14 @@ bool SearchRegistry::sectionAvailable(Type sectionId) const {
 	if (Delta::Active() && CloudPasswordOrLoginEmailSection(sectionId)) {
 		return false;
 	}
+	if (Delta::Active() && CoreUnregisteredAllowlisted(sectionId)) {
+		return true;
+	}
 	while (sectionId) {
 		const auto i = _sections.find(sectionId);
-		if (i == _sections.end()) return true;
+		if (i == _sections.end()) {
+			return !Delta::Active();
+		}
 		const auto meta = i->second;
 		if (meta->available && !meta->available()) return false;
 		sectionId = meta->parentId;
