@@ -432,6 +432,35 @@ information/member path rather than a contact-profile success claim. The
 onboarding profile was restored and its previous request-action states,
 original drafts/history still match their recorded preservation baseline.
 
+### Archived device history from search — 2026-10-26
+
+On the verified `4b5e093` binary, the disposable device chat `3:11` was archived
+once through Core and confirmed absent from the ordinary chat list. After normal
+quit, verified process shutdown and restart, global search for its existing
+account-transfer notice finds two messages. Opening a result loads the device
+history with a Mute-only bottom bar, no composer and no Accept control. Core
+still reports `isDeviceChat: true` and `canSend: false`; the audit observes
+matching BasicChat and FullChat reads with no send/create/accept/block/delete
+operation. This verifies the archived-before-startup device read-only path,
+not every transient UI frame or outgoing attachment surface.
+
+The same check reveals an archived-search naming defect: both result rows and
+the opened header display `Unknown` while matching Core metadata names the
+chat `Device messages`. `loadSearchHits` builds peers from `_names` without
+hydrating metadata for unlisted chats. The notification-only name fix does not
+cover this search path. A separate metadata-hydration correction is pending.
+
+The original Normal visibility was restored with one explicit Core write.
+Original drafts, message IDs and the remaining pending alternate request match
+their baseline; original primary request-action states remain intact. Fault
+policy is cleared. Private evidence is
+`/tmp/deltagram-live/archived-device-fixture/{before,native-open-evidence,restore-attempt}.json`;
+captures `/tmp/4b5-archived-{start,search-settled,device-loaded}.png` show the
+normal-list absence, results and read-only history. The valid pre-test checkpoint
+was copied only after verified process shutdown. An earlier copy started before
+shutdown settled and is retained with an `-unverified` suffix; it is not used as
+recovery or validation evidence.
+
 ### Local-storage cache wording — 2026-10-26
 
 Native settings replay exposed a false claim that all media remains in the
