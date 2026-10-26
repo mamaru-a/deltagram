@@ -18,6 +18,24 @@ mail IO starts. Source audit checks 13,245 files with zero blocking findings.
 Native onboarding compilation and GUI avatar-selection/teardown replay remain
 pending; the helper tests do not establish those UI behaviors.
 
+### Configured-profile cold-start recovery — 2026-10-26
+
+The isolated restored-backup profile was reopened on the verified `cacc5ce`
+GUI with `start_io` rejected before dispatch. Core still reports its single
+configured account, but the welcome surface shows Add Profile / Create New
+Profile and the opening error, without a retry-open action. Create was not
+clicked; no import or provisioning was submitted. This cold-start route is
+separate from the post-import Completed-state recovery correction. Its current
+source path is under scoped review.
+
+Private evidence is `backup-gui-fixture/startup-recovery-evidence.json` and
+`startup-recovery.png` in the test container. The isolated client was quit
+normally and verified stopped before restoring the main disposable client.
+Readback then confirms the original drafts, requests, group history and normal
+device-chat visibility remain intact. The version regressions (2), release-build
+regression (1), Python script regressions (24), and shell syntax checks also
+pass on `450c8de`; these do not prove native startup recovery.
+
 ## Client integrity checks — 2026-10-24
 
 Heavy native builds run remotely, one at a time with four compiler jobs. No
