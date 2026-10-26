@@ -1,5 +1,20 @@
 # Publication validation
 
+### Core container cleanup policy — 2026-10-27
+
+Donor redundant-account cleanup now retains a Core-tagged container when its
+session has not opened. Previously, switching to another account could remove
+that container from the live domain and the next saved account list. Telegram
+and unresolved abandoned login slots retain the donor cleanup rules. The
+settings Add Account availability check now uses the same reuse predicate as
+`Domain::addActivated`, so a session-less Core container cannot be advertised
+as a reusable Telegram slot.
+
+The updated production policy helpers pass 17 QtCore tests on Qt 6.4.2 / GNU
+13.3 as UID/GID 65534, with zero failures/skips. Native `Domain` cleanup,
+account switching and persisted restart remain unverified by these helper
+tests. No account-map, authorization or backend-sidecar format changes.
+
 ### Mixed-backend identity, conference dependency and release guards — 2026-10-27
 
 Local source integration `9215659` includes per-account backend selection,

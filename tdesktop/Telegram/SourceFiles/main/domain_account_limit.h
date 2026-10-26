@@ -62,4 +62,15 @@ struct DomainAccountLimitSlot {
 		&& environmentMatches;
 }
 
+// A Core container owns a persistent profile catalog even before its UI session
+// opens. Donor cleanup of abandoned login slots must retain that container.
+[[nodiscard]] inline bool DomainAccountCanRemoveAsRedundant(
+		AccountBackend backend,
+		bool sessionExists,
+		bool separateWindowExists) {
+	return backend != AccountBackend::Core
+		&& !sessionExists
+		&& !separateWindowExists;
+}
+
 } // namespace Main

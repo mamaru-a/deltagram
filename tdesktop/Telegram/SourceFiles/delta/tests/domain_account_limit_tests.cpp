@@ -4,6 +4,7 @@
 
 using Main::AccountBackend;
 using Main::DomainAccountLimitSlot;
+using Main::DomainAccountCanRemoveAsRedundant;
 using Main::DomainAddActivatedReuseCandidate;
 using Main::DomainAccountLimitCountsTelegramPremium;
 using Main::ResolveDomainMaxAccounts;
@@ -220,6 +221,28 @@ private slots:
 			AccountBackend::Telegram,
 			false,
 			true));
+	}
+
+	void cleanupKeepsCoreContainerBeforeSessionOpens() {
+		QVERIFY(!DomainAccountCanRemoveAsRedundant(
+			AccountBackend::Core, false, false));
+		QVERIFY(!DomainAccountCanRemoveAsRedundant(
+			AccountBackend::Core, true, false));
+		QVERIFY(!DomainAccountCanRemoveAsRedundant(
+			AccountBackend::Core, false, true));
+	}
+
+	void cleanupRetainsDonorLoginSlotRules() {
+		for (const auto backend : {
+				AccountBackend::Telegram,
+				AccountBackend::Unspecified }) {
+			QVERIFY(DomainAccountCanRemoveAsRedundant(
+				backend, false, false));
+			QVERIFY(!DomainAccountCanRemoveAsRedundant(
+				backend, true, false));
+			QVERIFY(!DomainAccountCanRemoveAsRedundant(
+				backend, false, true));
+		}
 	}
 
 };

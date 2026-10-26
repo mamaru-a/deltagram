@@ -56,6 +56,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "main/main_account.h"
 #include "main/main_session.h"
 #include "main/main_domain.h"
+#include "main/domain_account_limit.h"
 #include "mtproto/mtproto_dc_options.h"
 #include "window/window_session_controller.h"
 #include "window/window_controller.h"
@@ -1064,8 +1065,10 @@ not_null<Ui::SlideWrap<Ui::SettingsButton>*> AccountsList::setupAdd() {
 		auto found = false;
 		for (const auto &[index, account] : domain.accounts()) {
 			const auto raw = account.get();
-			if (!raw->sessionExists()
-				&& raw->mtp().environment() == environment) {
+			if (Main::DomainAddActivatedReuseCandidate(
+					raw->backend(),
+					raw->sessionExists(),
+					raw->mtp().environment() == environment)) {
 				found = true;
 			}
 		}

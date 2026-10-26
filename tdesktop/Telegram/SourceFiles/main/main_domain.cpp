@@ -449,8 +449,11 @@ void Domain::removeRedundantAccounts() {
 
 	const auto was = _accounts.size();
 	for (auto i = _accounts.begin(); i != _accounts.end();) {
-		if (Core::App().separateWindowFor(not_null(i->account.get()))
-			|| i->account->sessionExists()) {
+		if (!DomainAccountCanRemoveAsRedundant(
+				i->account->backend(),
+				i->account->sessionExists(),
+				Core::App().separateWindowFor(
+					not_null(i->account.get())) != nullptr)) {
 			++i;
 			continue;
 		}
