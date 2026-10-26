@@ -158,8 +158,59 @@ controls, group-member profiles, and archived device-chat protections.
 
 Two upstream builds were already active when this work was ready. Cancellation
 of the PR-triggered duplicate was refused with HTTP 403 because `mamaru-a`
-lacks upstream admin rights. Further build dispatches and source pushes are held
-until the upstream runs finish. No heavy local build was started.
+lacks upstream admin rights. After the main build completed, the follow-up was
+pushed to the same PR branch; its build queued behind the existing PR run under
+the unchanged concurrency lock. No heavy local build was started.
+
+### Group-sender Message routing — 2026-10-26
+
+A disposable two-member group exchanged one message in each direction with
+official Desktop 2.62.0. On the checksum-verified `44a91b5` GUI, clicking the
+incoming sender name and then **Message** requested Core history and drafts
+for chat `10`; Core's contact lookup identified the intended direct conversation
+as chat `12`. The audit recorded only method names and numeric account/chat IDs.
+No message was sent through the wrong conversation. Returning to the direct
+conversation preserved its draft, the alternate-profile draft and prior history.
+
+The source correction resolves sender contacts through Core before opening
+history, rejects unmapped sender identities and prevents out-of-range peer IDs
+from narrowing into Core chat IDs at the request parser. Sender profiles omit
+the chat-level mute control. History metadata also refreshes device-chat
+classification for chats absent from the normal list. Matching positive numeric
+chat IDs are required before metadata changes classification or cached full-chat
+information; unknown types preserve prior Direct/Group membership. History still
+loads when metadata fails. Native compilation and replay on the corrected GUI
+remain pending.
+
+An archived device chat can still briefly offer a composer before metadata
+arrives, and the bridge send paths do not independently check device membership.
+Core rejects sending to device chats, but this client-side permission gap remains
+open. Core-blocked contact state is also not synchronized to the donor's
+`UserData::isBlocked()` flag. These are separate from the routing correction.
+
+The final serial focused Qt target passed **262 checks**, with no failures or
+skips, including numeric sender boundaries and matching-ID / known-type metadata
+policy. The source audit checked 13,225 files with no blocking findings. The
+Linux scripts suite passed 24 cases, including five behavioral artifact-staging
+cases; ruff, isort, actionlint and shell syntax checks passed. The release-script
+regression passed in Linux; its host macOS attempt exited before its assertions.
+These checks do not compile the complete native UI or prove the corrected
+sender-profile routing in the GUI.
+
+The older GUI also continues to show the group's first-message notice after
+bidirectional delivery and restart. This presentation defect remains open.
+
+### Unpublished PR validation artifacts — 2026-10-26
+
+PR builds now stage the stripped GUI, Core, version and integrity-test log with
+checksums and machine-readable provenance. PR artifacts record both the head
+revision and the merge checkout revision; the artifact name uses the latter.
+Manual unpublished runs retain their symbol map. The upload remains limited to
+successful unpublished builds, with three-day retention. Publication permissions,
+action pins, cache policy and the serial PR concurrency lock are unchanged.
+Offline staging checks cover file sets, checksums, provenance, stale symbol
+cleanup and missing inputs. A real artifact from this workflow revision still
+needs verification.
 
 ### Sender and chat identity lookups — 2026-10-26
 

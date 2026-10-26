@@ -26,7 +26,7 @@ are not copied here. Deltagram evidence comes from [PROGRESS.md](PROGRESS.md),
 | Core account creation and chat-list loading | ✅ Locally checked | Qt/Core RPC self-test creates a disposable account and loads its list without mail IO. |
 | Contacts and contact deletion | ✅ Locally checked | Search, profile opening, chat creation and confirmed deletion have isolated checks. |
 | Shared contact cards | ✅ Locally checked | Send/import, card photo and profile navigation checked. Core does not import vCard NOTE biographies; available Core contact status is displayed. |
-| Group creation | ✅ Locally checked | Name/photo and member selection persist through Core; selection chips and stored members checked. |
+| Group creation | 🟡 Partial | Name/photo and member selection persist through Core. A disposable two-member group exchanged messages with official Desktop 2.62.0 on `44a91b5`; its first-message notice remains visible after delivery and restart. Sender-profile Message routing on that GUI opens the wrong Core chat; the source correction awaits native replay. |
 | Invitation links | 🟡 Partial | Contact/group/channel previews, confirmation and navigation checked locally. Fresh disposable GUI onboarding and QR-image SecureJoin passed against official Desktop 2.62.0 on `3c2def3`. Physical camera scanning remains unverified. |
 | Channel profiles | ✅ Locally checked | Adaptive page/modal navigation, centered cover, large photo preview, contained action menu, description links, photo/name/description updates, mute control and Core media counts. Media rows open the selected message. |
 | Broadcast channels | ✅ Locally checked | Creation and subscriber write restrictions checked. Owner counts are Core read receipts, not public view totals. |
