@@ -37,6 +37,7 @@ namespace Delta {
 struct ProfileSetupTable;
 struct ProfileSetupLease;
 struct ProfileSetupResult;
+class ProfileSetupAvatarFile;
 } // namespace Delta
 
 class DeltaOnboarding final : public Ui::RpWidget {
@@ -105,7 +106,7 @@ private:
 	[[nodiscard]] bool setupBusy() const;
 	[[nodiscard]] bool setupMutationBlocked() const;
 	[[nodiscard]] Delta::AccountInventoryRequest mutationRequest() const;
-	[[nodiscard]] QString saveAvatar() const;
+	[[nodiscard]] std::shared_ptr<Delta::ProfileSetupAvatarFile> saveAvatar() const;
 
 	const not_null<Window::Controller*> _controller;
 	const not_null<Main::Account*> _account;

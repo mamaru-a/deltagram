@@ -1448,6 +1448,7 @@ PRIVATE
     delta/core_profile_actions.cpp
     delta/core_profile_actions.h
     delta/profile_setup_actions.h
+    delta/profile_setup_avatar.h
     delta/compose_queue.h
     delta/compose_queue_sender.cpp
     delta/compose_queue_sender.h

@@ -1,5 +1,23 @@
 # Publication validation
 
+### Setup-avatar isolation — 2026-10-26
+
+Profile creation stages each selected avatar in a distinct owner-private
+temporary file. The pending Core `selfavatar` callback retains the file owner
+until Core finishes copying it, including when the onboarding widget closes.
+This replaces the shared temporary filename that concurrent setups could
+overwrite. Qt's non-movable temporary file is held through `unique_ptr`.
+
+All ten focused Qt suites pass **735 checks**, with zero failures or skips,
+serially. The eight avatar checks cover distinct bytes/paths, private access,
+callback retention and cleanup. The tested avatar header and test source match
+the checkout. An actual helper/DeltaRpc/pinned-Core check uses two temporary
+offline accounts: each retains its distinct red/blue image after callback
+completion removes the staging file, and Core's copies remain readable. No
+mail IO starts. Source audit checks 13,245 files with zero blocking findings.
+Native onboarding compilation and GUI avatar-selection/teardown replay remain
+pending; the helper tests do not establish those UI behaviors.
+
 ## Client integrity checks — 2026-10-24
 
 Heavy native builds run remotely, one at a time with four compiler jobs. No

@@ -5,6 +5,7 @@ This file is part of Delta Tel, a Telegram Desktop based Delta Chat client.
 
 #include "delta/account_inventory.h"
 #include "delta/profile_setup_actions.h"
+#include "delta/profile_setup_avatar.h"
 #include "delta/delta_boxes.h"
 #include "delta/delta_bridge.h"
 
@@ -29,6 +30,8 @@ This file is part of Delta Tel, a Telegram Desktop based Delta Chat client.
 #include "styles/style_widgets.h"
 #include "styles/style_window.h"
 
+#include <QBuffer>
+#include <QByteArray>
 #include <QCoreApplication>
 #include <QDir>
 #include <QFile>
@@ -1091,12 +1094,18 @@ void DeltaOnboarding::showClassicLogin() {
 	}));
 }
 
-QString DeltaOnboarding::saveAvatar() const {
+std::shared_ptr<Delta::ProfileSetupAvatarFile> DeltaOnboarding::saveAvatar() const {
 	if (_avatar.isNull()) {
-		return QString();
+		return nullptr;
 	}
-	const auto path = QDir::tempPath() + u"/delta-tel-avatar.png"_q;
-	return _avatar.save(path, "PNG") ? path : QString();
+	auto bytes = QByteArray();
+	QBuffer buffer(&bytes);
+	if (!buffer.open(QIODevice::WriteOnly)
+		|| !_avatar.save(&buffer, "PNG")
+		|| bytes.isEmpty()) {
+		return nullptr;
+	}
+	return Delta::StageProfileSetupAvatar(bytes);
 }
 
 void DeltaOnboarding::updateSetupLock() {
@@ -1231,7 +1240,7 @@ void DeltaOnboarding::createProfile() {
 			return;
 		}
 		const auto captured = _accountId;
-		const auto avatarPath = saveAvatar();
+		const auto avatar = saveAvatar();
 		const auto team = _teamProfile;
 		_setupLease = Delta::TryAcquireProfileSetup(
 			_setupTable,
@@ -1285,14 +1294,15 @@ void DeltaOnboarding::createProfile() {
 				});
 		};
 		const auto setAvatar = [=] {
-			if (avatarPath.isEmpty()) {
+			if (!avatar) {
 				markTeam();
 				return;
 			}
 			request(
 				u"set_config"_q,
-				{ captured, u"selfavatar"_q, avatarPath },
-				[=](QJsonObject reply) {
+				{ captured, u"selfavatar"_q, avatar->path() },
+				[avatar = avatar, fail = fail, markTeam = markTeam](
+						QJsonObject reply) {
 					if (HasError(reply)) {
 						fail(RpcError(reply));
 						return;
