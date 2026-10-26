@@ -468,7 +468,28 @@ narrowed to an unrelated chat ID during type/status lookup. The blocking action
 now resolves known sender contacts before checking chat-only system IDs, and
 the group/direct/channel/subtitle caches retain full-width peer IDs. Source
 inspection confirms these lookups no longer truncate sender identities; native
-compilation and group-member profile replay remain pending.
+compilation and group-member profile replay were initially pending.
+
+The checksum- and provenance-verified `e669e85` GUI now passes the group-member
+profile **Contact blocking** action against the disposable reference contact.
+A rejected block leaves the contact unblocked and shows a rejection toast.
+Lost-ack block and unblock each issue one contact mutation, then confirm the
+result by Core readback without retrying. The direct conversation disappears
+while blocked and returns after unblock; reopening the action shows the fresh
+Unblock confirmation. The audit records no create-chat, send, accept or
+chat-block mutation during these actions.
+
+After a normal quit and restart, exactly one GUI/proxy/Core chain is running.
+Core confirms the contact remains unblocked and the direct chat is listed.
+Both profile drafts, prior message IDs, group membership/history and all four
+incoming-request fixtures remain unchanged. Fault policy is cleared. Private
+evidence is `/tmp/deltagram-live/blocking-fixture/` (the
+`e669-profile-lostblock-profile-evidence.json`,
+`e669-profile-lostunblock-profile-evidence.json` and
+`e669-profile-restarted.json` files), with request preservation recorded in
+`/tmp/deltagram-live/request-fixture/e669-profile-restarted-preservation.json`.
+This older artifact does not validate the later permission/request UI or the
+contact-status entry point.
 
 ### Notification reply recovery — 2026-10-26
 
