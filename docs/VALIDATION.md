@@ -410,9 +410,27 @@ read error. The remaining Single request stays pending, the sender stays
 unblocked, and original drafts/history are unchanged. Selecting that Single
 shows its original Block/Accept overlay. Fault policy is cleared. Evidence is
 `request-followup-fixture/native-lost-group-delete-evidence.json`, with captures
-`/tmp/4b5-lost-group-{confirm,after,settled}.png`. Ordinary accepted/new/blocked
-contact-open routes, Saved Messages through Contacts and broader native
-compatibility gates still need their own replay.
+`/tmp/4b5-lost-group-{confirm,after,settled}.png`.
+
+Contacts → the accepted direct conversation also opens correctly: one lookup
+for alternate-profile contact `11` loads chat `12`, without create, accept,
+block or send calls. Both original drafts/history remain unchanged. Evidence
+is `request-followup-fixture/native-accepted-contact-open-evidence.json` and
+`/tmp/4b5-accepted-open.png`. The Saved Messages menu opens chat `10` and
+visibly restores the alternate draft (`/tmp/4b5-saved-messages-open.png`).
+Contacts intentionally filters out the self row, so that menu check does not
+exercise `OpenCoreContactChat`'s self-contact branch. New/blocked contact-open
+routes and broader native compatibility gates remain open.
+
+The same binary exposes a separate group-profile gap. Core identifies primary
+chat `13` as Group with members `1` and `10`, but its header opens the donor
+contact profile: Edit contact and Delete contact are present and no member list
+is available. Neither action was activated; the audit records no mutation.
+`request-followup-fixture/native-group-header-finding.json` and
+`/tmp/4b5-group-profile{,-more}.png` retain the evidence. This needs a Core group
+information/member path rather than a contact-profile success claim. The
+onboarding profile was restored and its previous request-action states,
+original drafts/history still match their recorded preservation baseline.
 
 ### Local-storage cache wording — 2026-10-26
 
