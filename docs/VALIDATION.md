@@ -356,6 +356,15 @@ does not include those info rows. This is a separate notification/service-event
 finding under source review, not a passing presentation check. Private captures
 and `notification-fixture/info-popup-{fresh,candidates}.json` retain the evidence.
 
+Source review confirms the bridge feeds both `IncomingMsg` and `MsgsChanged`
+through `addIncoming`. Its non-fresh branch uses `NewMessageType::Unread`, so
+the noticed ChatE2ee info row can create a popup before the dialog name is
+loaded. `Unknown` is the client's empty-name fallback. Core emits that local
+notice as `MsgsChanged`, not `IncomingMsg`; it is not in the fresh-message list.
+The correction is being implemented to keep these updates in the transcript
+without a popup and resolve a real Core name before notifying incoming user
+messages. It still needs focused and native regression validation.
+
 ### Local-storage cache wording — 2026-10-26
 
 Native settings replay exposed a false claim that all media remains in the
@@ -371,8 +380,25 @@ clearing it does not delete original message files. Tooltip and limit text also
 refer to cache files; donor copy is retained outside Core mode. No cloud
 retention or re-download guarantee is made. The source audit checks 13,230 files
 with no blocking findings and the diff is whitespace-clean. New language keys
-and rendered copy await native compilation/replay. Clear all and limit sliders
-were not exercised; cache isolation here is source evidence.
+and rendered copy await native compilation/replay. Limit sliders remain
+untested; the later Clear all replay is recorded below.
+
+A stopped-state checkpoint precedes the disposable `14878ed` Clear all replay.
+The GUI completes clearing and donor cache files shrink from 18,788,724 bytes
+to 272 bytes. All 56 fingerprinted Core blob files, totaling 10,965,850 bytes,
+remain byte-identical immediately afterward and after normal quit/restart.
+Core readback also preserves both drafts, original direct/group message IDs
+and request states, including the fresh alternate-profile requests.
+
+After restart, in-chat search locates existing photo `103`; its blue image
+renders in the transcript and opens in the native media viewer. Normal loading
+rebuilds donor caches to 20,849,640 bytes while all 56 original Core files still
+match their hashes. Private manifests are
+`/tmp/deltagram-live/cache-retention-fixture/{before,after,restart,media}.json`;
+captures `/tmp/14878-cache-*.png` show clearing and subsequent image rendering.
+This validates the populated Images/Clear all path on that revision. Selective
+clearing, other populated cache tags, slider enforcement and the new rendered
+wording remain separate gates.
 
 ### Core send-permission boundary — 2026-10-26
 

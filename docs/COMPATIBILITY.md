@@ -57,6 +57,7 @@ are not copied here. Deltagram evidence comes from [PROGRESS.md](PROGRESS.md),
 | Service-event presentation | ❌ Unavailable | Recorded as unfinished in the development log. |
 | Donor export, sharing restrictions and auto-delete controls | ❌ Unavailable | These Telegram-only actions are hidden/guarded; no Core-backed implementation is claimed. |
 | Settings privacy presentation | 🟡 Partial | Hiding the settings email remains unfinished. |
+| Local storage and cache limits | 🟡 Partial | `14878ed` Clear all shrinks donor caches, preserves all 56 fingerprinted Core blob files plus drafts/history/request states through restart, and allows an existing photo to render again. Core-specific copy removes the false Telegram-cloud promise in source. Updated rendering, selective clearing and limit enforcement remain unverified; these limits do not cover Core account blobs. |
 | Blocked-user settings | 🟡 Partial | `44a91b5` passes 259 native checks and disposable GUI rejection, lost-ack block/unblock, restart, incoming-message suppression/restoration, draft/history preservation and profile-switch cancellation against official Desktop 2.62.0. The group-member profile action additionally passes rejection, lost-ack block/unblock and restart on `e669e85`, preserving both drafts, group history and four request fixtures. Contact-status and latest-head replay remain pending. |
 
 ## Compatibility checks still needed
