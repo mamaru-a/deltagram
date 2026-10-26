@@ -1,5 +1,30 @@
 # Publication validation
 
+### Native search account cancellation and load-more recovery — 2026-10-26
+
+Verified `a19d9e2` switches from disposable profile 2 to 3 at 1.82 seconds while
+the old search error is held for 15 seconds. After that old reply arrives, the
+destination retains its normal chat list and empty search field, without old
+hits, Loading or Failed/Retry returning. Earlier manual/menu attempts did not
+land within the hold and are not counted as cancellation proof. Main profile
+selection and all baseline data are restored. Private evidence is
+`/tmp/deltagram-live/native-a19-search-account-cancel-timed/`.
+
+Load-more uses a separate offline restored copy with 61 new local Saved Messages,
+leaving the main history untouched. Startup IO acknowledgements are stubbed
+without dispatch; search and message fetches use actual Core. Page one fetches
+50 messages. Rejecting the remaining 11 preserves those first rows and shows
+Failed/Retry below them; further scrolling does not automatically retry. After
+clearing that fault, one Retry fetches 11 messages without another ID query.
+The remaining rows through `00` render, original rows from `60` remain, the
+total stays 61 and failure chrome clears. There are 72 message fetches across
+the successful first page, rejected second page and explicit retry. The saved
+backup draft is preserved; the GUI phase issues no send/create/accept/block/
+config writes. Private evidence is
+`/tmp/deltagram-live/backup-search-pager-a19/native-result.json`. This is paging
+and failure-state proof, not mail delivery. The fixture is stopped before the
+main disposable GUI is restored.
+
 ### Native startup and group-sidebar corrections — 2026-10-26
 
 [Native `a19d9e2`](https://github.com/omidz4t/deltagram/actions/runs/40354448605)

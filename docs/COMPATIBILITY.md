@@ -34,8 +34,8 @@ ownership/cleanup, initial search error/retry and stale-query error suppression.
 Native `2908654` passes language restart, profile name/deletion, archived-search
 metadata failure/retry and modal group/member inspection/Message routing.
 Original profile data remains preserved. Production readiness still requires
-complete encryption and onboarding layout replay, broader search and startup
-failure/cancellation, cross-window setup locking/teardown, remaining compatibility
+complete encryption and onboarding layout replay, broader startup cases,
+cross-window setup locking/teardown, remaining compatibility
 cases and final package validation.
 
 PR builds compile and smoke-test; they do not execute the workflow's optional
@@ -77,7 +77,7 @@ unverified feature areas below remain open independently of those build gates.
 | Second-device setup | 🟡 Partial | Full transfer, restored image bytes and bidirectional synchronization passed on `27656b4` against official Desktop 2.62.0. Early/ready cancellation, duplicate starts and a profile switch during preparation passed. Camera/mobile receive paths remain unverified. |
 | Contact status and biographies | 🟡 Partial | Available Core contact status displayed; imported vCard biographies are unsupported by the current Core snapshot. |
 | Contact requests | 🟡 Partial | Native `4b5e093` passes 451 checks. Disposable GUI replay covers request inspection/actions/restart, pending sender Message without acceptance, accepted-contact opening, and one-shot lost-ack Group Delete with an unverified GUI outcome. Drafts/history and unrelated requests are preserved. Mailing-list/broadcast cases and final-head replay remain open; Core lookup/create atomicity remains unresolved. |
-| Search | 🟡 Partial | Core result IDs feed paged global/in-chat search. `3c2def3` passed 60 matches, final-page navigation, delayed cancellation and visible rejection. `4b5e093` opens archived device history read-only but exposes Unknown result/header names. Native `2908654` now passes archived-before-startup Device messages naming, metadata rejection with Failed/Retry, one explicit retry reusing the hit IDs, and read-only opening with preserved data. Initial-ID/load-more failures, account-switch error replay and HTML searches remain open. |
+| Search | 🟡 Partial | Core result IDs feed paged global/in-chat search. `3c2def3` passed 60 matches and final-page navigation. Native `2908654` passes archived Device messages naming, metadata Failed/Retry and read-only opening. Native `122a3ec` passes initial-ID failure/keyboard retry and stale-query error suppression. Native `a19d9e2` passes switching profiles while a search reply is pending and an offline 61-hit load-more failure/retry: first 50 rows remain, only the failed 11 are retried and the total remains 61. HTML search remains unverified. |
 | App picker and webxdc | 🟡 Partial | Embedded app store exists; host rendering, draft preparation and synchronized webxdc updates are unverified. |
 | Calls | ❌ Unavailable | Delta Chat calling is not implemented. Chat-header call buttons are hidden, call entry points stop before device permissions, Telegram conference creation/joining is disabled, and tde2e is excluded. Unsupported call acceptance and separate call-device settings are removed; native settings replay passed on `a6d878d`. |
 | Service-event presentation | ❌ Unavailable | Recorded as unfinished in the development log. |
