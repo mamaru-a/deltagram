@@ -1,5 +1,50 @@
 # Publication validation
 
+### Native restore recovery, media and delivery — 2026-10-26
+
+[Native `122a3ec`](https://github.com/omidz4t/deltagram/actions/runs/40348261095)
+passes compilation and **735 checks**, zero failures/skips. All five artifact
+hashes match; provenance identifies merge
+`ddc697938d88f0e665d808df5ee7429cb6499046`, head
+`122a3ec8b5f1f806b8cb6392522b41493c021b3e`, and base
+`b713bff697ad3450bf842da5f24f83b64a9d68e6`. The merge parents match.
+This binary includes setup serialization/recovery and avatar staging, but
+predates the cold-start, sidebar and encryption-dialog corrections.
+
+In a separate disposable destination, cancelling the backup picker sends no
+import and leaves the same fresh account available. One plain import uses a
+null passphrase, preserves the saved draft and configures that single account.
+Rejecting `start_io` before dispatch leaves Open Profile available; an explicit
+retry targets the same ID without another import, account allocation or
+provisioning. Late progress does not replace the terminal error. The attempted
+in-flight click occurred after import completed, so it does not prove the
+rendered setup lock. Cold-start failure recovery is a separate pending gate.
+
+After removing the opening rejection, that restored profile opens successfully.
+A restored photo renders from its new destination blob directory; all 985,178
+bytes match the stopped source copy. One explicit GUI probe sends through Core
+and reaches OutDelivered. After stopping the restored client and restarting the
+main disposable client, the recipient group contains that exact probe once.
+The original source profile stays stopped; no concurrent copy of that identity
+runs. The restored saved draft and all four main profiles' baseline drafts,
+history, request states and normal device-chat visibility remain intact. Mail
+IO is enabled only for this explicit delivery phase. Private evidence is under
+`/tmp/deltagram-live/backup-gui-122/`. This does not prove protected-backup GUI
+support, in-flight lock/teardown, restored incoming synchronization or avatar
+selection in the native onboarding surface.
+
+### Native local-language restart round trip — 2026-10-26
+
+On verified `2908654`, a local custom `.strings` file that omits the new restart
+key shows the app-neutral fallback once: “The app will restart to change the
+language.” Confirming restarts into the custom fixture; selecting English
+restarts into English. Capture utilities do not run during either restart.
+The old English-switch process exits normally with code zero; its remaining
+zombie process entry caused a `kill -0` wait timeout, not an application crash.
+Baseline data remains preserved. Private evidence is
+`/tmp/deltagram-live/language-native290/native-result.json`. This controlled
+round trip does not attribute the earlier capture-associated abort.
+
 ### Native profile mutation replay and encryption presentation — 2026-10-26
 
 On checksum-verified `2908654`, Edit name resolves the intended Core contact,
