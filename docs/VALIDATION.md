@@ -572,6 +572,18 @@ This verifies the captured notification/name/mute flow, photo rendering and one
 real Existing-message placeholder upgrade. It does not prove every document type,
 donor scheduling state or the newer group/profile/search source batch.
 
+The same generated photo is then used for a viewer-deletion replay. Go To Message
+returns to its conversation, and View all photos lists both test photos. Under
+Xvfb the windowed viewer stays above the opened Photos layer until the viewer is
+closed. A rejected viewer Delete submits once, displays the rejection and retains
+the photo in Core history and the grid. After removing the fault, a new explicit
+Delete confirmation submits once and removes only that photo; the grid retains
+the other image. Normal quit, verified shutdown and restart preserve that deletion
+without another delete request. The original drafts, unrelated message IDs,
+request states and restored device visibility remain unchanged.
+Private evidence is under `cacc-notification-fixture/viewer-delete/`; deletion is
+intentional fixture cleanup, not loss of an original account message.
+
 ### Archived device history from search — 2026-10-26
 
 On the verified `4b5e093` binary, the disposable device chat `3:11` was archived
