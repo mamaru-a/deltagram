@@ -264,10 +264,24 @@ ordering bug. The final serial focused Qt target passed **295 checks**, with no
 failures or skips, including those unchanged recovery cases.
 
 This target does not compile the complete native UI. Native compilation and
-rendered permission replay remain pending. A further source review is checking
-ordering of FullChat responses from other callers, callback reentrancy and
-refresh when re-entering a cached conversation; the current pass is not a
-production-readiness claim.
+rendered permission replay remain pending.
+
+A follow-up isolated snapshot removes raw permission application from other
+FullChat callers: those callers can request a tracked observer refresh, but
+cannot publish `canSend` from their own response. Returning to a cached chat
+refreshes its permission, closing history clears the focus, and contact changes
+refresh only the focused chat and active waiters. Callback publication no longer
+retains a slot reference across reentrant callbacks. Unknown permission and an
+explicit denial have separate user messages.
+
+That snapshot passed **300 integrity checks** and the separately wired
+**70 contact-request action checks**, with no failures or skips, using serial
+`-j1` builds. One new reentrancy test initially destroyed its replacement account
+scope before delivering the reply; retaining that scope fixes the test while
+preserving stale-account rejection. Logs are in the disposable test container at
+`/tmp/round13-recovery-tests.log` and the snapshot build's `LastTest.log`.
+These results precede the ongoing request-UI/helper revisions and do not validate
+those later edits. The source audit checked 13,228 files with no blocking findings.
 
 ### Supported settings surface follow-up — 2026-10-26
 
@@ -289,9 +303,18 @@ availability is cached for Core; a newly installed engine needs an app restart.
 
 These settings changes are committed at `eafbca5`. Source audit and diff checks
 pass, but the focused Qt target does not compile these UI translation units.
-Native compilation and rendered replay remain required. A remaining rich-message
-whole-chat translation path is guarded only by donor Premium/peer state and must
-be checked separately before claiming the entire translation surface complete.
+Native compilation and rendered replay remain required. Source review of the
+reported rich-message translation path found that `switchTranslation` sets its
+rich-request flag only for a provider supporting message IDs. Core's URL,
+platform and unavailable providers all return false for that capability; the
+MTProto provider is donor-only. The reported path therefore has no demonstrated
+Core reachability through this tracker.
+
+A small Qt harness compiled the current Linux translation provider source with
+local platform stubs and a disposable Crow executable. Normal output completed
+once with translated text; forcing process-start failure completed zero times.
+This reproduces the missing `FailedToStart` completion without a mailbox or
+full native build. The fix and its follow-up checks remain pending.
 
 ### Contact-request action gap — 2026-10-26
 
