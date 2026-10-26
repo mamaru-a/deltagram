@@ -243,6 +243,73 @@ the built-in/custom wallpaper gallery also have local implementations; the
 cleanup must preserve them. Changes from this audit await implementation and
 native replay.
 
+### Core send-permission boundary — 2026-10-26
+
+`22bfd8f` adds an account/chat-scoped FullChat permission observer and gates the
+bridge's outgoing text, media, prepared/queued sends, forwarding, donor send and
+notification reply paths on Core's `canSend`. Missing/error/malformed metadata
+does not authorize a send. Draft persistence, history loading and cleanup remain
+separate. A notification reply is persisted first, then its original intent
+waits for permission; a denial or failed read leaves a saved Pending reply.
+Attempted/ambiguous sends are not retried automatically.
+
+The first isolated compile caught Qt's `slots` macro colliding with a variable.
+After a snapshot-only rename, a tiny C++ reproducer confirmed stale allow after
+newer denial, old read completing a replacement waiter, and malformed envelope
+authorization. The corrected helper compiles without that rename and all three
+reproducer flags are zero. The expanded suite then exposed two regressions in
+existing lost-storage-ack and unreadable-storage explicit retry cases. Computing
+the save result before moving its error string fixes the argument-evaluation
+ordering bug. The final serial focused Qt target passed **295 checks**, with no
+failures or skips, including those unchanged recovery cases.
+
+This target does not compile the complete native UI. Native compilation and
+rendered permission replay remain pending. A further source review is checking
+ordering of FullChat responses from other callers, callback reentrancy and
+refresh when re-entering a cached conversation; the current pass is not a
+production-readiness claim.
+
+### Supported settings surface follow-up — 2026-10-26
+
+The follow-up removes the remaining Telegram-only proxy/DC controls, identity
+and paid-message links, sticker/emoji and cloud-theme catalogs, sensitive-content
+and archive-account policy controls, FAQ suggestions and unused settings reloads.
+Unknown settings factories now default to unavailable on Core; local passcode
+Create/Check/Change, Search, LocalStorage and Experimental remain explicitly
+available. Experimental omits the MTProto IPv6 option. Main QR opens Core's invite.
+
+Local wallpaper gallery/file selection, font and scale, passcode, media devices,
+relays, connectivity, second-device setup, name/bio/avatar, theme editing and
+export, current language, English and custom `.strings` import remain. The theme
+editor's primary Core button now exports locally instead of offering cloud
+publishing. Translation uses a configured custom URL or an available platform
+engine; Core has no MTProto fallback. Without either backend, translation controls
+are omitted and direct requests return an unavailable result. Platform-engine
+availability is cached for Core; a newly installed engine needs an app restart.
+
+These settings changes are committed at `eafbca5`. Source audit and diff checks
+pass, but the focused Qt target does not compile these UI translation units.
+Native compilation and rendered replay remain required. A remaining rich-message
+whole-chat translation path is guarded only by donor Premium/peer state and must
+be checked separately before claiming the entire translation surface complete.
+
+### Contact-request action gap — 2026-10-26
+
+Source review confirms there is no explicit `accept_chat` action in the Qt
+bridge. Core includes incoming requests in the chat list but reports
+`isContactRequest: true` and `canSend: false`. Official Desktop presents explicit
+Accept and Block/Delete actions; a send-permission lock alone does not provide
+that request flow. Group decline uses Core `block_chat`, which deletes the group
+chat and therefore requires an explicit deletion confirmation. Native request
+action replay remains open.
+
+A profile's explicit Message action is separate: official Desktop 2.62.0
+[`ViewProfile`](https://github.com/deltachat/deltachat-desktop/blob/v2.62.0/packages/frontend/src/components/dialogs/ViewProfile/index.tsx#L118)
+uses `createChatByContactId` to start the conversation, matching the canonical
+sender-routing correction. A plain incoming sender-name click uses
+`Element::fromLink` → `showPeerInfo` in this client. It must not be described as
+the `PeerData::createOpenLink` path without checking the actual caller.
+
 ### Sender and chat identity lookups — 2026-10-26
 
 Review of the blocking profile action found that high sender-peer IDs could be
