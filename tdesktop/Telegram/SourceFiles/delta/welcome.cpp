@@ -338,6 +338,7 @@ void DeltaOnboarding::updateControlsGeometry() {
 	}
 	const auto top = contentTop();
 	const auto welcome = (_page == Page::Welcome);
+	auto statusTop = top + st::introErrorTop;
 	_next->moveToLeft((width() - _next->width()) / 2, top + st::introNextTop);
 	if (welcome) {
 		_title->moveToLeft(
@@ -354,14 +355,39 @@ void DeltaOnboarding::updateControlsGeometry() {
 		}
 	} else {
 		const auto left = contentLeft() + st::buttonRadius;
-		_title->moveToLeft(left, top + st::introTitleTop);
-		_description->resizeToWidth(st::introDescription.minWidth);
-		_description->moveToLeft(left, top + st::introDescriptionTop);
 		const auto photoRight = contentLeft() + st::introNextButton.width;
+		const auto photoLeft = photoRight - _photo->width();
 		_photo->moveToLeft(
-			photoRight - _photo->width(),
+			photoLeft,
 			top + st::introPhotoTop);
-		_name->moveToLeft(contentLeft(), top + st::introStepFieldTop);
+		const auto titleWidth = std::max(
+			st::introSettingsSkip,
+			photoLeft - left - st::introSettingsSkip);
+		_title->resizeToNaturalWidth(titleWidth);
+		_title->moveToLeft(left, top + st::introTitleTop);
+		// introDescription.minWidth will not wrap below 300px.
+		_description->resizeToWidth(st::introDescription.minWidth);
+		const auto belowHeader = std::max(
+			_title->y() + _title->height(),
+			_photo->y() + _photo->height()) + st::introPhoneTop;
+		_description->moveToLeft(
+			left,
+			std::max(top + st::introDescriptionTop, belowHeader));
+		_name->moveToLeft(
+			contentLeft(),
+			std::max(
+				top + st::introStepFieldTop,
+				_description->y()
+					+ _description->height()
+					+ st::introPhoneTop));
+		statusTop = std::max(
+			statusTop,
+			_name->y() + _name->height() + st::introPhoneTop);
+		_next->moveToLeft(
+			(width() - _next->width()) / 2,
+			std::max(
+				top + st::introNextTop,
+				statusTop + (st::introNextTop - st::introErrorTop)));
 		_privacy->moveToLeft(
 			(width() - _privacy->width()) / 2,
 			_next->y() + _next->height() + _privacy->height());
@@ -371,7 +397,7 @@ void DeltaOnboarding::updateControlsGeometry() {
 			st::introSettingsSkip);
 	}
 	_status->resizeToWidth(width());
-	_status->moveToLeft(0, top + st::introErrorTop);
+	_status->moveToLeft(0, statusTop);
 }
 
 void DeltaOnboarding::paintEvent(QPaintEvent *e) {
