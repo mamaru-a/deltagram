@@ -1,5 +1,31 @@
 # Publication validation
 
+### Full-message access gap and Core search boundary — 2026-10-26
+
+An isolated offline Core fixture retains a shorter plain representation and a
+full HTML body with an extra detail marker and table. Its message reports
+`hasHtml: true`; `get_message_html` returns the complete fixture. Core search
+finds the plain marker and does not find the HTML-only marker. That matches
+Core's documented search over its stored text, not a Qt result-list failure.
+No client HTML indexing is added.
+
+On verified `a19d9e2`, the plain marker is searchable and its hit opens the
+matching Saved Message with the saved draft preserved. The bubble and context
+menu offer no full-message control; the GUI makes no `get_message_html` request.
+Message info also lacks the extra HTML-only content. Native HTML-only search
+shows No Results, matching Core. The GUI probe makes no send/create/accept/block
+operation. Startup IO acknowledgements are stubbed without dispatch in this
+offline copy. Private evidence is under
+`/tmp/deltagram-live/backup-search-pager-a19/html-message/`.
+
+Source review confirms this is an access defect: Core sets `hasHtml` when
+simplification can omit content, including long-text truncation and MIME
+remainders, and expects a Show full message control. Current Qt code only uses
+the flag to refuse editing. An on-demand Core-backed viewer and controls are
+under scoped implementation. Complete body access, resource/link restrictions,
+account/cancellation handling and native rendering must pass before this gap
+is closed. The offline fixture is stopped before restoring the main profiles.
+
 ### Native search account cancellation and load-more recovery — 2026-10-26
 
 Verified `a19d9e2` switches from disposable profile 2 to 3 at 1.82 seconds while
