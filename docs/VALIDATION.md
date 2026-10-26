@@ -36,6 +36,20 @@ checks**, zero failures/skips, serially. Source audit checks 13,247 files with
 zero blocking findings. Native compilation and rendered startup retry/failure
 injection for this newer correction remain pending; `2908654` predates it.
 
+Archived-search replay also passes on `2908654`. The disposable device chat is
+archived once, the GUI quits normally and its processes are verified stopped,
+then the same binary restarts without the chat in its ordinary list. Rejecting
+BasicChat metadata makes the search show Failed / Retry, rather than No Results
+or placeholder names. After clearing the rejection, one explicit Retry reuses
+the result IDs and fetches the two message hits once. Both rows display Device
+messages. Opening a hit retains that header and Mute-only controls, with no
+composer. The audit records no create/accept/block/send calls. The chat is
+restored to Normal visibility; original drafts, history and request states
+match their baseline. Private evidence is
+`/tmp/deltagram-live/native290-device-search/native-result.json`. This does not
+cover initial-ID failures, load-more failures, account-switch cancellation or
+HTML search.
+
 ### Setup-avatar isolation — 2026-10-26
 
 Profile creation stages each selected avatar in a distinct owner-private
