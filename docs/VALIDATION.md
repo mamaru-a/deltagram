@@ -37,6 +37,17 @@ IO is enabled only for this explicit delivery phase. Private evidence is under
 support, in-flight lock/teardown or avatar
 selection in the native onboarding surface.
 
+An additional fresh destination closes the timed-action gap above. The proxy
+holds import dispatch for 30 seconds. Within 0.99 seconds of submission, while
+Core confirms the destination is still unconfigured, Create, alternate setup
+and Escape are attempted. The onboarding remains open and reports setup already
+in progress. The audit contains one import and one destination allocation,
+with zero config/provisioning/copy operations. That same import completes once,
+preserves the backup draft, and reaches Open Profile after the deliberately
+rejected opening. No mail IO starts in this check. Private evidence is under
+`/tmp/deltagram-live/backup-lock-122/`. This verifies those in-flight actions;
+cross-window contention and widget destruction remain separate native gates.
+
 ### Native local-language restart round trip — 2026-10-26
 
 On verified `2908654`, a local custom `.strings` file that omits the new restart
