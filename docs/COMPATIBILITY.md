@@ -1,5 +1,12 @@
 # Experimental compatibility tracker
 
+Real Telegram accounts are also required following the user's explicit
+2026-10-26 clarification. Current code is not Telegram-compatible: request
+dispatch and connection startup are globally cut over to Core. Restoring real
+Telegram requires explicit account/session backend routing, donor authentication
+and persistence, and regression proof that neither backend intercepts or alters
+the other's data. A Telegram-style interface alone does not satisfy this gate.
+
 Last reviewed: 2026-10-26. Deltagram is experimental and is not yet a complete
 Delta Chat client. Core provides messaging protocols and encryption; retaining
 a Telegram widget does not establish that its action works with Core.
@@ -37,6 +44,9 @@ Original profile data remains preserved. Production readiness still requires
 complete encryption and onboarding layout replay, broader startup cases,
 cross-window setup locking/teardown, remaining compatibility
 cases and final package validation.
+
+Real Telegram authentication/transport and mixed-backend account isolation are
+additional release gates. The existing Core-native results do not prove them.
 
 PR builds compile and smoke-test; they do not execute the workflow's optional
 package-verification step. After the final source is fixed and built, one
@@ -101,7 +111,7 @@ They are **unverified**, rather than assumed to work because the donor UI has th
 | Accessibility and localization | ❓ Unverified | Screen readers, keyboard navigation and RTL layouts. |
 | Appearance | 🟡 Partial | General wallpaper: local gallery and custom images in Settings → Chat Settings. Custom-image persistence checked across chats, profiles and restart; per-chat wallpaper is unavailable and removed from the chat menu. `14878ed` opens the local theme editor and exports a valid palette/background archive through its primary Export action. Theme import and full day/night combinations remain unverified. |
 | External integration | ❓ Unverified | Camera capture and sharing into/out of the application. |
-| Email presentation | 🟡 Partial | Native `a19d9e2` renders/searches a Core HTML fixture's plain representation, but has no access to its retained full HTML body. Full-message controls/viewer are under implementation. Core search intentionally excludes HTML-only/truncated remainder. Mailing-list sender override and subject presentation are also missing; broader mail replay remains open. |
+| Email presentation | 🟡 Partial | Native `a19d9e2` renders/searches a Core HTML fixture's plain representation, but has no access to its retained full HTML body. Full-message controls/viewer are under implementation. Core search intentionally excludes HTML-only/truncated remainder. Per-message sender overrides remain missing. Core already includes important email subjects in `text`; raw subject belongs in the full-message title. Broader mail replay remains open. |
 | Message content | ❓ Unverified | Stickers, copying links and complete media rendering. |
 | Trust information | 🟡 Partial | Core contact/chat encryption information and key-contact flags are implemented in source, without inventing Telegram verified badges. Typed lookup and mutation checks pass; final native fingerprint/name/delete replay remains pending. |
 | Group duplication | ❓ Unverified | Cloning a group with correct Core membership semantics. |

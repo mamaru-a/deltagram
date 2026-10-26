@@ -1,5 +1,33 @@
 # Publication validation
 
+### Real Telegram requirement and multi-profile startup replay — 2026-10-26
+
+The user explicitly requires real Telegram accounts alongside Core. Current
+`MTP::Instance::Private::sendRequest` unconditionally intercepts requests through
+Delta; `MTP::Session::start` returns before constructing its connection worker.
+These global cuts do not provide Telegram account compatibility. A per-account/
+session backend audit is active, including auth/storage and global Core-cache/UI
+hooks. Removing those returns alone is not sufficient isolation. No personal
+Telegram account/session or credentials are used in this audit.
+
+Separately, verified Core-native `a19d9e2` passes four-profile cold-start faults.
+A string-valued selected ID renders Retry with no guessed selection, opening or
+allocation. After clearing that fault, rejected selection renders Open Profile
+and does not start IO. A rejected config read after successful IO startup also
+retains Open Profile. Clearing faults and retrying recovers into original profile
+3 with IDs `[1,2,3,4]` unchanged. The complete sequence has zero add/import/
+configure/config/send writes. Baseline drafts, history, requests and device
+visibility remain preserved; fault policy is restored. Private evidence is
+`/tmp/deltagram-live/native-a19-multi-startup/native-result.json`. This proves
+Core recovery only, not the newly required Telegram backend.
+
+The email subject audit also corrects the earlier presentation finding: Core
+already prepends important classic/list subjects to `text` and deliberately
+omits generated chat subjects from bubbles. Raw `subject` is appropriate for
+the full-message title, not an additional bubble prefix. Per-message sender
+override remains a separate missing presentation path; it must retain the real
+sender contact identity rather than renaming global contact data.
+
 ### Full-message access gap and Core search boundary — 2026-10-26
 
 An isolated offline Core fixture retains a shorter plain representation and a
