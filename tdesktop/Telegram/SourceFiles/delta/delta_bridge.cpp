@@ -5,6 +5,7 @@ This file is part of Delta Tel, a Telegram Desktop based Delta Chat client.
 #include "delta/compose_queue_sender.h"
 #include "delta/profile_activity.h"
 #include "delta/chat_mute.h"
+#include "delta/send_permission.h"
 
 #include "apiwrap.h"
 #include "delta/account_scope.h"
@@ -798,6 +799,11 @@ public:
 	, _selfName(selfName) {
 		GlobalBridge = this;
 		_backups = std::make_unique<BackupTransfers>(_rpc);
+		_permissions = std::make_unique<ChatSendPermissions>(
+			[rpc = _rpc](QString method, QJsonArray params, DeltaRpc::Callback done) {
+				rpc->call(method, params, std::move(done));
+			},
+			[] { ComposerRevision = ComposerRevision.current() + 1; });
 		_replies = std::make_unique<ReplyStore>(
 			[rpc = _rpc](QString method, QJsonArray params, DeltaRpc::Callback done) {
 				rpc->call(method, params, std::move(done));
@@ -871,15 +877,33 @@ public:
 		const auto chat = chatForPeerUser(int(userId));
 		const auto current = _accountScope.guard();
 		const auto alive = _alive;
-		_replies->submit(_accountId, chat, std::move(text), [=](int id, QString error) {
-			if (alive.expired()) return;
-			if (!current()) {
-				if (!error.isEmpty()) reportError(u"A notification reply in your previous profile needs review. Switch back and open Saved replies."_q);
-				return;
-			}
-			if (id > 0) addIncoming(chat, id);
-			if (!error.isEmpty()) reportError(error);
-		});
+		SubmitAuthorizedReply(
+			*_replies,
+			*_permissions,
+			_accountScope,
+			_accountId,
+			chat,
+			std::move(text),
+			[=](int id, QString error) {
+				if (alive.expired()) return;
+				if (!current()) {
+					if (!error.isEmpty()) reportError(kCoreSendReplyAccountChanged);
+					return;
+				}
+				if (id > 0) addIncoming(chat, id);
+				if (!error.isEmpty()) reportError(error);
+			});
+	}
+
+	void watchComposerChat(int userId) {
+		const auto chat = chatForPeerUser(userId);
+		_permissionFocus = chat;
+		if (chat > 0) _permissions->ensure(_accountScope, _accountId, chat);
+	}
+
+	void observeComposerChat(int userId) {
+		const auto chat = chatForPeerUser(userId);
+		if (chat > 0) _permissions->observe(_accountScope, _accountId, chat);
 	}
 
 	void loadSavedReplies(Fn<void(std::vector<SavedReply>, QString)> done) {
@@ -903,8 +927,21 @@ public:
 			if (!discard && id > 0) addIncoming(chat, id);
 			done(std::move(error));
 		};
-		if (discard) _replies->discard(_accountId, std::move(reviewed), finished);
-		else _replies->send(_accountId, std::move(reviewed), finished);
+		if (discard) {
+			_replies->discard(_accountId, std::move(reviewed), finished);
+			return;
+		}
+		_permissions->observe(_accountScope, _accountId, chat, [=](std::optional<bool> canSend) {
+			if (!current()) {
+				done(u"Account changed."_q);
+				return;
+			}
+			if (CoreSendAllowed(canSend)) {
+				_replies->send(_accountId, std::move(reviewed), finished);
+			} else {
+				done(kCoreSendDenied);
+			}
+		});
 	}
 
 	void noticeSavedReplies() {
@@ -935,6 +972,23 @@ public:
 			&& !_batches.contains({ _accountId, chat })
 			&& !_queueRuns.contains({ _accountId, chat })
 			&& !_drafts->sending(_accountId, chatForPeerUser(userId));
+	}
+
+	[[nodiscard]] std::optional<bool> composerSendKnown(int userId) const {
+		return _permissions->known(_accountId, chatForPeerUser(userId));
+	}
+
+	[[nodiscard]] bool composerSendAllowed(int userId) const {
+		return _permissions->allowed(_accountId, chatForPeerUser(userId));
+	}
+
+	QString outgoingDenied(int userId) {
+		const auto chat = chatForPeerUser(userId);
+		if (_permissions->allowed(_accountId, chat)) return {};
+		if (!_permissions->known(_accountId, chat).has_value()) {
+			_permissions->observe(_accountScope, _accountId, chat);
+		}
+		return kCoreSendDenied;
 	}
 
 	void loadComposeQueue(int userId, Fn<void(ComposeQueue, QString)> done) {
@@ -989,6 +1043,13 @@ public:
 			finishComposeQueue(account, chat, userId, current, {}, std::move(done));
 			return;
 		}
+		if (!_permissions->allowed(account, chat)) {
+			if (!_permissions->known(account, chat).has_value()) {
+				_permissions->observe(_accountScope, account, chat);
+			}
+			finishComposeQueue(account, chat, userId, current, kCoreSendDenied, std::move(done));
+			return;
+		}
 		const auto guard = _alive;
 		_queueSender->sendNext(account, chat, queue.id, queue.entries.front().id,
 			[=](int id, ComposeQueue remaining, QString error) {
@@ -1004,6 +1065,10 @@ public:
 
 	void sendComposeQueue(int userId, ComposeQueue reviewed, Fn<void(bool)> done) {
 		if (!composerWritable(userId) || reviewed.entries.empty()) return;
+		if (const auto error = outgoingDenied(userId); !error.isEmpty()) {
+			reportError(error);
+			return;
+		}
 		const auto chat = chatForPeerUser(userId);
 		_queueRuns.insert({ _accountId, chat });
 		ComposerRevision = ComposerRevision.current() + 1;
@@ -1030,6 +1095,10 @@ public:
 	}
 
 	void checkNewAttachmentBatch(int userId, Fn<void(QString)> done) {
+		if (const auto error = outgoingDenied(userId); !error.isEmpty()) {
+			done(error);
+			return;
+		}
 		const auto preparation = beginPreparedSend(userId);
 		if (!preparation) { done(u"Wait for the current compose operation before adding a batch."_q); return; }
 		const auto account = _accountId;
@@ -1064,6 +1133,7 @@ public:
 			std::vector<ComposeDraft> selection, Fn<void(bool)> done,
 			std::vector<ForwardSource> forwards) {
 		if (!composerWritable(userId)) return {};
+		if (!_permissions->allowed(_accountId, chatForPeerUser(userId))) return {};
 		const auto offset = selection.size();
 		for (const auto &source : forwards) {
 			if (source.chat <= 0 || source.message <= 0) return {};
@@ -1138,7 +1208,7 @@ public:
 	std::shared_ptr<PreparedSend> beginPreparedSend(int userId) {
 		if (!composerWritable(userId)) return {};
 		const auto chat = chatForPeerUser(userId);
-		if (chat <= 0) return {};
+		if (chat <= 0 || !_permissions->allowed(_accountId, chat)) return {};
 		auto result = std::make_shared<PreparedSend>();
 		result->account = _accountId;
 		result->chat = chat;
@@ -1180,6 +1250,13 @@ public:
 			done(0, u"The attachment belongs to an earlier profile view."_q);
 			return;
 		}
+		if (!_permissions->allowed(preparation->account, preparation->chat)) {
+			if (!_permissions->known(preparation->account, preparation->chat).has_value()) {
+				_permissions->observe(_accountScope, preparation->account, preparation->chat);
+			}
+			done(0, kCoreSendDenied);
+			return;
+		}
 		const auto guard = _alive;
 		const auto finished = [=](int id, QString error) {
 			if (guard.expired()) return;
@@ -1218,6 +1295,11 @@ public:
 
 	void sendComposerDraft(int userId, ComposeDraft draft, Fn<void(bool)> done) {
 		if (!composerWritable(userId)) return;
+		if (const auto error = outgoingDenied(userId); !error.isEmpty()) {
+			reportError(error);
+			if (done) done(false);
+			return;
+		}
 		const auto account = _accountId;
 		const auto chat = chatForPeerUser(userId);
 		const auto epoch = _dialogsEpoch;
@@ -1516,6 +1598,10 @@ public:
 			const QString &text,
 			int quotedId,
 			Fn<void(int, QString)> done) {
+		if (const auto error = outgoingDenied(userId); !error.isEmpty()) {
+			done(0, error);
+			return;
+		}
 		QJsonObject data;
 		data.insert(u"text"_q, text);
 		if (quotedId > 0) {
@@ -1577,6 +1663,10 @@ public:
 			int quotedId,
 			Fn<void(int, QString)> done,
 			const QString &filename = {}) {
+		if (const auto error = outgoingDenied(userId); !error.isEmpty()) {
+			done(0, error);
+			return;
+		}
 		QJsonObject data;
 		if (!caption.isEmpty()) {
 			data.insert(u"text"_q, caption);
@@ -1997,6 +2087,8 @@ public:
 		}
 		++_dialogsEpoch;
 		_accountScope.invalidate();
+		_permissionFocus = 0;
+		_permissions->reset();
 		_session->api().resetMediaForAccountChange();
 		_session->recentPeers().resetForAccountChange();
 		_session->topPeers().resetForAccountChange();
@@ -2508,11 +2600,13 @@ public:
 			const auto result = reply.value(u"result"_q);
 			if (method == u"get_full_chat_by_id"_q) {
 				const auto object = result.toObject();
-				if (RememberCoreChat(uint64(chatForPeerUser(userId)), object)) {
+				const auto chat = chatForPeerUser(userId);
+				if (RememberCoreChat(uint64(chat), object)) {
 					ChannelInfos.insert(userId, object);
 					ChannelRevision = ChannelRevision.current() + 1;
 					_session->changes().peerUpdated(_session->data().user(UserId(userId)), Data::PeerUpdate::Flag::OnlineStatus);
 				}
+				_permissions->apply(_accountId, chat, object);
 			} else if (!method.startsWith(u"get_"_q)) {
 				_reload.start();
 			}
@@ -2951,6 +3045,7 @@ private:
 		const auto chatId = chatForPeerUser(userId);
 		const auto guard = _alive;
 		const auto epoch = _dialogsEpoch;
+		_permissions->ensure(_accountScope, _accountId, chatId);
 		const auto loadIds = [=] {
 			call(
 			u"get_message_ids"_q,
@@ -3105,6 +3200,10 @@ private:
 		if (!reader.ok() || !userId) {
 			return fail(instance, requestId, u"DELTA_BAD_REQUEST"_q);
 		}
+		if (const auto error = outgoingDenied(userId); !error.isEmpty()) {
+			reportError(error);
+			return fail(instance, requestId, u"DELTA_SEND_DENIED"_q);
+		}
 		QJsonObject data;
 		data.insert(u"text"_q, text);
 		if (quotedId > 0) {
@@ -3234,6 +3333,21 @@ private:
 			&& !context.isNull()
 			&& context.toInt() != _accountId) {
 			return;
+		}
+		const auto eventChat = CoreEventChatId(event);
+		if (kind == u"ChatDeleted"_q) {
+			if (eventChat > 0) _permissions->forget(_accountId, eventChat);
+		} else if (kind == u"ChatModified"_q
+			|| kind == u"IncomingMsg"_q
+			|| kind == u"MsgsChanged"_q
+			|| kind == u"ChatlistItemChanged"_q) {
+			if (eventChat > 0) {
+				_permissions->refresh(_accountScope, _accountId, eventChat);
+			} else {
+				_permissions->refreshWatched(_accountScope, _accountId, _permissionFocus);
+			}
+		} else if (kind == u"ChatlistChanged"_q) {
+			_permissions->refreshWatched(_accountScope, _accountId, _permissionFocus);
 		}
 		if (kind == u"ConnectivityChanged"_q) {
 			refreshConnectivity();
@@ -3679,6 +3793,8 @@ public:
 
 	const not_null<Main::Session*> _session;
 	const std::shared_ptr<DeltaRpc> _rpc;
+	std::unique_ptr<ChatSendPermissions> _permissions;
+	int _permissionFocus = 0;
 	std::shared_ptr<DraftStore> _drafts;
 	std::unique_ptr<ReplyStore> _replies;
 	std::shared_ptr<ComposeQueueStore> _queues;
@@ -3821,6 +3937,24 @@ rpl::producer<int> ComposerChanges() {
 
 bool ComposerWritable(int userId) {
 	return GlobalBridge && GlobalBridge->composerWritable(userId);
+}
+
+std::optional<bool> ComposerSendKnown(int userId) {
+	return GlobalBridge
+		? GlobalBridge->composerSendKnown(userId)
+		: std::nullopt;
+}
+
+bool ComposerSendAllowed(int userId) {
+	return GlobalBridge && GlobalBridge->composerSendAllowed(userId);
+}
+
+void WatchComposerChat(int userId) {
+	if (GlobalBridge) GlobalBridge->watchComposerChat(userId);
+}
+
+void ObserveComposerChat(int userId) {
+	if (GlobalBridge) GlobalBridge->observeComposerChat(userId);
 }
 
 bool PreparingSendPreventsQuit() {

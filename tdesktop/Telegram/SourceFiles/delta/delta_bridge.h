@@ -70,6 +70,10 @@ void SendSavedReply(SavedReply reviewed, Fn<void(QString)> done);
 void DiscardSavedReply(SavedReply reviewed, Fn<void(QString)> done);
 [[nodiscard]] rpl::producer<int> ComposerChanges();
 [[nodiscard]] bool ComposerWritable(int userId);
+[[nodiscard]] std::optional<bool> ComposerSendKnown(int userId);
+[[nodiscard]] bool ComposerSendAllowed(int userId);
+void WatchComposerChat(int userId);
+void ObserveComposerChat(int userId);
 [[nodiscard]] bool PreparingSendPreventsQuit();
 void SendComposerText(int userId, const QString &text, int quotedMessageId,
 	Fn<void(bool)> done);

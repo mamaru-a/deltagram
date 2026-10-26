@@ -598,6 +598,8 @@ private:
 	[[nodiscard]] Data::ForumTopic *resolveReplyToTopic();
 	[[nodiscard]] bool canWriteMessage() const;
 	[[nodiscard]] bool deltaComposerLocked() const;
+	[[nodiscard]] bool deltaSendAllowed() const;
+	[[nodiscard]] bool deltaRefuseSend();
 	[[nodiscard]] std::optional<std::vector<Delta::ForwardSource>> deltaForwardSources() const;
 	void refreshDeltaComposeQueue();
 	[[nodiscard]] int deltaQueuedAttachmentCount() const;

@@ -1438,6 +1438,7 @@ PRIVATE
     delta/profile_activity.cpp
     delta/profile_activity.h
     delta/chat_mute.h
+    delta/send_permission.h
     delta/compose_queue.h
     delta/compose_queue_sender.cpp
     delta/compose_queue_sender.h
