@@ -523,8 +523,54 @@ blocking findings; whitespace checks pass. These checks do not compile every UI
 translation unit or prove final rendered behavior. Native compilation, language
 code generation, group/sidebar/profile/search fault replay and remaining
 compatibility/package gates are still required. Native run `40315236704` at
-`cacc5ce` completed successfully but predates this source batch; its artifact
-verification and notification GUI replay remain separate checks.
+`cacc5ce` completed successfully but predates this source batch. Its artifact
+and notification GUI replay are verified separately below.
+
+### Native incoming notifications — 2026-10-26
+
+[Native run `40315236704`](https://github.com/omidz4t/deltagram/actions/runs/40315236704)
+passes compilation and **510 checks** with no failures or skips: 305 integrity,
+82 request-action, 64 contact-open and 59 notification checks. All five downloaded
+payload checksums match. Provenance and merge parents identify PR head
+`cacc5cef21a0435bdc5144d269b68954de0914bd`, checkout
+`5a86af5885e3bc38205e90da57049b6be04b4b43` and base
+`b713bff697ad3450bf842da5f24f83b64a9d68e6`.
+
+After normal shutdown, verified process exit and a fresh private checkpoint, the
+disposable GUI runs that artifact. A new group from the disposable request sender
+produces a popup with its Core group name and actual user text. Core's preceding
+`ChatE2ee` notice is state 13 and remains in the transcript; the captured arrival
+sequence shows no extra encryption or empty-name popup. An incoming synthetic
+photo renders with its caption. After navigating to another conversation, a new
+message in the test group still produces a named popup. GUI Mute suppresses the
+next popup while retaining the message in history; Core omits it from fresh
+messages. GUI Unmute restores the prior state.
+
+The GUI audit contains no send/create/accept/block/delete operation during these
+receiving probes; the isolated sender submits each fixture once. Original drafts,
+baseline message IDs, accepted/blocked/deleted request states, the remaining
+alternate-profile request and the restored device-chat visibility are preserved.
+Fault policies are cleared, and one project GUI/proxy/Core chain remains running.
+Private captures and numeric evidence are under
+`/tmp/deltagram-live/cacc-notification-fixture/` in the disposable test container.
+
+A further one-shot probe temporarily limits automatic downloads on the disposable
+account. A larger image arrives as a Text placeholder with Core download state
+Available. The GUI's Download action upgrades that existing item in the open
+history to Image/Done, retaining the caption and showing no extra popup in the
+download capture. The delivered 985,178 bytes match the sender's Core image by
+SHA-256. The viewer opens the downloaded photo, navigates to the previous blue
+photo and back, and closes to the conversation. The prior download limit is
+restored, and the original drafts/history/request checks still pass.
+
+The preparation observer initially times out because Core appends size metadata
+to the placeholder caption. Read-only reconciliation identifies the already-sent
+message; no send is repeated. Private partial-download evidence records this
+observer limitation separately from the verified GUI/Core result.
+
+This verifies the captured notification/name/mute flow, photo rendering and one
+real Existing-message placeholder upgrade. It does not prove every document type,
+donor scheduling state or the newer group/profile/search source batch.
 
 ### Archived device history from search — 2026-10-26
 

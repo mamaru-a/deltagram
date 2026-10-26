@@ -67,7 +67,7 @@ They are **unverified**, rather than assumed to work because the donor UI has th
 
 | Feature area | Status | Checks to record |
 | --- | --- | --- |
-| Media browser | ❓ Unverified | Combined media list, previous/next, delete and return to message. |
+| Media browser | 🟡 Partial | `cacc5ce` passes a real partial-photo placeholder upgrade, viewer opening, previous/next between two photos, and closing to the conversation. Combined media types, deletion and return-to-message actions remain unverified. |
 | Chat management | ❓ Unverified | Clear history rejection/success and date-range deletion have targeted GUI checks; bulk read state and last-read positioning still need coverage. |
 | Member profiles | 🟡 Partial | `4b5e093` reproduces a group header opening donor contact controls without members. Dedicated Core group/member information, sender identity inspection and sidebar routing are now in source; focused helper checks pass. Full native/member navigation replay remains pending. |
 | Attachments | 🟡 Partial | Ordinary single-file recovery, prepared/resized/rotated image delivery, uncompressed bytes, private staging cleanup and generated archives have revision-specific checks below. Prepared-image restart/retry passes with an older quote after the Core lookup fix. Multiple-file/video paths and broader prepared-media recovery remain open. |
