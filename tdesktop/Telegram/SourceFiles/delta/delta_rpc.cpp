@@ -1,5 +1,6 @@
 #include "delta_rpc.h"
 
+#include <QCoreApplication>
 #include <QJsonDocument>
 #include <QTimer>
 
@@ -14,6 +15,21 @@
 #endif
 
 using namespace Qt::StringLiterals;
+
+namespace {
+
+class RpcCallbackLifetime final : public QObject {
+public:
+	explicit RpcCallbackLifetime(std::shared_ptr<DeltaRpc> rpc)
+	: QObject(QCoreApplication::instance())
+	, _rpc(std::move(rpc)) {
+	}
+
+private:
+	std::shared_ptr<DeltaRpc> _rpc;
+};
+
+} // namespace
 
 DeltaRpc::DeltaRpc(QObject *parent)
 : QObject(parent)
@@ -254,4 +270,26 @@ void DeltaRpc::failPending(const QString &reason) {
 			request.done(envelope);
 		}
 	}
+}
+
+void CallOwnedDeltaRpc(
+		std::shared_ptr<DeltaRpc> rpc,
+		const QString &method,
+		const QJsonArray &params,
+		DeltaRpc::Callback done,
+		int timeoutMs) {
+	if (!rpc || rpc->parent() || !QCoreApplication::instance()) {
+		if (done) done(QJsonObject{{u"error"_s,
+			QJsonObject{{u"message"_s, u"RPC is not available."_s}}}});
+		return;
+	}
+	const auto raw = rpc.get();
+	raw->call(method, params,
+		[rpc = std::move(rpc), done = std::move(done)](QJsonObject reply) mutable {
+			// Deferred deletion also waits across a nested event loop opened
+			// by done(); a zero-delay timer alone would release too early.
+			const auto lifetime = new RpcCallbackLifetime(std::move(rpc));
+			lifetime->deleteLater();
+			if (done) done(std::move(reply));
+		}, timeoutMs);
 }

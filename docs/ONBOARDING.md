@@ -25,7 +25,8 @@ backup of that selected profile. Choose a destination folder and optionally
 enter the same backup passphrase twice. Each attempt writes to a new
 `chatmail-backup-...` subfolder; the success message shows its location. Repeat
 for each Chatmail profile that needs a backup. Keep the app open until export
-finishes. Closing the dialog does not cancel an export already submitted. Normal
+finishes. Closing the dialog does not cancel an export already submitted. Its
+RPC stays alive through completion even if the originating session is released. Normal
 quit/restart stays blocked until Core replies; try quitting or restarting again
 after completion. Profile deletion and export cannot run together; retry after
 the pending operation finishes. Force termination or power loss can still

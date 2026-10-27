@@ -8,6 +8,7 @@
 #include <QString>
 
 #include <functional>
+#include <memory>
 
 class QTimer;
 
@@ -50,3 +51,12 @@ private:
 	bool _stopping = false;
 	bool _failed = false;
 };
+
+// Retain an unparented shared RPC through its terminal callback. Release it on
+// the next application turn, after the RPC read/failure stack has unwound.
+void CallOwnedDeltaRpc(
+	std::shared_ptr<DeltaRpc> rpc,
+	const QString &method,
+	const QJsonArray &params,
+	DeltaRpc::Callback done,
+	int timeoutMs = -1);

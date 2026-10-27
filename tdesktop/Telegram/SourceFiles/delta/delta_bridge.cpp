@@ -5228,7 +5228,7 @@ void ExportProfileBackup(
 	const auto weak = base::make_weak(session);
 	ExportBackupFile(
 		[rpc = bridge->_rpc](QString method, QJsonArray params, DeltaRpc::Callback callback) {
-			rpc->call(method, params, std::move(callback));
+			CallOwnedDeltaRpc(rpc, method, params, std::move(callback));
 		},
 		state,
 		bridge->_accountScope,

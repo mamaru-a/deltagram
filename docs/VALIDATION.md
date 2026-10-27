@@ -74,6 +74,44 @@ remains pending. Force kill, OS shutdown, power loss, and a permanently unrespon
 RPC are not recovered or cancelled by this guard. Private recorder evidence is
 under `data/integrity-live/backup-quit/`.
 
+### Export RPC lifetime after session teardown — 2026-10-27
+
+The export request closure held a shared RPC only until submission returned.
+The pending callback kept its export reservation but not the RPC itself. Releasing
+the session/Bridge's final RPC owner could therefore stop the child before export
+finished. Export now submits through `CallOwnedDeltaRpc`, which retains an
+unparented shared RPC through success or transport failure. Terminal completion
+moves that ownership to a small QObject scheduled for deferred deletion. This
+keeps destruction outside the RPC read/failure stack, including when completion
+opens a nested event loop; a zero-delay timer would not provide that guarantee.
+Null or QObject-parent-owned RPC inputs are rejected. Existing ordinary calls,
+explicit stop semantics, Core protocol/format and Telegram transport are unchanged.
+
+The permanent real-QProcess Qt target passes ten checks under ASan/UBSan as
+UID/GID 65534 with Qt 6.4.2. A pre-fix raw-call adapter against the old DeltaRpc
+implementation fails six of those cases. The cases cover owner loss before a
+success/error reply, child failure, malformed transport, no stale UI callback,
+reservation cleanup, a nested completion event loop, explicit stop, stopped/null
+RPCs and rejection of parent-owned objects. The fixed target verifies final weak
+owner and QObject release rather than merely retaining the process indefinitely.
+
+A second unprivileged sanitizer driver uses the actual DeltaRpc/export helper
+with the pinned Core server and immutable disposable backup. It imports offline,
+submits export, invalidates the UI scope and releases the session-equivalent RPC
+owner before processing the reply. Export finishes, stale UI is not called, and
+the retained RPC is released. Reopening Core confirms the original profile is
+unchanged; restoring the exported archive matches checked non-device message IDs,
+drafts and all blob hashes. Output remains 0600 under a 0700 folder; the input
+archive is byte-identical. No mail-IO-starting RPC is used, and no unprivileged
+Core process remains after completion.
+
+All three registered CTest targets (RPC lifetime, child-file privacy, export
+helper) pass as UID/GID 65534. Native `delta_rpc.cpp` and `delta_bridge.cpp`
+syntax/type checks pass. This is real RPC/process and offline Core evidence, not
+a full Bridge/session/window teardown GUI replay or live-IO export claim. It does
+not recover forced process termination or a permanently unresponsive server.
+Private evidence is under `data/integrity-live/rpc-export-lifetime/`.
+
 ### Profile deletion during backup export — 2026-10-27
 
 The profile menu could issue `remove_account` for an exporting profile. Pinned
