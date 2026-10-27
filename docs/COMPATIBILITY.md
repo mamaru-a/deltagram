@@ -3,11 +3,12 @@
 Real Telegram accounts are required alongside Chatmail profiles. Source now
 contains persisted backend identity, account-type selection, restored donor
 MTProto dispatch/connections, and session-scoped UI/data routing. These changes
-link in CI at `9714b03`, but that run fails a Qt 6.11 RPC-lifetime test.
-The corrected source passes focused checks on pinned Qt 6.11 and system Qt 6.4;
-a fresh complete CI run and validated artifact are still required. Core-native
-results do not establish Telegram authentication, session recovery, feature
-compatibility, or mixed-account isolation.
+link and pass the complete native run at `227cfc4` (994 checks in 24 targets,
+zero failures/skips). Its artifact hashes/provenance match. Native credential-free
+checks cover compact backend choice, Telegram country lookup and phone-login
+entry. A subsequent welcome-copy correction still needs linked/render validation.
+These results do not establish Telegram authentication, session recovery, feature
+compatibility, or mixed authenticated account isolation.
 
 Last reviewed: 2026-10-27. Deltagram remains experimental. Core provides
 Chatmail protocols and encryption; Telegram uses the donor backend. Retaining
@@ -30,24 +31,22 @@ are not copied here. Deltagram evidence comes from [PROGRESS.md](PROGRESS.md),
 
 ## Current readiness gates
 
-The last verified complete native artifact is `ef176e9`, with 23 Qt suites,
-962 checks and zero failures/skips; its hashes and source provenance were checked.
-An isolated native replay opens Core, adds an Unspecified slot, then explicitly
-selects Telegram and reaches its phone-login screen with a Telegram DC connection.
-Cold restart preserves the offline Core fixture and both backend sidecars.
-No Telegram credentials were entered; authorized session recovery and mixed
-message-ID isolation remain unproven. Core mail IO was suppressed.
+The last verified complete native artifact is `227cfc4`, with 24 Qt suites,
+994 checks and zero failures/skips, verified hashes and matching source provenance.
+It resolves the prior Qt 6.11 RPC-lifetime CI failure. Native replay confirms both
+backend choices and wrapped copy at 380x480 in screen-reader mode, then fetches a
+fresh 232-country Telegram catalog and reaches phone login without credentials.
+Welcome copy incorrectly claiming the app is official Delta Chat is corrected
+in source, with language generation/native syntax checks; the new copy still
+needs a linked/render check. RTL, scale, localized/error layout remain open.
 
-That artifact predates the corrected retained-RPC implementation and the newest
-chooser/country-binding fixes. CI `9714b03` links but fails its Qt 6.11 RPC
-lifetime target; corrected source passes focused Qt 6.11/6.4 sanitizer checks.
-Current changed production units pass native syntax/type checks. A fresh complete
-run and current-artifact replay remain required. Compact chooser clipping and
-premature country lookup are reproduced and source-corrected; their native
-render/catalog replay remains pending. Periodic unsupported Core background
-requests remain unattributed. Historical `bd1ea60` viewer/cancellation evidence
-still applies only to that revision. The forgotten-passcode guard passes focused
-Qt tests and an exact reset-method recorder.
+Earlier `ef176e9` replay opens Core, adds an Unspecified slot, then selects Telegram
+and reaches phone login with a DC connection. Cold restart preserves the offline
+Core fixture and both backend sidecars. Core mail IO was suppressed. Authorized
+session recovery and mixed message-ID isolation remain unproven. Periodic
+unsupported Core background requests remain unattributed. Historical `bd1ea60`
+viewer/cancellation evidence applies only to that revision. The forgotten-passcode
+guard passes focused Qt tests and an exact reset-method recorder.
 
 Historical Core-only replay covers encryption information, onboarding avatar
 layout at tested LTR sizes, startup Loading/Retry/Open Profile, group-sidebar

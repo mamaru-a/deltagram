@@ -46,6 +46,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_full_message_plain" = "The original images and formatting could not be shown. The message text is below.";
 "lng_full_message_link_denied" = "This link cannot be opened.";
 "lng_delta_account_choice_title" = "Choose an account type";
+"lng_delta_telegram_intro_title" = "Sign in to Telegram";
+"lng_delta_telegram_intro_about" = "Use your Telegram account\nin Deltagram.";
 "lng_delta_account_choice_about" = "Chatmail keeps a local profile on this device. Telegram signs in to a Telegram account.";
 "lng_delta_account_choice_core" = "Chatmail";
 "lng_delta_account_choice_telegram" = "Telegram";

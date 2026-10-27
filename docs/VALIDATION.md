@@ -1,6 +1,47 @@
 # Publication validation
 
 
+### Current native chooser and Telegram country catalog — 2026-10-27
+
+[Run 40468612014](https://github.com/omidz4t/deltagram/actions/runs/40468612014)
+at `227cfc4` passes all 24 CTest targets: 994 Qt checks, zero failures/skips.
+The downloaded archive digest and all five artifact-file hashes match. Provenance
+identifies merge `99be7f3`, parents `b713bff` and `227cfc4`; its tree matches local
+`227cfc4`. GUI SHA256:
+`9e521746ea175c9a283cbeed502fe2c2784afd479932d009fa05b8c7afc3fc3e`.
+The preceding retained-RPC correction also passes the complete run
+[40455308293](https://github.com/omidz4t/deltagram/actions/runs/40455308293)
+at `1fea603`: 24 targets, 994 checks, zero failures/skips, verified archive/file
+hashes and source-matching merge provenance. The `9714b03` CI lifetime failure
+is resolved by that implementation; full GUI setup/export teardown remains open.
+
+A fresh UID 65534 native GUI/store on a separate disposable display verifies the
+chooser at 818x642 and 380x480 with screen-reader mode enabled. The description
+now occupies 72px and all text is painted. At 380x480, the Telegram button is
+fully inside the window (global y456..498, window bottom532), with Chatmail above
+it and no overlapping copy. Both choices are visible. RTL, other interface
+scales, long localized copy and persist-error presentation remain untested.
+
+The fresh store has no country cache before backend selection. Explicit Telegram
+selection, through the same account's MTP rebuild, creates a 21,458-byte catalog
+with 232 visible countries. No `getting countries failed` error is logged.
+Start Messaging and Log in using phone number reach the donor phone-login screen;
+no phone number, code or password is entered and no QR token is captured. This
+checks native unauthenticated country lookup, not Telegram authorization/session
+persistence. No Core store/RPC is opened in this fresh Telegram-only replay.
+The earlier `ef176e9` Core-plus-preauth-Telegram restart proof remains separate.
+The test GUI quits normally; its own Xvfb is stopped. Evidence and bounded AT-SPI
+snapshots are under `data/integrity-live/chooser-native-227cfc4/` (ignored).
+
+This replay also exposed incorrect product copy on the donor welcome screen:
+"Welcome to the official Delta Chat app." The source now uses separate Deltagram
+language keys: "Sign in to Telegram" and "Use your Telegram account in Deltagram."
+It changes no authentication or transport behavior. Full/subset language
+generation and configured native syntax checks pass for `intro_start.cpp`.
+The updated copy still needs a new linked artifact/render check. No production
+or real Telegram account compatibility claim follows from these checks.
+
+
 ### Mixed backend entry and compact chooser — 2026-10-27
 
 The complete artifact from [run 40438754289](https://github.com/omidz4t/deltagram/actions/runs/40438754289)
