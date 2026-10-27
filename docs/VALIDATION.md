@@ -1,5 +1,39 @@
 # Publication validation
 
+### Interrupted offline database import — 2026-10-27
+
+The same SHA256-verified pinned Core server and immutable disposable source
+archive used by the extraction check also pass one SQL-write interruption.
+A copy of the archive has a 64 MiB `txt_raw` probe on a retained normal-message
+row, with no change to visible text, identity or message IDs. A full control
+import first preserves the reference message IDs, drafts and blob hashes and
+retains the probe. The first attempted control picked a device-notice row,
+which Core intentionally deletes; that fixture attempt stopped before fault
+injection and is not counted as a crash-recovery test.
+
+On a new destination, the owned subprocess was stopped with its 67,710,976-byte
+backup database fully extracted and its destination WAL grown from 2,401,992
+to 7,214,152 bytes. The main database was still 4,096 bytes and the import reply
+was pending. The stopped PID was confirmed before SIGKILL; its terminal exit
+was awaited before reopening the same disposable accounts directory.
+
+After restart, the destination remained unconfigured. Import retry on that
+same account ID succeeds. The other restored profile preserves its message-ID
+lists, draft records and blob hashes. Read-only follow-up inspection passes
+`PRAGMA integrity_check` on all four reference/control/recovered databases;
+every column of all 27 non-device message rows matches its appropriate control,
+and the 64 MiB probe hash matches exactly. The original archive is unchanged.
+No mail-IO-starting RPC was used, and no owned test process remains.
+
+This is a measured destination SQL-write checkpoint, not exhaustive crash-stage
+coverage, power-loss durability, a native onboarding/GUI teardown check, network
+isolation or Telegram validation. No Core/client patch was required by this
+result. Private scripts/evidence are
+`data/integrity-live/backup_sql_interruption.py`,
+`data/integrity-live/verify_sql_import_recovery.py`, and
+`data/integrity-live/backup-sql-interruption/*.json`; generated accounts remain
+under `/tmp/deltagram-live/sql-import-interruption-20261027-b`.
+
 ### Interrupted offline backup extraction — 2026-10-27
 
 The pinned Core server from native artifact `bd1ea60` matches SHA256
