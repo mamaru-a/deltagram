@@ -9,6 +9,7 @@
 
 #include <functional>
 #include <memory>
+#include <vector>
 
 class QTimer;
 
@@ -31,6 +32,10 @@ public:
 	void setEventHandler(Callback handler);
 
 private:
+	class DispatchGuard;
+	friend void CallOwnedDeltaRpc(std::shared_ptr<DeltaRpc>, const QString &,
+		const QJsonArray &, Callback, int);
+	void deferOwnedRelease(std::shared_ptr<DeltaRpc> rpc);
 	void onReadyRead();
 	void onFinished(int exitCode, QProcess::ExitStatus status);
 	void failPending(const QString &reason);
@@ -50,10 +55,12 @@ private:
 	QTimer *_startup = nullptr;
 	bool _stopping = false;
 	bool _failed = false;
+	int _activeDispatches = 0;
+	std::vector<std::shared_ptr<DeltaRpc>> _releaseWhenIdle;
 };
 
 // Retain an unparented shared RPC through its terminal callback. Release it on
-// the next application turn, after the RPC read/failure stack has unwound.
+// an application turn with no active RPC dispatch, including nested loops.
 void CallOwnedDeltaRpc(
 	std::shared_ptr<DeltaRpc> rpc,
 	const QString &method,

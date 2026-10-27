@@ -16,20 +16,24 @@
 
 using namespace Qt::StringLiterals;
 
-namespace {
-
-class RpcCallbackLifetime final : public QObject {
+class DeltaRpc::DispatchGuard final {
 public:
-	explicit RpcCallbackLifetime(std::shared_ptr<DeltaRpc> rpc)
-	: QObject(QCoreApplication::instance())
-	, _rpc(std::move(rpc)) {
+	explicit DispatchGuard(DeltaRpc *rpc) : _rpc(rpc) {
+		++_rpc->_activeDispatches;
 	}
+	~DispatchGuard() {
+		if (--_rpc->_activeDispatches) return;
+		auto owners = std::exchange(_rpc->_releaseWhenIdle, {});
+		for (auto &owner : owners) {
+			_rpc->deferOwnedRelease(std::move(owner));
+		}
+	}
+	DispatchGuard(const DispatchGuard &) = delete;
+	DispatchGuard &operator=(const DispatchGuard &) = delete;
 
 private:
-	std::shared_ptr<DeltaRpc> _rpc;
+	DeltaRpc *_rpc;
 };
-
-} // namespace
 
 DeltaRpc::DeltaRpc(QObject *parent)
 : QObject(parent)
@@ -85,6 +89,7 @@ DeltaRpc::~DeltaRpc() {
 }
 
 void DeltaRpc::start(const QString &program, const QString &accountsPath) {
+	const auto dispatch = DispatchGuard(this);
 	stop();
 	_stopping = false;
 	_failed = false;
@@ -113,6 +118,7 @@ void DeltaRpc::start(const QString &program, const QString &accountsPath) {
 }
 
 void DeltaRpc::stop() {
+	const auto dispatch = DispatchGuard(this);
 	_stopping = true;
 	_startup->stop();
 	failPending(u"rpc stopped"_s);
@@ -139,6 +145,7 @@ void DeltaRpc::call(
 		const QJsonArray &params,
 		Callback done,
 		int timeoutMs) {
+	const auto dispatch = DispatchGuard(this);
 	if (!running()) {
 		QJsonObject error{{u"message"_s, u"rpc server is not running"_s}};
 		if (done) {
@@ -185,6 +192,7 @@ void DeltaRpc::call(
 }
 
 void DeltaRpc::onReadyRead() {
+	const auto dispatch = DispatchGuard(this);
 	_buffer.append(_process.readAllStandardOutput());
 	if (_failed || _stopping) return;
 	while (true) {
@@ -233,6 +241,7 @@ void DeltaRpc::handleLine(const QByteArray &line) {
 }
 
 void DeltaRpc::onFinished(int exitCode, QProcess::ExitStatus status) {
+	const auto dispatch = DispatchGuard(this);
 	auto reason = (status == QProcess::CrashExit)
 		? u"rpc server crashed"_s
 		: u"rpc server exited (%1)"_s.arg(exitCode);
@@ -248,6 +257,7 @@ void DeltaRpc::onFinished(int exitCode, QProcess::ExitStatus status) {
 }
 
 void DeltaRpc::failTransport(const QString &reason) {
+	const auto dispatch = DispatchGuard(this);
 	if (_failed || _stopping) return;
 	_failed = true;
 	_startup->stop();
@@ -272,6 +282,17 @@ void DeltaRpc::failPending(const QString &reason) {
 	}
 }
 
+void DeltaRpc::deferOwnedRelease(std::shared_ptr<DeltaRpc> rpc) {
+	QTimer::singleShot(0, QCoreApplication::instance(), [rpc = std::move(rpc)]() mutable {
+		if (rpc->_activeDispatches) {
+			// Another response/error callback may have entered a nested loop
+			// before this queued release. Requeue only after dispatch unwinds.
+			const auto raw = rpc.get();
+			raw->_releaseWhenIdle.push_back(std::move(rpc));
+		}
+	});
+}
+
 void CallOwnedDeltaRpc(
 		std::shared_ptr<DeltaRpc> rpc,
 		const QString &method,
@@ -286,10 +307,8 @@ void CallOwnedDeltaRpc(
 	const auto raw = rpc.get();
 	raw->call(method, params,
 		[rpc = std::move(rpc), done = std::move(done)](QJsonObject reply) mutable {
-			// Deferred deletion also waits across a nested event loop opened
-			// by done(); a zero-delay timer alone would release too early.
-			const auto lifetime = new RpcCallbackLifetime(std::move(rpc));
-			lifetime->deleteLater();
 			if (done) done(std::move(reply));
+			const auto raw = rpc.get();
+			raw->deferOwnedRelease(std::move(rpc));
 		}, timeoutMs);
 }

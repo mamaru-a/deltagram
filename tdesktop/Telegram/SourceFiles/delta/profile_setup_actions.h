@@ -309,6 +309,19 @@ inline void ReleaseProfileSetup(const std::shared_ptr<ProfileSetupLease> &lease)
 	}
 }
 
+// Live onboarding can disappear while Core is still configuring/importing.
+// Retain the shared transport through every reply, including error readback,
+// and release it outside its own read/failure handler.
+[[nodiscard]] inline AccountInventoryRequest MakeOwnedProfileSetupRequest(
+		std::shared_ptr<DeltaRpc> rpc) {
+	return [rpc = std::move(rpc)](
+			QString method,
+			QJsonArray params,
+			DeltaRpc::Callback done) {
+		CallOwnedDeltaRpc(rpc, method, params, std::move(done));
+	};
+}
+
 inline void CommitProfileSetup(
 		AccountInventoryRequest request,
 		std::shared_ptr<ProfileSetupLease> lease,

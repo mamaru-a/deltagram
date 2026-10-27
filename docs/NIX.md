@@ -97,3 +97,9 @@ Nix shell. Their include paths apply only to the scan implementation, avoiding
 changes to the whole GUI's precompiled header. Portable packaging includes the
 FFmpeg camera plugin and omits the alternate GStreamer media plugin. Local
 ccache uses the same precompiled-header settings as CI.
+
+PR compilation is serialized per ref with `cancel-in-progress: false`. New pushes
+can replace the pending revision while the active build continues. A pending
+workflow may have no reported check yet; inspect its Actions run state before
+assuming the trigger is missing. Preserve the active build and incremental cache
+rather than starting duplicate heavy builds to force a check to appear.

@@ -1294,18 +1294,7 @@ Delta::AccountInventoryRequest DeltaOnboarding::mutationRequest() const {
 	// WHY: import/create writes must finish after this widget dies so a live
 	// window cannot drop Core mutation ownership while the shared RPC continues.
 	if (_keep) {
-		return [rpc = _keep](
-				QString method,
-				QJsonArray params,
-				DeltaRpc::Callback done) {
-			if (!rpc) {
-				if (done) {
-					done(QJsonObject{{ u"error"_q, u"Chatmail core is not running."_q }});
-				}
-				return;
-			}
-			rpc->call(method, params, std::move(done));
-		};
+		return Delta::MakeOwnedProfileSetupRequest(_keep);
 	}
 	const auto rpc = _rpc;
 	return [rpc](QString method, QJsonArray params, DeltaRpc::Callback done) {

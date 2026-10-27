@@ -74,6 +74,85 @@ remains pending. Force kill, OS shutdown, power loss, and a permanently unrespon
 RPC are not recovered or cancelled by this guard. Private recorder evidence is
 under `data/integrity-live/backup-quit/`.
 
+### Qt 6.11 CI RPC-release correction — 2026-10-27
+
+[Run 40439784146](https://github.com/omidz4t/deltagram/actions/runs/40439784146)
+at `9714b03` links `bin/Telegram` and creates `deltagram.stripped`, then fails
+`callbackCannotDestroyRpcInsideReadHandler` on Qt 6.11.2. Twenty-three of the 24
+registered CTest targets pass; the failed run is not a validated release artifact.
+The original retained-RPC helper passed Qt 6.4.2 but scheduled QObject deferred
+deletion before invoking completion. A completion's nested event loop can then
+release the last owner before the read handler returns. The same case reproduced
+locally with the pinned Qt 6.11.2/GCC 16.2 toolchain; strict UBSan reports invalid
+dynamic-type member access in `onReadyRead`. The first local native attempt had
+an unwritable inherited Nix TMPDIR for UID 65534 and did not reach this case;
+rerunning with TMPDIR=/tmp produced the actual diagnostic.
+
+Retained RPC release now queues after completion and checks active dispatch depth.
+A release arriving during another response/error callback's nested loop parks its
+owner until the outermost RPC dispatch unwinds, then queues release again. The
+start/call/stop/read/finish/transport-failure paths participate. A buffered second
+reply and a buffered malformed-line event exercise subsequent non-owning callbacks.
+A control that only moves deferred deletion after the first callback still fails
+on that buffered second-reply case; it does not establish the required boundary.
+
+The corrected real-process suite passes 32 checks with ASan/UBSan and strict UBSan
+halt-on-error as UID/GID 65534 against pinned Qt 6.11.2. The suite includes the
+existing export/stop/nested-loop cases, twenty live-setup/readback cases, and two
+buffered reply/error cases. Every success checks eventual RPC release. The same
+32 strict sanitizer checks pass on system Qt 6.4.2/GCC 13.2.0. Pinned Qt 6.11.2
+also passes 307 Core integrity, 30 setup-action and five child-file privacy checks
+with zero failures/skips as UID/GID 65534. Both strict sanitizer drivers also pass
+against pinned Qt 6.11.2 and the actual pinned Core: export completes after owner
+loss, and wrong-passphrase import completes its readback before an explicit
+same-ID correct-passphrase retry. Checked IDs/drafts/blob hashes and source
+archives are preserved, stale UI does not run, and retained RPCs release. No
+mail-IO-starting method is used. Complete linked-app GUI teardown remains unverified. Private CI/control/fixed evidence is
+under `data/integrity-live/rpc-native-release/`.
+
+### Live profile-setup RPC ownership — 2026-10-27
+
+Live add-profile setup now builds its mutation request with
+`MakeOwnedProfileSetupRequest`. It uses the retained/deferred RPC handoff for
+name/avatar writes, import, second-device copy, and transport setup, including
+the `is_configured` readback after an error. The prior request captured its shared
+RPC in the first callback only. With the UI/Bridge owner gone, terminal callback
+cleanup could destroy that RPC inside `onReadyRead`; after an error the readback
+callback did not retain the request either. The first-run QObject-parented RPC
+path and Telegram intro are unchanged.
+
+A raw-call adapter preserving the old live-request ownership reproduces UBSan
+invalid dynamic-type member access in `DeltaRpc::onReadyRead`, both on successful
+import and on error/readback. Strict `halt_on_error` makes those negative controls
+fail immediately. This is not reported as an ASan heap-use-after-free: the
+observed diagnostic is member access while the object's dynamic type is QObject.
+
+The expanded permanent real-QProcess target passes 30 checks with ASan/UBSan,
+strict UBSan halt-on-error, UID/GID 65534 and Qt 6.4.2. Twenty new cases combine
+import, copy, classic creation and invitation setup with success, unconfigured
+readback, configured readback, malformed readback and child failure during
+readback. They release UI and external RPC ownership before the first reply,
+hold readback separately, assert the correct final lease/outcome and exact
+mutation/readback method sequence, drop stale UI, and verify eventual RPC release.
+The existing 30 setup-action checks and both registered CTest targets also pass.
+The process fixture simulates replies; it does not configure mail transports or
+perform SecureJoin/copy against another device.
+
+A separate strict sanitizer driver uses the real RPC/helper and pinned Core. It
+creates a disposable encrypted archive, submits a wrong-passphrase import, drops
+the UI-equivalent and external RPC owners, and observes Retryable after the real
+unconfigured readback. Reopening Core confirms that target remains unconfigured.
+An explicit correct-passphrase retry on the same ID also drops the owners and
+succeeds; checked non-device message IDs, drafts and blob hashes match. The
+checked source-profile snapshot and immutable input archive remain unchanged.
+No mail-IO-starting RPC is used, no stale UI runs, and both retained RPCs release;
+no unprivileged Core process remains afterward.
+
+Native `welcome.cpp` syntax/type validation passes. Full native onboarding
+window/session destruction, live transport setup, second-device transfer and
+first-run cancellation remain separate gates. Private evidence is under
+`data/integrity-live/setup-rpc-lifetime/`.
+
 ### Export RPC lifetime after session teardown — 2026-10-27
 
 The export request closure held a shared RPC only until submission returned.
@@ -81,9 +160,10 @@ The pending callback kept its export reservation but not the RPC itself. Releasi
 the session/Bridge's final RPC owner could therefore stop the child before export
 finished. Export now submits through `CallOwnedDeltaRpc`, which retains an
 unparented shared RPC through success or transport failure. Terminal completion
-moves that ownership to a small QObject scheduled for deferred deletion. This
-keeps destruction outside the RPC read/failure stack, including when completion
-opens a nested event loop; a zero-delay timer would not provide that guarantee.
+now queues release only when no RPC dispatch is active, parking/rescheduling an
+owner if a subsequent callback opens a nested loop. The initial QObject deferred-
+deletion approach passed Qt 6.4.2 but failed Qt 6.11.2; the correction and negative
+controls above supersede that release mechanism.
 Null or QObject-parent-owned RPC inputs are rejected. Existing ordinary calls,
 explicit stop semantics, Core protocol/format and Telegram transport are unchanged.
 

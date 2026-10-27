@@ -3,9 +3,11 @@
 Real Telegram accounts are required alongside Chatmail profiles. Source now
 contains persisted backend identity, account-type selection, restored donor
 MTProto dispatch/connections, and session-scoped UI/data routing. These changes
-are not yet proven by a current linked native binary or real Telegram login.
-Core-native results do not establish Telegram authentication, session recovery,
-feature compatibility, or mixed-account isolation.
+link in CI at `9714b03`, but that run fails a Qt 6.11 RPC-lifetime test.
+The corrected source passes focused checks on pinned Qt 6.11 and system Qt 6.4;
+a fresh complete CI run and validated artifact are still required. Core-native
+results do not establish Telegram authentication, session recovery, feature
+compatibility, or mixed-account isolation.
 
 Last reviewed: 2026-10-27. Deltagram remains experimental. Core provides
 Chatmail protocols and encryption; Telegram uses the donor backend. Retaining
@@ -33,7 +35,9 @@ zero failures/skips, and explicit full-message viewer/cancellation replay. It
 predates the mixed-backend integration. Current changed production translation
 units pass configured native syntax/type checks, including authentication,
 transport, conference, settings, history and data routing; these checks do not
-produce a linked binary or establish runtime behavior. The newer forgotten-
+produce a linked binary or establish runtime behavior. CI `9714b03` subsequently
+links the application but fails its RPC lifetime target; that failed run is not a
+validated downloadable artifact. The newer forgotten-
 passcode guard also passes focused Qt tests and an exact reset-method recorder.
 
 Historical Core-only replay covers encryption information, onboarding avatar
@@ -43,6 +47,11 @@ name/deletion. See [VALIDATION.md](VALIDATION.md) for exact revisions and limits
 The sidebar metadata storm did not recur. RTL/scale, broader startup cases,
 cross-window setup/teardown, latest-head regression replay and final packages
 remain open.
+
+Live Core profile setup also retains its shared RPC through mutation replies
+and error readback. Thirty real-process sanitizer checks and an offline pinned-
+Core wrong/correct-passphrase owner-loss retry pass. Native onboarding teardown,
+first-run cancellation and actual second-device transfer remain unverified.
 
 Release gates include current native linking, real Telegram authentication and
 session persistence, mixed-backend account isolation, and donor feature replay.
