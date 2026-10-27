@@ -85,6 +85,7 @@ void DeclineContactRequest(int userId, bool confirmed, Fn<void(QString)> done);
 void WatchComposerChat(int userId);
 void ObserveComposerChat(int userId);
 [[nodiscard]] bool PreparingSendPreventsQuit();
+[[nodiscard]] bool BackupExportInProgress();
 void SendComposerText(int userId, const QString &text, int quotedMessageId,
 	Fn<void(bool)> done);
 void SendComposerAttachment(int userId, ComposeDraft draft, Fn<void(bool)> done);

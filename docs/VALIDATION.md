@@ -36,10 +36,11 @@ passes five Qt 6.4.2 checks with zero failures/skips as UID/GID 65534, including
 0600 files, 0700 directories and an unchanged parent mask. This is POSIX mode
 validation, not Windows ACL or macOS runtime proof.
 
-The export helper target passes 15 checks as UID/GID 65534, including exact
+The export helper target passes 18 checks as UID/GID 65534, including exact
 parameters, directory uniqueness/parent preservation, invalid input, malformed
 acknowledgements, cross-account serialization, and profile invalidation without
-early reservation release or stale UI delivery. The full current Core integrity
+early reservation release or stale UI delivery, pending ownership after UI/bridge
+loss, multiple RPC reservations, and idle registry cleanup. The full current Core integrity
 target passes 307 checks, zero failures/skips, with the pinned Core server.
 A separate unprivileged end-to-end driver links the actual DeltaRpc and export
 helper to that server: both plain and passphrase archives are 0600 in distinct
@@ -50,10 +51,28 @@ The source archive remains byte-identical; no mail-IO-starting RPC is called.
 Language/subset generation and native syntax/type checks pass for all four
 changed production translation units. Full application linking, new-dialog
 rendering/keyboard/cancel/error retry, background completion, live-IO export,
-profile/window teardown and release packaging remain pending. This slice does
-not add app-wide quit/restart prevention; an unfinished export can be interrupted
-when the app exits, so the UI requires keeping it open until completion. Private evidence
+profile/window teardown and release packaging remain pending. Private evidence
 and the standalone Core driver are under `data/integrity-live/backup-export/`.
+
+Normal quit/restart now checks all pending export reservations before the donor's
+1500ms delayed-exit path. Closing the export dialog or invalidating its profile
+scope does not remove the reservation held by the RPC callback. A blocked restart
+returns before arming restart/update flags; the user explicitly retries after the
+terminal reply. Export submission also refuses once shutdown has started, before
+creating an output directory. Existing donor upload/download/export prevention
+continues to run when no Core backup is pending. Startup/crash-recovery update
+restart setters are outside the running export path.
+
+An exact-source recorder with real Qt Core, the production reservation helper and
+minimal application/window/RPC doubles reproduces 11 baseline failures. The fixed
+methods pass all 16 assertions under ASan/UBSan: normal quit, normal/update restart,
+owner loss, terminal release, donor upload prevention, donor restart intent, and
+submission after shutdown. This is method-level evidence, not a native Application
+or GUI replay. The two affected production translation units pass native syntax/type
+checks after full/subset language generation. Normal close/quit/restart GUI replay
+remains pending. Force kill, OS shutdown, power loss, and a permanently unresponsive
+RPC are not recovered or cancelled by this guard. Private recorder evidence is
+under `data/integrity-live/backup-quit/`.
 
 ### Deferred contact-open ownership — 2026-10-27
 

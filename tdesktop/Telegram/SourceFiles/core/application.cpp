@@ -1184,8 +1184,19 @@ bool Application::downloadPreventsQuit() {
 	return false;
 }
 
+bool Application::backupPreventsQuit() {
+	if (!Delta::BackupExportInProgress()) return false;
+	const auto window = activeWindow() ? activeWindow() : activePrimaryWindow();
+	if (window) {
+		window->widget()->showFromTray();
+		window->showToast(tr::lng_delta_backup_export_wait(tr::now), 6000);
+	}
+	return true;
+}
+
 bool Application::preventsQuit(QuitReason reason) {
-	if (Delta::PreparingSendPreventsQuit()
+	if (backupPreventsQuit()
+		|| Delta::PreparingSendPreventsQuit()
 		|| exportPreventsQuit()
 		|| uploadPreventsQuit()
 		|| downloadPreventsQuit()) {
@@ -2132,6 +2143,10 @@ void SetLaunchState(LaunchState state) {
 }
 
 void Restart() {
+   // A rejected restart must not leave restart flags armed for a later quit.
+   if (IsAppLaunched() && App().backupPreventsQuit()) {
+	   return;
+   }
    const auto updateReady = !UpdaterDisabled()
 	   && (UpdateChecker().state() == UpdateChecker::State::Ready);
    if (updateReady) {

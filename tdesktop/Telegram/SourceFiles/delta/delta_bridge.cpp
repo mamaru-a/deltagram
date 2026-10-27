@@ -4415,6 +4415,10 @@ void ObserveComposerChat(int userId) {
 	if (GlobalBridge) GlobalBridge->observeComposerChat(userId);
 }
 
+bool BackupExportInProgress() {
+	return AnyBackupExportInProgress();
+}
+
 bool PreparingSendPreventsQuit() {
 	return GlobalBridge && GlobalBridge->preparingSendPreventsQuit();
 }
@@ -5203,7 +5207,7 @@ void ExportProfileBackup(
 		const QString &destination,
 		const QString &passphrase,
 		Fn<void(QString, QString)> done) {
-	if (!OwnsSession(session)) {
+	if (Core::Quitting() || !OwnsSession(session)) {
 		if (done) done({}, u"Backup export is not available."_q);
 		return;
 	}

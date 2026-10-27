@@ -35,8 +35,20 @@ struct BackupExportState {
 
 // Keep one export running on each RPC, including across profile switches.
 // Closing a dialog must not authorize another in-flight export.
-[[nodiscard]] inline std::shared_ptr<BackupExportState> BackupExportStateFor(const void *rpc) {
+[[nodiscard]] inline auto &BackupExportRegistry() {
 	static auto states = std::map<const void*, std::weak_ptr<BackupExportState>>();
+	return states;
+}
+
+[[nodiscard]] inline bool AnyBackupExportInProgress() {
+	for (const auto &[rpc, weak] : BackupExportRegistry()) {
+		if (const auto state = weak.lock(); state && state->busy) return true;
+	}
+	return false;
+}
+
+[[nodiscard]] inline std::shared_ptr<BackupExportState> BackupExportStateFor(const void *rpc) {
+	auto &states = BackupExportRegistry();
 	for (auto i = states.begin(); i != states.end(); ) {
 		if (i->second.expired()) i = states.erase(i); else ++i;
 	}

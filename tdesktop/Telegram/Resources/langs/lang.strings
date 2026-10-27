@@ -8828,3 +8828,5 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_delta_backup_export_mismatch" = "The backup passphrases do not match.";
 "lng_delta_backup_export_progress" = "Exporting backup… Keep Deltagram open. Closing this dialog does not cancel the export.";
 "lng_delta_backup_export_done" = "Backup exported to:";
+
+"lng_delta_backup_export_wait" = "A backup export is still running. Wait for it to finish, then try quitting or restarting again.";

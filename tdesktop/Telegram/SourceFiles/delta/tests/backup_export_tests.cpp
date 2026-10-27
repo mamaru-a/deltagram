@@ -138,6 +138,42 @@ private slots:
 		QVERIFY(!state->busy);
 		QVERIFY(!displayed);
 	}
+	void pendingExportOutlivesUiScopeAndRegistryCaller() {
+		ExportFixture rpc;
+		Delta::AccountScope scope;
+		auto state = Delta::BackupExportStateFor(&rpc);
+		auto displayed = false;
+		Delta::ExportBackupFile(rpc.request(), state, scope, 5, "/backup", {},
+			[&](auto) { displayed = true; });
+		state.reset();
+		scope.invalidate();
+		QVERIFY(Delta::AnyBackupExportInProgress());
+		rpc.reply({ { "result", QJsonValue() } });
+		QVERIFY(!displayed);
+		QVERIFY(!Delta::AnyBackupExportInProgress());
+	}
+	void globalPendingWaitsForEveryRpc() {
+		ExportFixture first, second;
+		Delta::AccountScope scope;
+		auto one = Delta::BackupExportStateFor(&first);
+		auto two = Delta::BackupExportStateFor(&second);
+		Delta::ExportBackupFile(first.request(), one, scope, 5, "/backup", {}, [](auto) {});
+		Delta::ExportBackupFile(second.request(), two, scope, 6, "/backup", {}, [](auto) {});
+		QVERIFY(Delta::AnyBackupExportInProgress());
+		first.reply({ { "result", QJsonValue() } });
+		QVERIFY(Delta::AnyBackupExportInProgress());
+		second.reply({ { "error", "rejected" } });
+		QVERIFY(!Delta::AnyBackupExportInProgress());
+	}
+	void expiredIdleRegistryDoesNotBlockExit() {
+		int rpc = 0;
+		{
+			const auto idle = Delta::BackupExportStateFor(&rpc);
+			QVERIFY(!Delta::AnyBackupExportInProgress());
+		}
+		QVERIFY(!Delta::AnyBackupExportInProgress());
+	}
+
 	void rpcStateIsSharedOnlyForSameRpc() {
 		int first = 1, second = 2;
 		auto one = Delta::BackupExportStateFor(&first);
