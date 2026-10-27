@@ -1,15 +1,15 @@
 # Experimental compatibility tracker
 
-Real Telegram accounts are also required following the user's explicit
-2026-10-26 clarification. Current code is not Telegram-compatible: request
-dispatch and connection startup are globally cut over to Core. Restoring real
-Telegram requires explicit account/session backend routing, donor authentication
-and persistence, and regression proof that neither backend intercepts or alters
-the other's data. A Telegram-style interface alone does not satisfy this gate.
+Real Telegram accounts are required alongside Chatmail profiles. Source now
+contains persisted backend identity, account-type selection, restored donor
+MTProto dispatch/connections, and session-scoped UI/data routing. These changes
+are not yet proven by a current linked native binary or real Telegram login.
+Core-native results do not establish Telegram authentication, session recovery,
+feature compatibility, or mixed-account isolation.
 
-Last reviewed: 2026-10-26. Deltagram is experimental and is not yet a complete
-Delta Chat client. Core provides messaging protocols and encryption; retaining
-a Telegram widget does not establish that its action works with Core.
+Last reviewed: 2026-10-27. Deltagram remains experimental. Core provides
+Chatmail protocols and encryption; Telegram uses the donor backend. Retaining
+a widget or passing a helper test does not establish its runtime behavior.
 
 The feature categories below use the
 [Delta Chat platform feature overview, interface issue #39](https://github.com/deltachat/interface/issues/39)
@@ -28,25 +28,27 @@ are not copied here. Deltagram evidence comes from [PROGRESS.md](PROGRESS.md),
 
 ## Current readiness gates
 
-The latest helper suites pass 751 serial focused checks. Verified native
-`a19d9e2` compiles and passes 742 checks; cold-start Loading/Retry/Open Profile
-recovery and group-sidebar open/reopen/switch/resize pass. The previous sidebar
-metadata storm does not recur. Newer encryption-dialog and onboarding-layout
-changes still need native compilation/replay. The latter fixes the reproduced
-description covering the avatar button and preserves logical RTL coordinates.
+The last verified complete native artifact is `bd1ea60`, with 827 checks,
+zero failures/skips, and explicit full-message viewer/cancellation replay. It
+predates the mixed-backend integration. Current changed production translation
+units pass configured native syntax/type checks, including authentication,
+transport, conference, settings, history and data routing; these checks do not
+produce a linked binary or establish runtime behavior. The newer forgotten-
+passcode guard also passes focused Qt tests and an exact reset-method recorder.
 
-Native `122a3ec` passes plain restore with preserved draft/photo, retry-open and
-bidirectional delivery, timed in-flight action protection, normal avatar staging
-ownership/cleanup, initial search error/retry and stale-query error suppression.
-Native `2908654` passes language restart, profile name/deletion, archived-search
-metadata failure/retry and modal group/member inspection/Message routing.
-Original profile data remains preserved. Production readiness still requires
-complete encryption and onboarding layout replay, broader startup cases,
-cross-window setup locking/teardown, remaining compatibility
-cases and final package validation.
+Historical Core-only replay covers encryption information, onboarding avatar
+layout at tested LTR sizes, startup Loading/Retry/Open Profile, group-sidebar
+open/reopen/switch/resize, search failure/retry, restore/retry-open, and profile
+name/deletion. See [VALIDATION.md](VALIDATION.md) for exact revisions and limits.
+The sidebar metadata storm did not recur. RTL/scale, broader startup cases,
+cross-window setup/teardown, latest-head regression replay and final packages
+remain open.
 
-Real Telegram authentication/transport and mixed-backend account isolation are
-additional release gates. The existing Core-native results do not prove them.
+Release gates include current native linking, real Telegram authentication and
+session persistence, mixed-backend account isolation, and donor feature replay.
+Production Telegram API configuration is explicit; test-API binaries are
+refused by production packaging/publication guards. Real production credentials
+and login have not been validated.
 
 PR builds compile and smoke-test; they do not execute the workflow's optional
 package-verification step. After the final source is fixed and built, one
@@ -80,16 +82,17 @@ unverified feature areas below remain open independently of those build gates.
 | Quotes and replies | 🟡 Partial | A live Core reply retained its quote across clients. Complete GUI create/display/jump behavior remains unverified. |
 | Message editing, deletion and chat archiving | 🟡 Partial | Live Core edits retained message IDs and remote deletion passed. Rejected deletion preserves messages in verified GUIs. `9397be0` passes plain-text GUI edits in both clients; Core-aware edit eligibility passed on `e846f9b`; immediate quote retention after deletion passed on `8323369`. Broader deletion paths remain. |
 | Voice messages | 🟡 Partial | Native waveform, duration, play/pause and seeking are implemented. Ordinary GUI recording on `49454ee` passed preview, rejected storage, explicit retry, restart, quoted delivery and byte-identical playback in official Desktop 2.62.0 using isolated virtual audio. Both clients displayed the 21-second duration. Quoted voice-plus-forwarding also passes rejected-send/restart/delivery and reference playback on `5182d5e`. Physical audio devices and round-video capture remain unverified. |
+| Forgotten local passcode | 🟡 Partial | Chatmail or unknown locked storage preserves profiles and the lock. Guidance requires the passcode, previously enabled system unlock, or an existing backup restored in a fresh installation. Confirmed Telegram-only storage keeps donor logout recovery. Focused Qt/filesystem and reset-method checks pass; locked-start and system-unlock GUI replay on the latest native binary remain pending. |
 | Multiple profiles | 🟡 Partial | Switching clears reused histories, drafts, pending messages and attachment caches. Core draft storage and asynchronous callbacks are scoped to the account. `3c2def3` passed distinct drafts, red/blue images, two-/four-second voice clips, and playback/search reset across overlapping message IDs. |
 | Profile and group photos | 🟡 Partial | Settings image selection/crop/save and account avatar colors checked locally with Core; group checks recorded. Complete camera workflows and live photo distribution need checking. |
-| Onboarding and relay settings | 🟡 Partial | Fresh GUI creation, repeated-submit protection, fail-closed discovery, QR-image join and live exchange passed on `3c2def3`. Native `122a3ec` passes plain restore, preserved draft/photo, retry-open and bidirectional delivery; timed actions during held import issue no duplicate setup operation. Native `a19d9e2` passes delayed discovery, selection-error Retry and opening-error Open Profile without allocating a profile. Cross-window contention/teardown, broader startup cases, new avatar layout and protected-backup GUI support remain open. |
+| Onboarding and relay settings | 🟡 Partial | Fresh GUI creation, repeated-submit protection, fail-closed discovery, QR-image join and live exchange passed on `3c2def3`. Native `122a3ec` passes plain restore, preserved draft/photo, retry-open and bidirectional delivery; timed actions during held import issue no duplicate setup operation. Native `a19d9e2` passes delayed discovery, selection-error Retry and opening-error Open Profile without allocating a profile. An offline import interrupted during blob extraction recovers on the same unconfigured destination and preserves another restored profile. SQL-import interruption, cross-window contention/teardown, broader startup cases, RTL/scale layout and protected-backup GUI support remain open. |
 | Invite QR scanning | 🟡 Partial | Camera capture, QR image files and clipboard screenshots feed Core invites for an explicit Join. Image decoding is checked locally; physical camera capture needs hardware validation. |
 | Second-device setup | 🟡 Partial | Full transfer, restored image bytes and bidirectional synchronization passed on `27656b4` against official Desktop 2.62.0. Early/ready cancellation, duplicate starts and a profile switch during preparation passed. Camera/mobile receive paths remain unverified. |
 | Contact status and biographies | 🟡 Partial | Available Core contact status displayed; imported vCard biographies are unsupported by the current Core snapshot. |
 | Contact requests | 🟡 Partial | Native `4b5e093` passes 451 checks. Disposable GUI replay covers request inspection/actions/restart, pending sender Message without acceptance, accepted-contact opening, and one-shot lost-ack Group Delete with an unverified GUI outcome. Drafts/history and unrelated requests are preserved. Mailing-list/broadcast cases and final-head replay remain open; Core lookup/create atomicity remains unresolved. |
 | Search | 🟡 Partial | Core result IDs feed paged global/in-chat search. `3c2def3` passed 60 matches and final-page navigation. Native `2908654` passes archived Device messages naming, metadata Failed/Retry and read-only opening. Native `122a3ec` passes initial-ID failure/keyboard retry and stale-query error suppression. Native `a19d9e2` passes profile-switch cancellation and offline 61-hit load-more failure/retry. HTML fixture search finds the plain representation; HTML-only remainder is not indexed by Core, and native No Results matches that contract. |
 | App picker and webxdc | 🟡 Partial | Embedded app store exists; host rendering, draft preparation and synchronized webxdc updates are unverified. |
-| Calls | ❌ Unavailable | Delta Chat calling is not implemented. Chat-header call buttons are hidden, call entry points stop before device permissions, Telegram conference creation/joining is disabled, and tde2e is excluded. Unsupported call acceptance and separate call-device settings are removed; native settings replay passed on `a6d878d`. |
+| Calls | 🟡 Partial | Chatmail calls remain unavailable and are blocked before call start. Telegram donor call paths and pinned v7.2.10 conference E2E source/dependencies are restored and pass syntax/type checks; the tde2e wrapper and primitive checks pass separately. Current full native linking, Telegram calls, physical media devices and mixed-account call routing remain unverified. |
 | Service-event presentation | ❌ Unavailable | Recorded as unfinished in the development log. |
 | Donor export, sharing restrictions and auto-delete controls | ❌ Unavailable | These Telegram-only actions are hidden/guarded; no Core-backed implementation is claimed. |
 | Settings privacy presentation | 🟡 Partial | Hiding the settings email remains unfinished. |
@@ -111,7 +114,7 @@ They are **unverified**, rather than assumed to work because the donor UI has th
 | Accessibility and localization | ❓ Unverified | Screen readers, keyboard navigation and RTL layouts. |
 | Appearance | 🟡 Partial | General wallpaper: local gallery and custom images in Settings → Chat Settings. Custom-image persistence checked across chats, profiles and restart; per-chat wallpaper is unavailable and removed from the chat menu. `14878ed` opens the local theme editor and exports a valid palette/background archive through its primary Export action. Theme import and full day/night combinations remain unverified. |
 | External integration | ❓ Unverified | Camera capture and sharing into/out of the application. |
-| Email presentation | 🟡 Partial | Native `a19d9e2` renders/searches a Core HTML fixture's plain representation, but has no access to its retained full HTML body. Full-message controls/viewer are under implementation. Core search intentionally excludes HTML-only/truncated remainder. Per-message sender overrides remain missing. Core already includes important email subjects in `text`; raw subject belongs in the full-message title. Broader mail replay remains open. |
+| Email presentation | 🟡 Partial | Native `bd1ea60` opens full Core HTML explicitly, preserves selection/copy, scrolls long text, confirms external links and cancels pending Loading without reopening. Remote resources issued zero requests in the checked listener replay. Per-message `~` author/quote presentation and differing-author grouping are implemented in newer source; native render/click/quote replay remains pending. Contact identity stays separate. Core search intentionally excludes HTML-only/truncated remainder. Important subjects already occur in `text`; raw subject is viewer title only. |
 | Message content | ❓ Unverified | Stickers, copying links and complete media rendering. |
 | Trust information | 🟡 Partial | Core contact/chat encryption information and key-contact flags are implemented in source, without inventing Telegram verified badges. Typed lookup and mutation checks pass; final native fingerprint/name/delete replay remains pending. |
 | Group duplication | ❓ Unverified | Cloning a group with correct Core membership semantics. |

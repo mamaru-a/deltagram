@@ -1,5 +1,28 @@
 # Publication validation
 
+### Interrupted offline backup extraction — 2026-10-27
+
+The pinned Core server from native artifact `bd1ea60` matches SHA256
+`89cbcddf509b197618b17dd3c1137a966b2fcc89f2a08d974156ac9d7374f70f`.
+A previously exported disposable archive remains byte-identical before and
+after the check. A test copy adds one 64 MiB synthetic leading blob; successful
+control import establishes that the augmented archive remains importable.
+
+An owned Core subprocess was stopped while that first blob had 155,648 bytes
+written, before backup database extraction. The import reply was still pending
+and `/proc` confirmed the process stopped. Only that PID was killed; its SIGKILL
+exit was awaited before starting a replacement on the same disposable storage.
+The destination remained unconfigured after restart. Importing the original
+archive into that same account succeeded. Another already-restored profile
+retained exactly its non-device-chat message-ID lists, draft records and blob
+hashes across termination, restart and retry. No mail-IO-starting RPC was called.
+
+This is one measured pre-database extraction checkpoint, not a SQL-import crash
+test, GUI close/recovery test, network-isolation proof or Telegram validation.
+Private reproducibility/evidence: `data/integrity-live/backup_import_interruption.py`
+and `data/integrity-live/backup-import-interruption/result.json`; generated
+accounts remain under `/tmp/deltagram-live/import-interruption-20261027-a`.
+
 ### Blocked-contacts settings ownership — 2026-10-27
 
 The Core blocked-contacts section now includes its bridge declarations and
