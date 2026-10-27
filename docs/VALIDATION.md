@@ -1,5 +1,43 @@
 # Publication validation
 
+### Encrypted backup import — 2026-10-27
+
+Restore now offers a masked optional backup-passphrase field after file
+selection. Blank input preserves the existing JSON-null unencrypted import;
+nonempty input is forwarded without trimming. The dialog explains that the
+backup passphrase is distinct from the local application passcode. The setup
+lease remains held through the prompt, Cancel/close releases it, and submission
+consumes the prompt before closing so the close hook cannot unlock an in-flight
+import. The originating onboarding widget/account is rechecked after close.
+The existing mutation acknowledgement/readback policy remains authoritative;
+there is no automatic retry after an error or lost reply.
+
+The setup-action target passes 30 Qt 6.4.2 checks as UID/GID 65534, zero
+failures/skips, including exact whitespace/Unicode passphrase forwarding,
+explicit same-ID retry after a wrong-passphrase error plus unconfigured
+readback, and empty input remaining JSON null. Existing exclusivity,
+cancellation, unknown-result and retry-open checks continue to pass.
+
+On disposable offline accounts, the SHA256-verified pinned Core server exports
+an encrypted archive with a generated passphrase that contains Unicode and
+leading/trailing whitespace. Missing and wrong passphrases are rejected and
+leave the same destination unconfigured. The exact passphrase then restores
+that same ID with matching non-device message-ID lists, drafts and blob hashes.
+The immutable source archive is unchanged, and no mail-IO-starting RPC was used.
+Generated passphrases are absent from the checked Core diagnostics and account
+metadata. They are not printed or recorded as evidence. This Core test and the
+injected C++ tests do not establish native dialog rendering, cancel/focus,
+clipboard behavior, wrong-passphrase UI retry, locked-profile recovery or
+Telegram compatibility. Native GUI replay remains a release gate.
+
+Language and subset generation pass, and the updated `welcome.cpp` passes
+the configured native compiler in syntax/type-only mode after adding the
+complete window-controller include. No object generation/linking is claimed.
+
+Private evidence: `data/integrity-live/backup-passphrase/qt-result.txt` and
+`core-result.json`, with the reproducible offline Core driver at
+`data/integrity-live/backup_passphrase_core_check.py`.
+
 ### Interrupted offline database import — 2026-10-27
 
 The same SHA256-verified pinned Core server and immutable disposable source

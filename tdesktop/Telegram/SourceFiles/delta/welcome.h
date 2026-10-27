@@ -97,6 +97,7 @@ private:
 		const QString &successText);
 	void openShell(int accountId);
 	void chooseBackup();
+	void askBackupPassphrase(int accountId, const QString &path);
 	void askSecondDevice();
 	void askInvitation();
 	void ensureFreshAccount(DeltaRpc::Callback done);

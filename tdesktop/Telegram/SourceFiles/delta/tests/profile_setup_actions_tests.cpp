@@ -100,6 +100,61 @@ class ProfileSetupActionsTests final : public QObject {
 	}
 
 private slots:
+	void importPassphrasePreservesExactText() {
+		SetupFixture rpc;
+		auto table = std::make_shared<Delta::ProfileSetupTable>();
+		auto lease = Delta::TryAcquireProfileSetup(table, 5,
+			Delta::ProfileSetupKind::Import);
+		const auto secret = u"  fixture-بازی passphrase\t "_s;
+		auto result = std::optional<Delta::ProfileSetupResult>();
+		Delta::ImportProfileBackup(rpc.bind(), lease, u"/tmp/encrypted.tar"_s,
+			[&](auto value) { result = std::move(value); }, secret);
+		expectParams(rpc, 0, u"import_backup"_s,
+			QJsonArray{ 5, u"/tmp/encrypted.tar"_s, secret });
+		QVERIFY(Delta::ProfileSetupBlocksMutation(table, 5));
+		QVERIFY(rpc.replyResult(QJsonValue(QJsonValue::Null)));
+		QVERIFY(result);
+		QCOMPARE(result->outcome, Delta::ProfileSetupOutcome::Succeeded);
+		expectNoOpenMutations(rpc);
+	}
+
+	void wrongPassphraseReadbackAllowsExplicitSameIdRetry() {
+		SetupFixture rpc;
+		auto table = std::make_shared<Delta::ProfileSetupTable>();
+		auto result = std::optional<Delta::ProfileSetupResult>();
+		Delta::ImportProfileBackup(rpc.bind(),
+			Delta::TryAcquireProfileSetup(table, 5, Delta::ProfileSetupKind::Import),
+			u"/tmp/encrypted.tar"_s,
+			[&](auto value) { result = std::move(value); }, u"wrong-fixture"_s);
+		QVERIFY(rpc.replyError(u"backup passphrase is not correct"_s));
+		expectParams(rpc, 1, u"is_configured"_s, QJsonArray{ 5 });
+		QVERIFY(!result);
+		QVERIFY(rpc.replyResult(false));
+		QVERIFY(result);
+		QCOMPARE(result->outcome, Delta::ProfileSetupOutcome::Retryable);
+		QVERIFY(!Delta::ProfileSetupBlocksMutation(table, 5));
+		QCOMPARE(rpc.log.size(), std::size_t(2));
+		Delta::ImportProfileBackup(rpc.bind(),
+			Delta::TryAcquireProfileSetup(table, 5, Delta::ProfileSetupKind::Import),
+			u"/tmp/encrypted.tar"_s,
+			[&](auto value) { result = std::move(value); }, u"correct-fixture"_s);
+		expectParams(rpc, 2, u"import_backup"_s,
+			QJsonArray{ 5, u"/tmp/encrypted.tar"_s, u"correct-fixture"_s });
+		QVERIFY(rpc.replyResult(QJsonValue(QJsonValue::Null)));
+		QCOMPARE(result->outcome, Delta::ProfileSetupOutcome::Succeeded);
+		expectNoOpenMutations(rpc);
+	}
+
+	void emptyPassphraseStillUsesNull() {
+		SetupFixture rpc;
+		auto table = std::make_shared<Delta::ProfileSetupTable>();
+		Delta::ImportProfileBackup(rpc.bind(),
+			Delta::TryAcquireProfileSetup(table, 5, Delta::ProfileSetupKind::Import),
+			u"/tmp/plain.tar"_s, [](auto) {}, QString());
+		QVERIFY(rpc.log[0].params[2].isNull());
+		QVERIFY(rpc.replyResult(QJsonValue(QJsonValue::Null)));
+	}
+
 	void importSuccessExactSequenceNullPassphrase() {
 		SetupFixture rpc;
 		auto table = std::make_shared<Delta::ProfileSetupTable>();

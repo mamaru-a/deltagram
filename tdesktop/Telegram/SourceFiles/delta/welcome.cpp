@@ -19,6 +19,7 @@ This file is part of Delta Tel, a Telegram Desktop based Delta Chat client.
 #include "lang/lang_keys.h"
 #include "main/backend_startup.h"
 #include "main/main_account.h"
+#include "window/window_controller.h"
 #include "ui/boxes/confirm_box.h"
 #include "ui/controls/userpic_button.h"
 #include "ui/layers/generic_box.h"
@@ -962,25 +963,78 @@ void DeltaOnboarding::chooseBackup() {
 					setStatus(Delta::kProfileSetupUnavailable);
 					return;
 				}
-				setStatus(u"Restoring profile…"_q);
-				const auto weak = base::make_weak(this);
-				auto lease = std::move(_setupLease);
-				Delta::ImportProfileBackup(
-					mutationRequest(),
-					std::move(lease),
-					result.paths.front(),
-					[=](Delta::ProfileSetupResult result) {
-						const auto self = weak.get();
-						if (!self) {
-							return;
-						}
-						self->applySetupResult(result, u"Profile restored."_q);
-					});
+				askBackupPassphrase(captured, result.paths.front());
 			}),
 			crl::guard(this, [=] {
 				unlockSetup();
 			}));
 	});
+}
+
+void DeltaOnboarding::askBackupPassphrase(int accountId, const QString &path) {
+	const auto weak = base::make_weak(this);
+	const auto consumed = std::make_shared<bool>(false);
+	_controller->show(Box([=](not_null<Ui::GenericBox*> box) {
+		box->setTitle(tr::lng_delta_backup_passphrase_title());
+		box->boxClosing() | rpl::on_next([=] {
+			if (!*consumed) {
+				*consumed = true;
+				if (const auto self = weak.get()) {
+					self->unlockSetup();
+				}
+			}
+		}, box->lifetime());
+		box->addRow(object_ptr<Ui::FlatLabel>(
+			box,
+			tr::lng_delta_backup_passphrase_about(),
+			st::boxLabel));
+		const auto row = box->addRow(object_ptr<Ui::RpWidget>(box));
+		row->resize(row->width(), st::defaultInputField.heightMin);
+		const auto password = Ui::CreateChild<Ui::PasswordInput>(
+			row,
+			st::defaultInputField,
+			tr::lng_delta_backup_passphrase_placeholder());
+		password->setInputMethodHints(Qt::ImhSensitiveData
+			| Qt::ImhNoPredictiveText | Qt::ImhHiddenText);
+		row->widthValue() | rpl::on_next([=](int width) {
+			password->resize(width, password->height());
+		}, password->lifetime());
+		const auto submit = [=] {
+			if (*consumed) {
+				return;
+			}
+			*consumed = true;
+			const auto secret = password->getLastText();
+			box->closeBox();
+			const auto self = weak.get();
+			if (!self) {
+				return;
+			}
+			if (self->_accountId != accountId || !self->_setupLease
+				|| self->_setupLease->accountId != accountId) {
+				self->unlockSetup();
+				self->setStatus(Delta::kProfileSetupUnavailable);
+				return;
+			}
+			self->setStatus(u"Restoring profile…"_q);
+			auto lease = std::move(self->_setupLease);
+			Delta::ImportProfileBackup(
+				self->mutationRequest(),
+				std::move(lease),
+				path,
+				[weak](Delta::ProfileSetupResult result) {
+					if (const auto self = weak.get()) {
+						self->applySetupResult(result, u"Profile restored."_q);
+					}
+				},
+				secret);
+		};
+		QObject::connect(password, &Ui::PasswordInput::submitted,
+			password, [=](Qt::KeyboardModifiers) { submit(); });
+		box->setFocusCallback([=] { password->setFocusFast(); });
+		box->addButton(tr::lng_delta_backup_restore_continue(), submit);
+		box->addButton(tr::lng_cancel(), [=] { box->closeBox(); });
+	}));
 }
 
 void DeltaOnboarding::showOtherServer() {

@@ -443,7 +443,8 @@ inline void ImportProfileBackup(
 		AccountInventoryRequest request,
 		std::shared_ptr<ProfileSetupLease> lease,
 		const QString &path,
-		std::function<void(ProfileSetupResult)> done) {
+		std::function<void(ProfileSetupResult)> done,
+		const QString &passphrase = {}) {
 	if (!lease || path.isEmpty() || lease->kind != ProfileSetupKind::Import) {
 		auto denied = ProfileSetupResult();
 		denied.outcome = ProfileSetupOutcome::Denied;
@@ -460,7 +461,8 @@ inline void ImportProfileBackup(
 		std::move(request),
 		std::move(lease),
 		QStringLiteral("import_backup"),
-		QJsonArray{ accountId, path, QJsonValue() },
+		QJsonArray{ accountId, path, passphrase.isEmpty()
+			? QJsonValue() : QJsonValue(passphrase) },
 		std::move(done));
 }
 
