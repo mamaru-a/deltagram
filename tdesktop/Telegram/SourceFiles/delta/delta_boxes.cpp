@@ -281,13 +281,18 @@ public:
 		if (_busy) return;
 		_busy = true;
 		const auto guard = std::weak_ptr<int>(_alive);
+		const auto current = CaptureAccountGuard();
 		OpenContact(static_cast<ContactListRow*>(row.get())->data, [=](int id, QString error) {
-			if (guard.expired()) return;
+			if (guard.expired() || !current || !current()) return;
 			_busy = false;
 			if (!error.isEmpty()) { setDescriptionText(error); return; }
 			// Closing the list destroys this controller and its callback.
 			auto done = _done;
-			QTimer::singleShot(0, [done = std::move(done), id] { done(id); });
+			// The list or profile may disappear between the reply and this tick.
+			QTimer::singleShot(0, [done = std::move(done), id, guard, current] {
+				if (guard.expired() || !current || !current()) return;
+				done(id);
+			});
 		});
 	}
 private:

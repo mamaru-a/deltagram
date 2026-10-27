@@ -1,5 +1,31 @@
 # Publication validation
 
+### Deferred contact-open ownership — 2026-10-27
+
+`ContactListController::rowClicked` already copied the completion callback
+before posting it, because closing the contact list destroys its controller.
+The posted zero-delay timer did not retain either the list-lifetime check or
+the captured profile guard. A profile switch or list/window destruction after
+the Core reply but before timer dispatch could therefore invoke the old open
+callback. Checking only the RPC callback did not protect that second stage.
+
+The normal open path now captures the account guard at click time and checks it
+with the list's weak lifetime at both RPC completion and timer dispatch. The
+callback remains copied outside the controller, preserving the existing safe
+close-before-navigation behavior. Contact picking, member selection, identity
+mapping, RPC parameters and donor Telegram contact behavior are unchanged.
+
+An exact-source method recorder uses real Qt zero-delay timers and the
+production `AccountScope` with minimal list/controller/RPC recording doubles.
+The baseline fails four assertions; the corrected method passes all 19 under
+ASan/UBSan. Cases cover normal deferred opening, controller death, profile
+invalidation before timer execution, controller replacement, invalidation
+before the simulated RPC callback, and error presentation. Native `delta_boxes.cpp`
+syntax/type validation also passes. This does not instantiate the complete
+PeerListBox, exercise a mixed-account window, or prove native GUI close/switch
+behavior; that replay remains pending. Private evidence is under
+`data/integrity-live/contact-dispatch/`.
+
 ### Encrypted backup import — 2026-10-27
 
 Restore now offers a masked optional backup-passphrase field after file
