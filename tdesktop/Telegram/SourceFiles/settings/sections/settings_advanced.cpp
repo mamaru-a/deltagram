@@ -1299,6 +1299,16 @@ void BuildExportSection(SectionBuilder &builder) {
 	builder.addDivider();
 	builder.addSkip();
 
+	if (Delta::UsesCoreBackend(session) && Delta::OwnsSession(session)) {
+		builder.addButton({
+			.id = u"advanced/core-backup"_q,
+			.title = tr::lng_delta_backup_export_title(),
+			.icon = { &st::menuIconExport },
+			.onClick = [=] { Delta::ShowBackupExport(controller); },
+			.keywords = { u"backup"_q, u"chatmail"_q, u"restore"_q },
+		});
+	}
+
 	if (Delta::UsesTelegramBackend(session)) {
 		builder.addButton({
 			.id = u"advanced/export"_q,

@@ -1,5 +1,60 @@
 # Publication validation
 
+### Core file backup export and private creation modes — 2026-10-27
+
+Advanced Settings now has an Export backup action for the owning Chatmail
+session. It exports only the selected Core profile into a new
+`chatmail-backup-XXXXXX` subfolder of the chosen destination. The optional
+backup passphrase must match a second masked field and is forwarded without
+trimming. Blank remains the Core null/unencrypted path. A failed attempt keeps
+the masked values so a retry cannot silently become unencrypted; success and
+closing the dialog clear/destroy them. Passphrases are not application settings.
+
+The UI states the actual Core format: the passphrase protects the database,
+not attachment files. A direct tar read of the disposable passphrase export
+retrieves all nine attachment payloads without its passphrase, with hashes
+matching the export source. The database header is not plain SQLite, and the
+previous wrong/correct-passphrase restore test verifies its access boundary.
+No whole-archive encryption is claimed or implemented by the client.
+
+The bridge API rejects non-owning sessions before creating a directory or
+accessing RPC. It captures the selected account ID, holds one export per RPC
+across profile changes, and drops stale UI completion through AccountScope,
+weak session/controller and box guards. Closing a dialog does not cancel a
+submitted export or release its reservation early. Profile reset closes the
+dialog. Only a typed null acknowledgement confirms success; errors/malformed
+replies do not auto-retry. Each attempt has a distinct directory and does not
+overwrite earlier output. On Unix, the directory helper refuses a newly
+created folder whose mode is not owner-private. Extended ACLs and unsupported
+filesystems are not established by these normal-filesystem checks.
+
+DeltaRpc's Unix child modifier now applies umask 0077 before exec while retaining
+Linux parent-death handling. It does not change the GUI process mask or chmod
+existing files. A real DeltaRpc/QProcess test reproduces two failures with the
+old code (new files 0666/0644 under parent masks 0000/0022). The corrected target
+passes five Qt 6.4.2 checks with zero failures/skips as UID/GID 65534, including
+0600 files, 0700 directories and an unchanged parent mask. This is POSIX mode
+validation, not Windows ACL or macOS runtime proof.
+
+The export helper target passes 15 checks as UID/GID 65534, including exact
+parameters, directory uniqueness/parent preservation, invalid input, malformed
+acknowledgements, cross-account serialization, and profile invalidation without
+early reservation release or stale UI delivery. The full current Core integrity
+target passes 307 checks, zero failures/skips, with the pinned Core server.
+A separate unprivileged end-to-end driver links the actual DeltaRpc and export
+helper to that server: both plain and passphrase archives are 0600 in distinct
+0700 directories even while the parent mask is 0000. The protected archive
+restores with matching non-device message-ID lists, drafts and blob hashes.
+The source archive remains byte-identical; no mail-IO-starting RPC is called.
+
+Language/subset generation and native syntax/type checks pass for all four
+changed production translation units. Full application linking, new-dialog
+rendering/keyboard/cancel/error retry, background completion, live-IO export,
+profile/window teardown and release packaging remain pending. This slice does
+not add app-wide quit/restart prevention; an unfinished export can be interrupted
+when the app exits, so the UI requires keeping it open until completion. Private evidence
+and the standalone Core driver are under `data/integrity-live/backup-export/`.
+
 ### Deferred contact-open ownership — 2026-10-27
 
 `ContactListController::rowClicked` already copied the completion callback

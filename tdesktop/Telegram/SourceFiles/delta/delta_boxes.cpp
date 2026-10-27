@@ -27,6 +27,7 @@ This file is part of Delta Tel, a Telegram Desktop based Delta Chat client.
 #include "delta/media_identity.h"
 #include "rpl/variable.h"
 #include "core/ui_integration.h"
+#include "core/file_utilities.h"
 #include "main/main_session.h"
 #include "window/window_session_controller.h"
 #include "storage/storage_account.h"
@@ -39,6 +40,7 @@ This file is part of Delta Tel, a Telegram Desktop based Delta Chat client.
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/checkbox.h"
 #include "ui/widgets/fields/input_field.h"
+#include "ui/widgets/fields/password_input.h"
 #include "ui/wrap/slide_wrap.h"
 #include "styles/style_layers.h"
 #include "ui/widgets/labels.h"
@@ -2446,6 +2448,104 @@ void ShowApps(not_null<Main::Session*> session) {
 		AppsWindow = std::make_unique<AppsBrowser>(session);
 	}
 	AppsWindow->open(url);
+}
+
+void ShowBackupExport(not_null<Window::SessionController*> controller) {
+	if (!OwnsSession(&controller->session())) return;
+	const auto current = CaptureAccountGuard();
+	const auto owner = base::make_weak(controller);
+	controller->show(Box([=](not_null<Ui::GenericBox*> box) {
+		box->setTitle(tr::lng_delta_backup_export_title());
+		box->setMaxHeight(st::boxMaxListHeight);
+		const auto closed = std::make_shared<bool>(false);
+		box->boxClosing() | rpl::on_next([=] { *closed = true; }, box->lifetime());
+		AccountViewResets() | rpl::on_next([=](int) { box->closeBox(); }, box->lifetime());
+		const auto valid = [=] {
+			return !*closed && owner && current && current()
+				&& OwnsSession(&owner->session());
+		};
+		box->addRow(object_ptr<Ui::FlatLabel>(box,
+			tr::lng_delta_backup_export_about(), st::boxLabel));
+		const auto destination = box->lifetime().make_state<QString>();
+		const auto busy = box->lifetime().make_state<bool>(false);
+		const auto folder = box->addRow(object_ptr<Ui::SettingsButton>(box,
+			tr::lng_delta_backup_export_folder(), st::settingsButtonNoIcon));
+		folder->setFocusPolicy(Qt::StrongFocus);
+		const auto status = box->addRow(object_ptr<Ui::FlatLabel>(box,
+			QString(), st::boxLabel));
+		status->setSelectable(true);
+		const auto addPassword = [&](rpl::producer<QString> placeholder) {
+			const auto row = box->addRow(object_ptr<Ui::RpWidget>(box));
+			row->resize(row->width(), st::defaultInputField.heightMin);
+			const auto field = Ui::CreateChild<Ui::PasswordInput>(
+				row, st::defaultInputField, std::move(placeholder));
+			field->setInputMethodHints(Qt::ImhSensitiveData
+				| Qt::ImhNoPredictiveText | Qt::ImhHiddenText);
+			row->widthValue() | rpl::on_next([=](int width) {
+				field->resize(width, field->height());
+			}, field->lifetime());
+			return field;
+		};
+		const auto password = addPassword(tr::lng_delta_backup_passphrase_placeholder());
+		const auto repeat = addPassword(tr::lng_delta_backup_export_repeat());
+		folder->setClickedCallback([=] {
+			if (!valid() || *busy) return;
+			FileDialog::GetFolder(box.get(), tr::lng_delta_backup_export_folder(tr::now),
+				*destination, crl::guard(box, [=](QString &&path) {
+					if (!valid() || path.isEmpty()) return;
+					*destination = path;
+					status->setText(path);
+				}));
+		});
+		const auto button = box->lifetime().make_state<QPointer<Ui::RoundButton>>();
+		const auto submit = [=] {
+			if (!valid() || *busy) return;
+			if (destination->isEmpty()) {
+				status->setText(tr::lng_delta_backup_export_folder(tr::now));
+				folder->setFocus(Qt::OtherFocusReason);
+				return;
+			}
+			const auto secret = password->getLastText();
+			if (secret != repeat->getLastText()) {
+				repeat->showError();
+				status->setText(tr::lng_delta_backup_export_mismatch(tr::now));
+				return;
+			}
+			*busy = true;
+			folder->setDisabled(true);
+			password->setDisabled(true);
+			repeat->setDisabled(true);
+			if (*button) (*button)->setDisabled(true);
+			status->setText(tr::lng_delta_backup_export_progress(tr::now));
+			ExportProfileBackup(&owner->session(), *destination, secret,
+				crl::guard(box, [=](QString directory, QString error) {
+					if (!valid()) return;
+					if (error.isEmpty()) {
+						password->setText(QString());
+						repeat->setText(QString());
+						status->setText(tr::lng_delta_backup_export_done(tr::now)
+							+ u"\n"_q + directory);
+						return;
+					}
+					// Preserve masked values on failure; retry must not silently
+					// change a passphrase-protected export into a plain one.
+					*busy = false;
+					folder->setDisabled(false);
+					password->setDisabled(false);
+					repeat->setDisabled(false);
+					if (*button) (*button)->setDisabled(false);
+					status->setText(error + (directory.isEmpty()
+						? QString() : u"\n"_q + directory));
+				}));
+		};
+		QObject::connect(password, &Ui::PasswordInput::submitted, password,
+			[=](Qt::KeyboardModifiers) { repeat->setFocusFast(); });
+		QObject::connect(repeat, &Ui::PasswordInput::submitted, repeat,
+			[=](Qt::KeyboardModifiers) { submit(); });
+		box->setFocusCallback([=] { folder->setFocus(Qt::OtherFocusReason); });
+		*button = box->addButton(tr::lng_delta_backup_export_title(), submit);
+		box->addButton(tr::lng_close(), [=] { box->closeBox(); });
+	}));
 }
 
 void ShowAppPickerUrl(not_null<Window::SessionController*> controller) {

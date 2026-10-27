@@ -6,6 +6,9 @@
 #include <csignal>
 #include <cstdio>
 #include <utility>
+#if defined(Q_OS_UNIX)
+#include <sys/stat.h>
+#endif
 #if defined(__linux__)
 #include <sys/prctl.h>
 #endif
@@ -18,9 +21,14 @@ DeltaRpc::DeltaRpc(QObject *parent)
 	connect(&_process, &QProcess::readyReadStandardOutput, this, [this] {
 		onReadyRead();
 	});
-#if defined(__linux__)
+#if defined(Q_OS_UNIX)
 	_process.setChildProcessModifier([] {
+		// Core creates account data, backup archives and temporary databases.
+		// Apply privacy to this child without changing the GUI process mask.
+		::umask(S_IRWXG | S_IRWXO);
+#if defined(__linux__)
 		prctl(PR_SET_PDEATHSIG, SIGKILL);
+#endif
 	});
 #endif
 	_startup = new QTimer(this);

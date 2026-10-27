@@ -48,6 +48,7 @@ void AskChoice(
 
 void ShowInviteQr(not_null<Window::SessionController*> controller);
 void ShowSecondDevice(not_null<Window::SessionController*> controller);
+void ShowBackupExport(not_null<Window::SessionController*> controller);
 void ShowRelays(not_null<Window::SessionController*> controller);
 void ShowApps(not_null<Main::Session*> session);
 [[nodiscard]] QString AppPickerUrl();

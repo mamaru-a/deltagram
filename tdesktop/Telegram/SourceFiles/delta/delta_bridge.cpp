@@ -16,6 +16,7 @@ This file is part of Delta Tel, a Telegram Desktop based Delta Chat client.
 #include "apiwrap.h"
 #include "delta/account_scope.h"
 #include "delta/backup_transfer.h"
+#include "delta/backup_export.h"
 #include "delta/message_order.h"
 #include "delta/message_visibility.h"
 #include "delta/message_download.h"
@@ -5195,6 +5196,43 @@ void LoadSearchResults(
 		return;
 	}
 	GlobalBridge->loadSearchResults(ids, std::move(done));
+}
+
+void ExportProfileBackup(
+		not_null<Main::Session*> session,
+		const QString &destination,
+		const QString &passphrase,
+		Fn<void(QString, QString)> done) {
+	if (!OwnsSession(session)) {
+		if (done) done({}, u"Backup export is not available."_q);
+		return;
+	}
+	const auto bridge = GlobalBridge;
+	const auto state = BackupExportStateFor(bridge->_rpc.get());
+	if (state->busy) {
+		if (done) done({}, u"A backup export is already in progress."_q);
+		return;
+	}
+	const auto directory = CreateBackupExportDirectory(destination);
+	if (directory.isEmpty()) {
+		if (done) done({}, u"Could not create a private backup folder here. Choose another location."_q);
+		return;
+	}
+	const auto weak = base::make_weak(session);
+	ExportBackupFile(
+		[rpc = bridge->_rpc](QString method, QJsonArray params, DeltaRpc::Callback callback) {
+			rpc->call(method, params, std::move(callback));
+		},
+		state,
+		bridge->_accountScope,
+		bridge->_accountId,
+		directory,
+		passphrase,
+		[weak, directory, done = std::move(done)](BackupExportResult result) {
+			const auto session = weak.get();
+			if (!session || !OwnsSession(session) || !done) return;
+			done(directory, result.confirmed ? QString() : std::move(result.error));
+		});
 }
 
 void ListTransports(

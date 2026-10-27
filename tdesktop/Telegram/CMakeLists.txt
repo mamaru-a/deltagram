@@ -1457,6 +1457,7 @@ PRIVATE
     delta/full_message_box.cpp
     delta/full_message_box.h
     delta/full_message_view.h
+    delta/backup_export.h
     delta/profile_setup_actions.h
     delta/profile_setup_avatar.h
     delta/core_accounts_path.h

@@ -169,6 +169,11 @@ void LoadSearchResults(
 void LoadInviteQr(
 	Fn<void(QString name, QString text, QString svg, QString error)> done);
 
+void ExportProfileBackup(
+	not_null<Main::Session*> session,
+	const QString &destination,
+	const QString &passphrase,
+	Fn<void(QString directory, QString error)> done);
 void ListTransports(
 	not_null<Main::Session*> session,
 	Fn<void(QJsonArray transports, QString error)> done);
