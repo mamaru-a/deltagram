@@ -4,6 +4,7 @@ This file is part of Delta Tel, a Telegram Desktop based Delta Chat client.
 #include "delta/backend_choice.h"
 
 #include "lang/lang_keys.h"
+#include "rpl/combine.h"
 #include "ui/painter.h"
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/labels.h"
@@ -19,11 +20,11 @@ BackendChoice::BackendChoice(QWidget *parent)
 , _title(
 	this,
 	tr::lng_delta_account_choice_title(),
-	st::introCoverTitle)
+	st::deltaAccountChoiceTitle)
 , _description(
 	this,
 	tr::lng_delta_account_choice_about(),
-	st::introCoverDescription)
+	st::deltaAccountChoiceDescription)
 , _core(
 	this,
 	tr::lng_delta_account_choice_core(),
@@ -34,6 +35,13 @@ BackendChoice::BackendChoice(QWidget *parent)
 	st::introNextButton)
 , _error(this, QString(), st::introErrorCentered) {
 	_error->hide();
+	rpl::combine(
+		_title->heightValue(),
+		_description->heightValue(),
+		_error->heightValue()
+	) | rpl::on_next([=](int, int, int) {
+		updateControlsGeometry();
+	}, lifetime());
 	_core->setClickedCallback([=] {
 		_chosen.fire_copy(Main::AccountBackend::Core);
 	});
@@ -68,25 +76,35 @@ void BackendChoice::resizeEvent(QResizeEvent *e) {
 }
 
 void BackendChoice::updateControlsGeometry() {
-	const auto top = std::max(
+	const auto columnWidth = st::introNextButton.width;
+	_title->resizeToWidth(columnWidth);
+	_description->resizeToWidth(columnWidth);
+	_error->resizeToWidth(width());
+	const auto descriptionTop = std::max(
+		int(st::introCoverDescriptionTop),
+		st::introCoverTitleTop + _title->height() + st::introPhoneTop);
+	const auto coreTop = std::max(
+		int(st::introNextTop),
+		descriptionTop + _description->height() + st::introLinkTop);
+	const auto telegramTop = coreTop + _core->height() + st::introLinkTop;
+	const auto errorTop = telegramTop + _telegram->height() + st::introLinkTop;
+	const auto contentBottom = _error->isHidden()
+		? telegramTop + _telegram->height()
+		: errorTop + _error->height();
+	const auto preferredTop = std::max(
 		(height() - st::introHeight) / 2,
 		int(st::introStepTopMin));
-	const auto left = (width() - st::introNextButton.width) / 2;
-	_title->moveToLeft(
-		(width() - _title->width()) / 2,
-		top + st::introCoverTitleTop);
-	_description->resizeToWidth(st::introNextButton.width);
-	_description->moveToLeft(
-		(width() - _description->width()) / 2,
-		top + st::introCoverDescriptionTop);
-	_core->moveToLeft(left, top + st::introNextTop);
-	_telegram->moveToLeft(
-		left,
-		_core->y() + _core->height() + st::introLinkTop);
-	_error->resizeToWidth(width());
-	_error->moveToLeft(
-		0,
-		_telegram->y() + _telegram->height() + st::introLinkTop);
+	// The donor's minimum top offset assumes one button. Fit both choices
+	// and any error inside compact windows, including screen-reader mode.
+	const auto top = std::min(
+		preferredTop,
+		height() - contentBottom - st::introLinkTop);
+	const auto left = (width() - columnWidth) / 2;
+	_title->moveToLeft(left, top + st::introCoverTitleTop);
+	_description->moveToLeft(left, top + descriptionTop);
+	_core->moveToLeft(left, top + coreTop);
+	_telegram->moveToLeft(left, top + telegramTop);
+	_error->moveToLeft(0, top + errorTop);
 }
 
 QString BackendChoiceErrorText(Main::AccountBackendBindResult result) {

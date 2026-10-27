@@ -30,15 +30,24 @@ are not copied here. Deltagram evidence comes from [PROGRESS.md](PROGRESS.md),
 
 ## Current readiness gates
 
-The last verified complete native artifact is `bd1ea60`, with 827 checks,
-zero failures/skips, and explicit full-message viewer/cancellation replay. It
-predates the mixed-backend integration. Current changed production translation
-units pass configured native syntax/type checks, including authentication,
-transport, conference, settings, history and data routing; these checks do not
-produce a linked binary or establish runtime behavior. CI `9714b03` subsequently
-links the application but fails its RPC lifetime target; that failed run is not a
-validated downloadable artifact. The newer forgotten-
-passcode guard also passes focused Qt tests and an exact reset-method recorder.
+The last verified complete native artifact is `ef176e9`, with 23 Qt suites,
+962 checks and zero failures/skips; its hashes and source provenance were checked.
+An isolated native replay opens Core, adds an Unspecified slot, then explicitly
+selects Telegram and reaches its phone-login screen with a Telegram DC connection.
+Cold restart preserves the offline Core fixture and both backend sidecars.
+No Telegram credentials were entered; authorized session recovery and mixed
+message-ID isolation remain unproven. Core mail IO was suppressed.
+
+That artifact predates the corrected retained-RPC implementation and the newest
+chooser/country-binding fixes. CI `9714b03` links but fails its Qt 6.11 RPC
+lifetime target; corrected source passes focused Qt 6.11/6.4 sanitizer checks.
+Current changed production units pass native syntax/type checks. A fresh complete
+run and current-artifact replay remain required. Compact chooser clipping and
+premature country lookup are reproduced and source-corrected; their native
+render/catalog replay remains pending. Periodic unsupported Core background
+requests remain unattributed. Historical `bd1ea60` viewer/cancellation evidence
+still applies only to that revision. The forgotten-passcode guard passes focused
+Qt tests and an exact reset-method recorder.
 
 Historical Core-only replay covers encryption information, onboarding avatar
 layout at tested LTR sizes, startup Loading/Retry/Open Profile, group-sidebar
@@ -49,7 +58,7 @@ cross-window setup/teardown, latest-head regression replay and final packages
 remain open.
 
 Live Core profile setup also retains its shared RPC through mutation replies
-and error readback. Thirty real-process sanitizer checks and an offline pinned-
+and error readback. Thirty-two real-process sanitizer checks and an offline pinned-
 Core wrong/correct-passphrase owner-loss retry pass. Native onboarding teardown,
 first-run cancellation and actual second-device transfer remain unverified.
 

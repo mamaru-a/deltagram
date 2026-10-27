@@ -1,5 +1,57 @@
 # Publication validation
 
+
+### Mixed backend entry and compact chooser — 2026-10-27
+
+The complete artifact from [run 40438754289](https://github.com/omidz4t/deltagram/actions/runs/40438754289)
+was downloaded and all five published hashes verified. Its head is `ef176e9`,
+checkout `c145c1e`, and merge tree matches the local head tree at that revision.
+The GUI SHA256 is `a1f930b473e609122fc8ec659fabe3cccc477c4bc7d08cb85d84c7ec6c5923d4`.
+Its integrity log records 23 Qt suites, 962 passed, zero failures/skips. This is
+newer than the previously verified complete `bd1ea60` artifact, but predates
+`9714b03`/`1fea603` retained-RPC corrections and the source fixes below.
+
+An isolated UID 65534 native GUI with its own Xvfb/DBus and private disposable
+store shows the backend chooser before starting Core. Chatmail opens an offline
+imported fixture; Add Account opens a second chooser without replacing it.
+Core and Unspecified stages have zero GUI TCP sockets. Explicit Telegram
+selection opens the donor login flow and phone-number screen, with one established
+GUI connection to a built-in production Telegram DC on port 443. The Core child
+has zero TCP sockets. No phone number, code or password was entered, and no QR
+token was captured. This establishes unauthenticated transport/entry only.
+
+Normal quit and cold restart retain backend sidecars `[Core, Telegram]` and reopen
+the Core fixture. Before/after snapshots match: eight non-device chats, one draft,
+nine blob hashes; snapshot SHA256
+`a49512b769bd9d1f61dae6bf6b2d73a7a75dfc650c2e14c8ddced95d06a2d160`.
+The GUI sent no add_account/configure/init_transports. Two start_io calls were
+suppressed by the fixture proxy, so this is not live mail delivery proof. The
+source archive remains byte-identical. Both test GUI instances exited normally
+and the test-owned display/processes were stopped; existing desktop/store data
+were untouched. Evidence: `data/integrity-live/mixed-native-ef176/` (ignored).
+
+This artifact reproduces clipped chooser description text and a hidden Telegram
+button at 380x480 with screen-reader mode. The source now gives chooser labels a
+300px wrap style, reflows on label-height changes, and fits both buttons plus
+errors to available height. Donor intro styles are unchanged. Style generation
+and configured native syntax checking pass; corrected native rendering, error
+copy, RTL and interface-scale replay remain pending.
+
+Country catalog binding previously issued a request through Unspecified/Core MTP;
+its asynchronous unsupported failure destroyed the observer before explicit
+Telegram selection. The constructor now binds its sender only to Telegram MTP
+instances, retaining observation across same-account MTP rebuild and backend
+choice. An extracted exact-constructor recorder uses real rpl, account/MTP/domain
+doubles, Qt 6.11.2 and strict ASan/UBSan as UID 65534: baseline fails nine of 11
+assertions; corrected source passes all 11. Native syntax checking passes. This
+is reactive binding proof, not actual native catalog/cache success. Evidence:
+`data/integrity-live/countries-backend/` (ignored).
+
+Periodic Core DELTA_NOT_SUPPORTED background requests were also observed and
+remain unattributed. This country fix does not claim to resolve them. Authorized
+Telegram login/session recovery, mixed authenticated message-ID isolation and
+full current-source GUI regression remain open.
+
 ### Core file backup export and private creation modes — 2026-10-27
 
 Advanced Settings now has an Export backup action for the owning Chatmail
