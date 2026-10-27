@@ -8,6 +8,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "main/main_domain.h"
 
 #include "delta/account_backend.h"
+#include "delta/core_accounts_path.h"
+#include "lang/lang_keys.h"
 #include "delta/unread_aggregation.h"
 #include "core/application.h"
 #include "core/core_settings.h"
@@ -117,7 +119,32 @@ int Domain::activeForStorage() const {
 	return _accountToActivate;
 }
 
-void Domain::resetWithForgottenPasscode() {
+QString PasscodeRecoveryWarning(Delta::PasscodeRecovery recovery) {
+	return (recovery == Delta::PasscodeRecovery::PreserveChatmail)
+		? tr::lng_delta_passcode_preserve_chatmail(tr::now)
+		: tr::lng_delta_passcode_preserve_unknown(tr::now);
+}
+
+Delta::PasscodeRecovery Domain::forgottenPasscodeRecovery() const {
+	if (!Core::App().passcodeLocked() && !_local->hasLocalPasscode()) {
+		return Delta::PasscodeRecovery::TelegramLogout;
+	}
+	auto loaded = std::vector<AccountBackend>();
+	for (const auto &[index, account] : _accounts) {
+		loaded.push_back(account->backend());
+	}
+	return Delta::PlanPasscodeRecovery(true, loaded,
+		Delta::InspectPasscodeRecoveryStorage(
+			Storage::AccountTdataRoot(),
+			Delta::ResolveCoreAccountsPath(),
+			QFileInfo::exists(Delta::CoreAccountsPathFile())
+				|| QFileInfo(Delta::CoreAccountsPathFile()).isSymLink()));
+}
+
+bool Domain::resetWithForgottenPasscode() {
+	if (forgottenPasscodeRecovery() != Delta::PasscodeRecovery::TelegramLogout) {
+		return false;
+	}
 	if (_accounts.empty()) {
 		_local->startFromScratch();
 		activateAfterStarting();
@@ -126,6 +153,7 @@ void Domain::resetWithForgottenPasscode() {
 			account->logOut();
 		}
 	}
+	return true;
 }
 
 void Domain::activateAfterStarting() {

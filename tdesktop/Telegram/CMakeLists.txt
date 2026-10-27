@@ -1459,6 +1459,8 @@ PRIVATE
     delta/full_message_view.h
     delta/profile_setup_actions.h
     delta/profile_setup_avatar.h
+    delta/core_accounts_path.h
+    delta/passcode_recovery.h
     delta/startup_state.h
     delta/compose_queue.h
     delta/compose_queue_sender.cpp

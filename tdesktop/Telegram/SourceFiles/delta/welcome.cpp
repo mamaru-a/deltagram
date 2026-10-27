@@ -4,6 +4,7 @@ This file is part of Delta Tel, a Telegram Desktop based Delta Chat client.
 #include "delta/welcome.h"
 
 #include "delta/account_inventory.h"
+#include "delta/core_accounts_path.h"
 #include "delta/startup_state.h"
 #include "delta/profile_setup_actions.h"
 #include "delta/profile_setup_avatar.h"
@@ -50,7 +51,6 @@ This file is part of Delta Tel, a Telegram Desktop based Delta Chat client.
 
 namespace {
 
-const auto kAccountsDefault = u"/.local/share/delta-tel/accounts"_q;
 const auto kPrivacyUrl = u"https://delta.chat/gdpr"_q;
 const auto kRelaysUrl = u"https://chatmail.at/relays"_q;
 
@@ -192,32 +192,11 @@ void DeltaOnboarding::createControls() {
 }
 
 QString AccountsPathFile() {
-	return QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation)
-		+ u"/delta-tel/accounts_path"_q;
+	return Delta::CoreAccountsPathFile();
 }
 
 QString ResolveAccountsPath() {
-	const auto args = QCoreApplication::arguments();
-	for (auto i = 0; i + 1 < args.size(); ++i) {
-		if (args[i] == u"-delta-accounts"_q
-			|| args[i] == u"--delta-accounts"_q) {
-			return args[i + 1];
-		}
-	}
-	if (const auto env = qEnvironmentVariable("DELTA_TEL_ACCOUNTS");
-		!env.isEmpty()) {
-		return env;
-	}
-	auto file = QFile(AccountsPathFile());
-	if (file.open(QIODevice::ReadOnly)) {
-		const auto saved = QString::fromUtf8(file.readAll()).trimmed();
-		if (!saved.isEmpty()) {
-			return saved;
-		}
-	}
-	return qEnvironmentVariable(
-		"DC_ACCOUNTS_PATH",
-		QDir::homePath() + kAccountsDefault);
+	return Delta::ResolveCoreAccountsPath();
 }
 
 void DeltaOnboarding::chooseDataFolder() {

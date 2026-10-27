@@ -1020,8 +1020,9 @@ rpl::producer<FullMsgId> Application::floatPlayerClosed() const {
 void Application::logout(Main::Account *account) {
 	if (account) {
 		account->logOut();
-	} else {
-		_domain->resetWithForgottenPasscode();
+	} else if (!_domain->resetWithForgottenPasscode()) {
+		Ui::show(Ui::MakeInformBox(Main::PasscodeRecoveryWarning(
+			_domain->forgottenPasscodeRecovery())));
 	}
 }
 

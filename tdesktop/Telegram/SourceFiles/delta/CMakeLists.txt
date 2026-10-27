@@ -95,6 +95,12 @@ if (BUILD_TESTING)
     target_link_libraries(delta_account_backend_tests PRIVATE Qt6::Core Qt6::Test)
     add_test(NAME delta_account_backend COMMAND delta_account_backend_tests)
     set_tests_properties(delta_account_backend PROPERTIES TIMEOUT 30)
+    add_executable(delta_passcode_recovery_tests tests/passcode_recovery_tests.cpp)
+    target_include_directories(delta_passcode_recovery_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/..)
+    target_link_libraries(delta_passcode_recovery_tests PRIVATE Qt6::Core Qt6::Test)
+    add_test(NAME delta_passcode_recovery COMMAND delta_passcode_recovery_tests)
+    set_tests_properties(delta_passcode_recovery PROPERTIES TIMEOUT 30)
     add_executable(delta_backend_startup_tests tests/backend_startup_tests.cpp)
     target_include_directories(delta_backend_startup_tests PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}

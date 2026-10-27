@@ -3600,3 +3600,36 @@ monospace, and Times New Roman to the intended bundled families. The actual Apps
 window loaded and was resized through four sizes on an X11 virtual display,
 without EGL/GBM failures or an unresponsive web process. This virtual-display
 check does not reproduce every desktop compositor's flicker behavior.
+
+### Forgotten local passcode with Chatmail data (2026-10-27)
+
+User-selected policy: preserve profiles. Forgotten-passcode recovery must not
+log out/reset local storage when Chatmail profiles are present or the locked
+account types cannot be confirmed. The UI explains use of the passcode,
+previously enabled system unlock, or an existing Chatmail backup restored in a
+fresh installation. This does not add a passcode bypass, system-unlock setup,
+backup export from a locked profile, or database encryption.
+
+The actual `Domain::resetWithForgottenPasscode` entry rechecks the policy before
+any account logout or `startFromScratch`; the confirmation UI also checks it.
+The cold-start account list can still be encrypted. Read-only evidence therefore
+uses app-owned backend metadata, occupied account namespaces, and the same Core
+accounts-path resolver as onboarding. Core data, saved folder selection,
+corrupt/unreadable metadata, and untagged legacy accounts preserve the lock.
+Positively identified Telegram-only storage retains the donor reset path.
+Legacy Telegram storage lacking backend metadata is conservatively unknown
+until it can be unlocked/classified. Ordinary logout without a local lock or
+passcode retains its previous behavior.
+
+Focused Qt 6.4.2 checks run as UID 65534: seven QtTest cases including lifecycle
+hooks, zero failures/skips. They cover loaded/mixed/unknown accounts, cold
+Telegram metadata, saved Core folder selection, untagged legacy namespaces,
+corrupt metadata, hidden/unreadable Core storage, and unchanged authorization
+and profile sentinels. An exact-source reset-method recorder passes nine
+scenarios under ASan/UBSan: protected outcomes perform zero logout/reset calls;
+Telegram outcomes retain cold initialization or loaded account logout. The
+recorder uses account/storage doubles and does not prove native persistence.
+Language and subset generation succeeded. All four changed production C++
+files pass syntax/type checks with the configured native Qt/Nix compiler; these
+checks produce no objects and do not prove linking or GUI behavior.
+Full linked-binary locked-start/system-unlock/backup GUI replay remains pending.

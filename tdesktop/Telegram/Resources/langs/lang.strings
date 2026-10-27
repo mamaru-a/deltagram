@@ -8812,3 +8812,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_folder_archive_status" = "ZIP archive";
 
 // Keys finished
+
+"lng_delta_passcode_preserve_chatmail" = "Your Chatmail profiles and local messages are preserved. Unlock with your passcode or previously enabled system unlock. If you cannot unlock, restore an existing Chatmail backup in a fresh installation. Logging out will not reset this lock.";
+"lng_delta_passcode_preserve_unknown" = "The locked account types could not be confirmed. To protect local Chatmail messages, this lock cannot be reset by logging out. Use your passcode or previously enabled system unlock. Otherwise, use a fresh installation to sign in to Telegram or restore an existing Chatmail backup.";
