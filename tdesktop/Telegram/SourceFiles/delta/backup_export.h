@@ -31,6 +31,7 @@ namespace Delta {
 
 struct BackupExportState {
 	bool busy = false;
+	bool removingProfile = false;
 };
 
 // Keep one export running on each RPC, including across profile switches.
@@ -59,6 +60,35 @@ struct BackupExportState {
 	return state;
 }
 
+// A profile removal closes its database and deletes blobs in Core. Keep the
+// reservation through inventory, optional switching and the removal reply.
+class BackupProfileRemoval final {
+public:
+	explicit BackupProfileRemoval(std::shared_ptr<BackupExportState> state)
+	: _state(std::move(state)) {
+		_state->removingProfile = true;
+	}
+	~BackupProfileRemoval() { release(); }
+	BackupProfileRemoval(const BackupProfileRemoval &) = delete;
+	BackupProfileRemoval &operator=(const BackupProfileRemoval &) = delete;
+
+	void release() {
+		if (_state) {
+			_state->removingProfile = false;
+			_state = nullptr;
+		}
+	}
+
+private:
+	std::shared_ptr<BackupExportState> _state;
+};
+
+[[nodiscard]] inline std::shared_ptr<BackupProfileRemoval> AcquireBackupProfileRemoval(
+		std::shared_ptr<BackupExportState> state) {
+	if (!state || state->busy || state->removingProfile) return nullptr;
+	return std::make_shared<BackupProfileRemoval>(std::move(state));
+}
+
 struct BackupExportResult {
 	bool confirmed = false;
 	QString error;
@@ -76,8 +106,8 @@ inline void ExportBackupFile(
 		if (done) done({ false, QStringLiteral("Backup export is not available.") });
 		return;
 	}
-	if (state->busy) {
-		if (done) done({ false, QStringLiteral("A backup export is already in progress.") });
+	if (state->busy || state->removingProfile) {
+		if (done) done({ false, QStringLiteral("A backup export or profile deletion is already in progress.") });
 		return;
 	}
 	state->busy = true;

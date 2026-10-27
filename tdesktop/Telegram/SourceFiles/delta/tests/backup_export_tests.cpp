@@ -174,6 +174,54 @@ private slots:
 		QVERIFY(!Delta::AnyBackupExportInProgress());
 	}
 
+	void exportingProfileCannotBeRemoved() {
+		ExportFixture rpc;
+		Delta::AccountScope scope;
+		auto state = Delta::BackupExportStateFor(&rpc);
+		Delta::ExportBackupFile(rpc.request(), state, scope, 5, "/backup", {}, [](auto) {});
+		QVERIFY(!Delta::AcquireBackupProfileRemoval(state));
+		rpc.reply({ { "result", QJsonValue() } });
+		QVERIFY(Delta::AcquireBackupProfileRemoval(state));
+	}
+	void removingProfileCannotBeExportedOrRemovedTwice() {
+		ExportFixture rpc;
+		Delta::AccountScope scope;
+		auto state = Delta::BackupExportStateFor(&rpc);
+		const auto removal = Delta::AcquireBackupProfileRemoval(state);
+		QVERIFY(removal);
+		QVERIFY(!Delta::AcquireBackupProfileRemoval(state));
+		auto denied = false;
+		Delta::ExportBackupFile(rpc.request(), state, scope, 5, "/backup", {},
+			[&](auto result) { denied = !result.confirmed && !result.error.isEmpty(); });
+		QVERIFY(denied);
+		QVERIFY(rpc.methods.isEmpty());
+		removal->release();
+		removal->release(); // Terminal cleanup can also destroy the owner.
+		Delta::ExportBackupFile(rpc.request(), state, scope, 5, "/backup", {}, [](auto) {});
+		QCOMPARE(rpc.methods.size(), 1);
+		rpc.reply({ { "result", QJsonValue() } });
+	}
+	void droppedRemovalCallbackReleasesReservation() {
+		ExportFixture rpc;
+		auto state = Delta::BackupExportStateFor(&rpc);
+		auto removal = Delta::AcquireBackupProfileRemoval(state);
+		DeltaRpc::Callback pending = [removal](auto) {};
+		removal.reset();
+		QVERIFY(state->removingProfile);
+		pending = {};
+		QVERIFY(!state->removingProfile);
+		QVERIFY(Delta::AcquireBackupProfileRemoval(state));
+	}
+	void removalKeepsSharedRegistryStateAlive() {
+		int rpc = 0;
+		auto state = Delta::BackupExportStateFor(&rpc);
+		auto removal = Delta::AcquireBackupProfileRemoval(state);
+		state.reset();
+		QVERIFY(Delta::BackupExportStateFor(&rpc)->removingProfile);
+		removal.reset();
+		QVERIFY(!Delta::BackupExportStateFor(&rpc)->removingProfile);
+	}
+
 	void rpcStateIsSharedOnlyForSameRpc() {
 		int first = 1, second = 2;
 		auto one = Delta::BackupExportStateFor(&first);

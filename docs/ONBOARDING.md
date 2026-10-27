@@ -27,7 +27,9 @@ enter the same backup passphrase twice. Each attempt writes to a new
 for each Chatmail profile that needs a backup. Keep the app open until export
 finishes. Closing the dialog does not cancel an export already submitted. Normal
 quit/restart stays blocked until Core replies; try quitting or restarting again
-after completion. Force termination or power loss can still interrupt export.
+after completion. Profile deletion and export cannot run together; retry after
+the pending operation finishes. Force termination or power loss can still
+interrupt export.
 
 A backup passphrase protects Core's database, including account credentials.
 Attachment files in the archive remain unencrypted. Store the whole backup

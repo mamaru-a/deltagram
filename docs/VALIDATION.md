@@ -36,7 +36,7 @@ passes five Qt 6.4.2 checks with zero failures/skips as UID/GID 65534, including
 0600 files, 0700 directories and an unchanged parent mask. This is POSIX mode
 validation, not Windows ACL or macOS runtime proof.
 
-The export helper target passes 18 checks as UID/GID 65534, including exact
+The export helper target passes 22 checks as UID/GID 65534, including exact
 parameters, directory uniqueness/parent preservation, invalid input, malformed
 acknowledgements, cross-account serialization, and profile invalidation without
 early reservation release or stale UI delivery, pending ownership after UI/bridge
@@ -73,6 +73,37 @@ checks after full/subset language generation. Normal close/quit/restart GUI repl
 remains pending. Force kill, OS shutdown, power loss, and a permanently unresponsive
 RPC are not recovered or cancelled by this guard. Private recorder evidence is
 under `data/integrity-live/backup-quit/`.
+
+### Profile deletion during backup export — 2026-10-27
+
+The profile menu could issue `remove_account` for an exporting profile. Pinned
+Core's removal path closes that database and recursively removes its profile
+files; export's per-account ongoing lock does not guard account removal. The
+client now shares a per-RPC reservation between export and deletion. Deletion
+acquires before inventory lookup and holds through any switch away from the
+current profile and the terminal removal reply. Export refuses while a deletion
+is reserved, before creating its destination folder. A second deletion also
+refuses. This applies to every profile on that RPC, retaining the existing
+per-RPC export serialization boundary.
+
+Terminal success/error releases before the UI callback. Last-profile refusal,
+switch error, and discarded stale callbacks release ownership as well. Normal
+profile switching remains allowed during export: its captured target ID stays
+fixed, and invalidated UI completion stays dropped. Telegram account logout and
+account deletion paths are unchanged.
+
+The updated export-helper suite passes 22 checks as UID/GID 65534, zero
+failures/skips, with four new mutual-exclusion/ownership cases. An exact-source
+Bridge-method recorder reproduces eight baseline failures and passes all 20
+assertions under ASan/UBSan. Cases cover removal before/during export, zero
+output-directory creation on refusal, duplicate removal, current/inactive target
+IDs, inventory/switch/removal phases, terminal errors, last-profile refusal,
+expired owner/scope, and an explicit export after deletion completes. The recorder
+uses real Qt Core and production reservation/scope helpers with inventory,
+window/session and RPC recording doubles. Native `delta_bridge.cpp` syntax/type
+validation passes. This does not prove a native profile-menu or linked-app
+teardown replay; those remain open. No account was deleted in a live user store.
+Private evidence is under `data/integrity-live/backup-removal/`.
 
 ### Deferred contact-open ownership — 2026-10-27
 

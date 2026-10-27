@@ -2223,6 +2223,15 @@ public:
 	}
 
 	void removeProfile(int accountId, Fn<void(QString)> done) {
+		const auto removal = AcquireBackupProfileRemoval(BackupExportStateFor(_rpc.get()));
+		if (!removal) {
+			if (done) done(u"A backup export or profile deletion is already in progress."_q);
+			return;
+		}
+		const auto finish = [removal, done = std::move(done)](QString error) {
+			removal->release();
+			if (done) done(std::move(error));
+		};
 		const auto guard = _alive;
 		listProfiles([=](QJsonArray accounts) {
 			if (guard.expired()) {
@@ -2233,9 +2242,7 @@ public:
 				ids.push_back(value.toObject().value(u"id"_q).toInt());
 			}
 			if (ids.size() < 2) {
-				if (done) {
-					done(u"Keep at least one profile."_q);
-				}
+				finish(u"Keep at least one profile."_q);
 				return;
 			}
 			auto next = ids.front();
@@ -2251,9 +2258,7 @@ public:
 						if (guard.expired()) {
 							return;
 						}
-						if (done) {
-							done(HasError(reply) ? ErrorText(reply) : QString());
-						}
+						finish(HasError(reply) ? ErrorText(reply) : QString());
 					});
 			};
 			if (!wasCurrent) {
@@ -2265,9 +2270,7 @@ public:
 					return;
 				}
 				if (!error.isEmpty()) {
-					if (done) {
-						done(error);
-					}
+					finish(error);
 					return;
 				}
 				remove();
@@ -5213,8 +5216,8 @@ void ExportProfileBackup(
 	}
 	const auto bridge = GlobalBridge;
 	const auto state = BackupExportStateFor(bridge->_rpc.get());
-	if (state->busy) {
-		if (done) done({}, u"A backup export is already in progress."_q);
+	if (state->busy || state->removingProfile) {
+		if (done) done({}, u"A backup export or profile deletion is already in progress."_q);
 		return;
 	}
 	const auto directory = CreateBackupExportDirectory(destination);
